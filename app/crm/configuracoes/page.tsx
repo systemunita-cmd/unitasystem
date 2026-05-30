@@ -473,6 +473,15 @@ export default function Configuracoes() {
 // ═══════════════════════════════════════════════════════════════════════
 // 👥 ABA USUÁRIOS — 🆕 v3 com fila dependente de equipe
 // ═══════════════════════════════════════════════════════════════════════
+// Mapa: nome do grupo → role legado equivalente
+function deriveRoleFromGrupo(nomeGrupo: string): "admin" | "supervisor" | "atendente" {
+  if (!nomeGrupo) return "atendente";
+  const n = nomeGrupo.toLowerCase();
+  if (n.includes("administração") || n.includes("administracao") || n === "administrador") return "admin";
+  if (n.includes("diretor") || n.includes("gerente") || n.includes("supervisor")) return "supervisor";
+  return "atendente";
+}
+
 function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
   const [busca, setBusca] = useState("");
   const [filtroRole, setFiltroRole] = useState<"todos" | "admin" | "supervisor" | "atendente">("todos");
@@ -498,7 +507,14 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
         u.email.toLowerCase().includes(b)
       );
     }
-    if (filtroRole !== "todos") l = l.filter((u: Usuario) => u.role === filtroRole);
+    if (filtroRole !== "todos") {
+      if (filtroRole.startsWith("grupo:")) {
+        const gid = parseInt(filtroRole.split(":")[1]);
+        l = l.filter((u: Usuario) => u.grupo_id === gid);
+      } else {
+        l = l.filter((u: Usuario) => u.role === filtroRole);
+      }
+    }
     if (filtroEquipe !== "todas") {
       if (filtroEquipe === "sem") l = l.filter((u: Usuario) => !u.equipe_id);
       else l = l.filter((u: Usuario) => String(u.equipe_id) === filtroEquipe);
@@ -641,12 +657,13 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
       <div style={{ ...cardStyle, padding: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input placeholder="🔍 Buscar por nome ou e-mail..." value={busca} onChange={e => setBusca(e.target.value)}
           style={{ ...IS, flex: "1 1 240px", maxWidth: 400, borderRadius: 20 }} />
-        <select value={filtroRole} onChange={e => setFiltroRole(e.target.value as any)} style={{ ...IS, maxWidth: 180 }}>
-          <option value="todos">Função: Todas</option>
-          <option value="admin">👑 Admin</option>
-          <option value="supervisor">🎖️ Supervisor</option>
-          <option value="atendente">👤 Atendente</option>
-        </select>
+        <select value={filtroRole} onChange={e => setFiltroRole(e.target.value)}
+            style={{ ...IS, maxWidth: 220 }}>
+            <option value="todos">Cargo: Todos</option>
+            {gruposPermissao.map((g: any) => (
+              <option key={g.id} value={`grupo:${g.id}`}>{g.icone || "👥"} {g.nome}</option>
+            ))}
+          </select>
         <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)} style={{ ...IS, maxWidth: 200 }}>
           <option value="todas">Equipe: Todas</option>
           <option value="sem">Sem equipe</option>
@@ -713,19 +730,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
               </select>
             </div>
 
-            <div>
-              <label style={labelStyle}>
-                Tipo base <span style={{ color: "#9ca3af", textTransform: "none", fontWeight: 500, fontSize: 10 }}>(compatibilidade)</span>
-              </label>
-              <select value={formUsuario.role} onChange={e => setFormUsuario({ ...formUsuario, role: e.target.value as any })} style={IS}>
-                <option value="admin">👑 Administrador</option>
-                <option value="supervisor">🎖️ Supervisor</option>
-                <option value="atendente">👤 Atendente</option>
-              </select>
-              <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", fontStyle: "italic" }}>
-                Categoria base, usado por código legado. As permissões reais vêm do grupo acima.
-              </p>
-            </div>
+
             <div>
               <label style={labelStyle}>📞 Ramal VOIP</label>
               <input placeholder="Ex: 1001" value={formUsuario.ramal} onChange={e => setFormUsuario({ ...formUsuario, ramal: e.target.value })} style={IS} />
@@ -861,13 +866,23 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                       <td style={{ padding: "12px 16px" }}>
                         {ehSuperAdminMaster(u.email) ? (
                           <span style={{ background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", color: "#7c2d12", border: "1px solid #f59e0b", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 800, boxShadow: "0 1px 3px rgba(245,158,11,0.3)" }}>🛡️ Super Admin</span>
-                        ) : u.role === "admin" ? (
-                          <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>👑 Admin</span>
-                        ) : u.role === "supervisor" ? (
-                          <span style={{ background: "#f3e8ff", color: "#8b5cf6", border: "1px solid #ddd6fe", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>🎖️ Supervisor</span>
-                        ) : (
-                          <span style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>👤 Atendente</span>
-                        )}
+                        ) : (() => {
+                          // 🛡️ Mostra o nome do GRUPO (cargo real do usuário)
+                          const grupoDoUser = gruposPermissao.find((g: any) => g.id === u.grupo_id);
+                          if (grupoDoUser) {
+                            const cor = grupoDoUser.cor || "#6b7280";
+                            return (
+                              <span style={{ background: `${cor}15`, color: cor, border: `1px solid ${cor}40`, padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                                {grupoDoUser.icone || "👤"} {grupoDoUser.nome}
+                              </span>
+                            );
+                          }
+                          return (
+                            <span style={{ background: "#f9fafb", color: "#6b7280", border: "1px dashed #d1d5db", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
+                              ⚠️ Sem cargo
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         {equipe ? (
