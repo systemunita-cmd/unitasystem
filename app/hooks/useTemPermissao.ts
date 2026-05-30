@@ -139,20 +139,30 @@ export function useTemPermissao(): RetornoUseTemPermissao {
     carregar();
 
     // Real-time: se grupo mudar OU permissões do grupo mudarem, recarrega
-    const ch = supabase.channel("permissoes_user_rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, (payload: any) => {
-        if (payload.new?.auth_user_id && payload.new.auth_user_id === userId) {
-          carregar();
-        }
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "grupo_permissoes" }, (payload: any) => {
-        if (payload.new?.grupo_id === grupoId || payload.old?.grupo_id === grupoId) {
-          carregar();
-        }
-      })
-      .subscribe();
+    // 🛡️ Nome único por user pra evitar conflito de canal entre re-renders
+    if (!userId || !grupoId) return; // só registra realtime quando user/grupo carregados
+    
+    const nomeCanal = `permissoes_user_${userId.substring(0, 8)}_${Date.now()}`;
+    const ch = supabase.channel(nomeCanal);
+    
+    // Adiciona os listeners ANTES de fazer subscribe
+    ch.on("postgres_changes" as any, { event: "*", schema: "public", table: "usuarios" }, (payload: any) => {
+      if (payload.new?.auth_user_id && payload.new.auth_user_id === userId) {
+        carregar();
+      }
+    });
+    ch.on("postgres_changes" as any, { event: "*", schema: "public", table: "grupo_permissoes" }, (payload: any) => {
+      if (payload.new?.grupo_id === grupoId || payload.old?.grupo_id === grupoId) {
+        carregar();
+      }
+    });
+    
+    // Subscribe DEPOIS dos listeners
+    ch.subscribe();
 
-    return () => { supabase.removeChannel(ch); };
+    return () => { 
+      try { supabase.removeChannel(ch); } catch {} 
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, grupoId]);
 
