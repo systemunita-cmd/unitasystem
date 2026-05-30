@@ -272,11 +272,39 @@ export default function Configuracoes() {
     return m;
   }, [filas]);
 
+  // 🛡️ Filtro por escopo: usuário com escopo "team" vê só a equipe dele
+  const minhaEquipe = perm.equipeId;
+  
+  // Lista de equipes que o user pode ver
+  const equipesVisiveis: any[] = (() => {
+    if (perm.superAdmin || isDono || isSuperAdmin || escopoVerEquipes === "all") return equipes;
+    if (escopoVerEquipes === "team" && minhaEquipe) {
+      return equipes.filter((eq: any) => eq.id === minhaEquipe);
+    }
+    return equipes;
+  })();
+  
+  // Lista de usuários que o user pode ver
+  const usuariosVisiveis: any[] = (() => {
+    if (perm.superAdmin || isDono || isSuperAdmin || escopoVerUsuarios === "all") return usuarios;
+    if (escopoVerUsuarios === "team" && minhaEquipe) {
+      return usuarios.filter((u: any) => u.equipe_id === minhaEquipe);
+    }
+    if (escopoVerUsuarios === "own") {
+      return usuarios.filter((u: any) => u.auth_user_id === perm.userId);
+    }
+    return usuarios;
+  })();
+  
+  // Filas: só das equipes visíveis
+  const idsEquipesVisiveis = new Set(equipesVisiveis.map((eq: any) => eq.id));
+  const filasVisiveis: any[] = filas.filter((f: any) => !f.equipe_id || idsEquipesVisiveis.has(f.equipe_id));
+
   // ═══ ABAS DEFINIDAS ═══
   const abas: { id: Aba; nome: string; icone: string; cor: string; count: number; podeVer: boolean }[] = [
-    { id: "usuarios",   nome: "Usuários",   icone: "👥", cor: "#2563eb", count: usuarios.length,        podeVer: podeGerenciarUsuarios },
-    { id: "equipes",    nome: "Equipes",    icone: "🏢", cor: "#a855f7", count: equipes.length,         podeVer: podeGerenciarUsuarios },
-    { id: "filas",      nome: "Filas",      icone: "📋", cor: "#06b6d4", count: filas.length,           podeVer: podeGerenciarFilas },
+    { id: "usuarios",   nome: "Usuários",   icone: "👥", cor: "#2563eb", count: usuariosVisiveis.length,        podeVer: podeGerenciarUsuarios },
+    { id: "equipes",    nome: "Equipes",    icone: "🏢", cor: "#a855f7", count: equipesVisiveis.length,         podeVer: podeGerenciarUsuarios },
+    { id: "filas",      nome: "Filas",      icone: "📋", cor: "#06b6d4", count: filasVisiveis.length,           podeVer: podeGerenciarFilas },
     { id: "permissoes", nome: "Permissões", icone: "🔐", cor: "#8b5cf6", count: gruposPermissao.length, podeVer: podeGerenciarGrupos },
     { id: "geral",      nome: "Geral",      icone: "⚙️", cor: "#f59e0b", count: 0,                      podeVer: podeConfigSistema },
   ];
@@ -412,9 +440,9 @@ export default function Configuracoes() {
         <>
           {abaAtiva === "usuarios" && (
             <AbaUsuarios
-              usuarios={usuarios}
-              equipes={equipes}
-              filas={filas}
+              usuarios={usuariosVisiveis}
+              equipes={equipesVisiveis}
+              filas={filasVisiveis}
               gruposPermissao={gruposPermissao}
               equipeById={equipeById}
               isMobile={isMobile}
@@ -427,7 +455,7 @@ export default function Configuracoes() {
           )}
           {abaAtiva === "equipes" && (
             <AbaEquipes
-              equipes={equipes}
+              equipes={equipesVisiveis}
               usuariosPorEquipe={usuariosPorEquipe}
               filasPorEquipe={filasPorEquipe}
               isMobile={isMobile}
@@ -443,7 +471,7 @@ export default function Configuracoes() {
               filas={filas}
               equipes={equipes}
               equipeById={equipeById}
-              usuarios={usuarios}
+              usuarios={usuariosVisiveis}
               isMobile={isMobile}
               IS={IS}
               cardStyle={cardStyle}
