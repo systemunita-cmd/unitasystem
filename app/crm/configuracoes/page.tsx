@@ -2,6 +2,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { isSuperAdmin } from "../../lib/superAdmin";
+import GruposPermissaoSection from "../components/GruposPermissaoSection";
 import { usePermissao } from "../../hooks/usePermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -425,15 +427,7 @@ export default function Configuracoes() {
             />
           )}
           {abaAtiva === "permissoes" && (
-            <AbaPermissoes
-              gruposPermissao={gruposPermissao}
-              isMobile={isMobile}
-              IS={IS}
-              cardStyle={cardStyle}
-              labelStyle={labelStyle}
-              podeGerenciar={podeGerenciarGrupos}
-              onRefetch={fetchGrupos}
-            />
+            <GruposPermissaoSection />
           )}
           {abaAtiva === "geral" && (
             <AbaGeral
@@ -501,6 +495,11 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   };
 
   const abrirEditar = (u: Usuario) => {
+    // 🛡️ Defesa extra: bloqueia edição do super admin
+    if (isSuperAdmin(u.email)) {
+      alert("🛡️ Esse usuário é o Super Admin do sistema e seus dados são protegidos.");
+      return;
+    }
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(u);
     setFormUsuario({
@@ -596,6 +595,11 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   };
 
   const excluirUsuario = async (u: Usuario) => {
+    // 🛡️ Defesa extra: bloqueia exclusão do super admin
+    if (isSuperAdmin(u.email)) {
+      alert("🛡️ Esse usuário é o Super Admin do sistema e não pode ser excluído.");
+      return;
+    }
     if (!podeGerenciar) { alert("Você não tem permissão."); return; }
     if (!confirm(`Excluir ${u.nome}?\n\nIsso vai remover só a entry em \`usuarios\`. Pra apagar o login completo, vá em Authentication > Users no Supabase.`)) return;
     const { error } = await supabase.from("usuarios").delete().eq("id", u.id);
@@ -812,7 +816,9 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                         </div>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        {u.role === "admin" ? (
+                        {isSuperAdmin(u.email) ? (
+                          <span style={{ background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", color: "#7c2d12", border: "1px solid #f59e0b", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 800, boxShadow: "0 1px 3px rgba(245,158,11,0.3)" }}>🛡️ Super Admin</span>
+                        ) : u.role === "admin" ? (
                           <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>👑 Admin</span>
                         ) : u.role === "supervisor" ? (
                           <span style={{ background: "#f3e8ff", color: "#8b5cf6", border: "1px solid #ddd6fe", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>🎖️ Supervisor</span>
@@ -868,10 +874,17 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => abrirEditar(u)}
-                            style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
-                          <button onClick={() => excluirUsuario(u)}
-                            style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
+                          {/* 🛡️ Super Admin não pode ser editado nem excluído */}
+                          {isSuperAdmin(u.email) ? (
+                            <span title="Super Admin protegido" style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", padding: "5px 11px" }}>🔒 Protegido</span>
+                          ) : (
+                            <>
+                              <button onClick={() => abrirEditar(u)}
+                                style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
+                              <button onClick={() => excluirUsuario(u)}
+                                style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1318,229 +1331,6 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🔐 ABA PERMISSÕES
-// ═══════════════════════════════════════════════════════════════════════
-function AbaPermissoes({ gruposPermissao, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
-  const [busca, setBusca] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [editando, setEditando] = useState<GrupoPermissao | null>(null);
-  const [formGrupo, setFormGrupo] = useState({ nome: "", descricao: "", permissoes: { ...PERMISSOES_PADRAO } });
-  const [catsAbertas, setCatsAbertas] = useState<Record<string, boolean>>(
-    CATEGORIAS_PERMISSAO.reduce((acc, c) => { acc[c.nome] = true; return acc; }, {} as Record<string, boolean>)
-  );
-  const [salvando, setSalvando] = useState(false);
-
-  const gruposFiltrados = useMemo(() => {
-    if (!busca) return gruposPermissao;
-    const b = busca.toLowerCase();
-    return gruposPermissao.filter((g: GrupoPermissao) => g.nome.toLowerCase().includes(b) || (g.descricao || "").toLowerCase().includes(b));
-  }, [gruposPermissao, busca]);
-
-  const abrirNovo = () => {
-    if (!podeGerenciar) return alert("Sem permissão.");
-    setEditando(null);
-    setFormGrupo({ nome: "", descricao: "", permissoes: { ...PERMISSOES_PADRAO } });
-    setShowForm(true);
-  };
-  const abrirEditar = (g: GrupoPermissao) => {
-    if (!podeGerenciar) return alert("Sem permissão.");
-    setEditando(g);
-    setFormGrupo({ nome: g.nome, descricao: g.descricao || "", permissoes: { ...PERMISSOES_PADRAO, ...g.permissoes } });
-    setShowForm(true);
-  };
-  const toggleCategoriaToda = (catNome: string, marcar: boolean) => {
-    const cat = CATEGORIAS_PERMISSAO.find(c => c.nome === catNome);
-    if (!cat) return;
-    const novo = { ...formGrupo.permissoes };
-    cat.permissoes.forEach(p => { novo[p.key] = marcar; });
-    setFormGrupo({ ...formGrupo, permissoes: novo });
-  };
-  const salvar = async () => {
-    if (!formGrupo.nome.trim()) return alert("Nome obrigatório.");
-    setSalvando(true);
-    const payload = { nome: formGrupo.nome.trim(), descricao: formGrupo.descricao.trim(), permissoes: formGrupo.permissoes };
-    const { error } = editando
-      ? await supabase.from("grupos_permissao").update(payload).eq("id", editando.id)
-      : await supabase.from("grupos_permissao").insert([payload]);
-    setSalvando(false);
-    if (error) return alert("Erro: " + error.message);
-    await onRefetch();
-    setShowForm(false);
-    setEditando(null);
-  };
-  const excluir = async (g: GrupoPermissao) => {
-    if (!podeGerenciar) return alert("Sem permissão.");
-    if (!confirm(`Excluir o grupo "${g.nome}"?\n\nUsuários que usavam esse grupo passam a usar o padrão do role.`)) return;
-    await supabase.from("usuarios").update({ grupo_id: null }).eq("grupo_id", g.id);
-    await supabase.from("grupos_permissao").delete().eq("id", g.id);
-    await onRefetch();
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ ...cardStyle, padding: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input placeholder="🔍 Buscar grupos..." value={busca} onChange={e => setBusca(e.target.value)}
-          style={{ ...IS, flex: "1 1 240px", maxWidth: 400, borderRadius: 20 }} />
-        <div style={{ flex: 1 }} />
-        <button onClick={abrirNovo}
-          style={{
-            background: "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
-            color: "white", border: "none", borderRadius: 10,
-            padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-            boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
-          }}>+ Novo Grupo</button>
-      </div>
-
-      {/* Info card sobre o sistema de permissões */}
-      <div style={{
-        background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
-        border: "1px solid #bfdbfe",
-        borderLeft: "4px solid #2563eb",
-        borderRadius: 12,
-        padding: "14px 18px",
-        display: "flex",
-        gap: 12,
-        alignItems: "flex-start",
-      }}>
-        <span style={{ fontSize: 22 }}>💡</span>
-        <div>
-          <p style={{ color: "#1e40af", fontSize: 13, margin: 0, fontWeight: 700 }}>Como funciona</p>
-          <p style={{ color: "#3b82f6", fontSize: 12, margin: "3px 0 0", lineHeight: 1.5 }}>
-            Cada usuário tem um <b>role</b> (admin / supervisor / atendente) que define os padrões. Os grupos abaixo são <b>permissões granulares opcionais</b> — vincule um grupo a um usuário pra dar acesso específico além do padrão do role. Útil quando um atendente precisa acessar relatórios, ou um supervisor não pode mexer em conexões.
-          </p>
-        </div>
-      </div>
-
-      {showForm && (
-        <div style={{ ...cardStyle, padding: 22, borderTop: "3px solid #8b5cf6" }}>
-          <p style={{ color: "#8b5cf6", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 14px" }}>
-            {editando ? "✏️ Editar Grupo" : "➕ Novo Grupo"}
-          </p>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 18 }}>
-            <div>
-              <label style={labelStyle}>Nome *</label>
-              <input placeholder="Ex: Atendente Vendas" value={formGrupo.nome} onChange={e => setFormGrupo({ ...formGrupo, nome: e.target.value })} style={IS} />
-            </div>
-            <div>
-              <label style={labelStyle}>Descrição</label>
-              <input placeholder="Pode ver vendas e usar chat" value={formGrupo.descricao} onChange={e => setFormGrupo({ ...formGrupo, descricao: e.target.value })} style={IS} />
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {CATEGORIAS_PERMISSAO.map(cat => {
-              const todasMarcadas = cat.permissoes.every(p => formGrupo.permissoes[p.key]);
-              const algumaMarcada = cat.permissoes.some(p => formGrupo.permissoes[p.key]);
-              const aberta = catsAbertas[cat.nome] !== false;
-              return (
-                <div key={cat.nome} style={{ background: "#ffffff", border: `1px solid ${cat.cor}30`, borderRadius: 12, overflow: "hidden" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: `${cat.cor}08`, cursor: "pointer", borderLeft: `4px solid ${cat.cor}` }}
-                    onClick={() => setCatsAbertas({ ...catsAbertas, [cat.nome]: !aberta })}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ color: cat.cor, fontSize: 13, fontWeight: 700 }}>{aberta ? "▼" : "▶"} {cat.nome}</span>
-                      <span style={{ background: `${cat.cor}15`, color: cat.cor, fontSize: 10, padding: "2px 8px", borderRadius: 8, fontWeight: 700, border: `1px solid ${cat.cor}30` }}>
-                        {cat.permissoes.filter(p => formGrupo.permissoes[p.key]).length}/{cat.permissoes.length}
-                      </span>
-                    </div>
-                    <button onClick={e => { e.stopPropagation(); toggleCategoriaToda(cat.nome, !todasMarcadas); }}
-                      style={{
-                        background: todasMarcadas ? `${cat.cor}20` : algumaMarcada ? `${cat.cor}10` : "#ffffff",
-                        color: algumaMarcada || todasMarcadas ? cat.cor : "#6b7280",
-                        border: `1px solid ${cat.cor}40`,
-                        borderRadius: 8, padding: "4px 10px", fontSize: 10, cursor: "pointer", fontWeight: 700,
-                      }}>{todasMarcadas ? "✓ Todos" : "+ Todos"}</button>
-                  </div>
-                  {aberta && (
-                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 6, padding: 12 }}>
-                      {cat.permissoes.map(p => (
-                        <label key={p.key}
-                          style={{
-                            display: "flex", alignItems: "center", gap: 10,
-                            background: formGrupo.permissoes[p.key] ? `${cat.cor}10` : "#f9fafb",
-                            borderRadius: 8, padding: "9px 12px", cursor: "pointer",
-                            border: `1px solid ${formGrupo.permissoes[p.key] ? `${cat.cor}50` : "#e5e7eb"}`,
-                            transition: "all 0.15s",
-                          }}>
-                          <input type="checkbox" checked={!!formGrupo.permissoes[p.key]}
-                            onChange={e => setFormGrupo({ ...formGrupo, permissoes: { ...formGrupo.permissoes, [p.key]: e.target.checked } })}
-                            style={{ accentColor: cat.cor, width: 16, height: 16 }} />
-                          <span style={{ color: formGrupo.permissoes[p.key] ? "#1f2937" : "#6b7280", fontSize: 12, fontWeight: formGrupo.permissoes[p.key] ? 600 : 500 }}>{p.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
-            <button onClick={() => { setShowForm(false); setEditando(null); }}
-              style={{ background: "#ffffff", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 18px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
-              Cancelar
-            </button>
-            <button onClick={salvar} disabled={salvando}
-              style={{
-                background: salvando ? "#6d28d9" : "linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
-                color: "white", border: "none", borderRadius: 10,
-                padding: "9px 22px", fontSize: 12, cursor: salvando ? "not-allowed" : "pointer", fontWeight: 700,
-                boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
-              }}>{salvando ? "Salvando..." : "💾 Salvar Grupo"}</button>
-          </div>
-        </div>
-      )}
-
-      {gruposFiltrados.length === 0 ? (
-        <div style={{ ...cardStyle, padding: 48, textAlign: "center" }}>
-          <p style={{ fontSize: 40, margin: "0 0 8px" }}>{busca ? "🔍" : "🔐"}</p>
-          <p style={{ color: "#9ca3af", fontSize: 13 }}>
-            {busca ? "Nenhum grupo encontrado" : "Nenhum grupo criado ainda"}
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {gruposFiltrados.map((g: GrupoPermissao) => {
-            const qtdMarcadas = Object.values(g.permissoes || {}).filter(Boolean).length;
-            const total = TODAS_PERMISSOES.length;
-            const pct = Math.round((qtdMarcadas / total) * 100);
-            return (
-              <div key={g.id} style={{ ...cardStyle, padding: "16px 20px", borderLeft: "4px solid #8b5cf6", transition: "all 0.15s" }}
-                onMouseEnter={(e) => e.currentTarget.style.boxShadow = "0 4px 12px rgba(139,92,246,0.10)"}
-                onMouseLeave={(e) => e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)"}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10, gap: 10 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>{g.nome}</p>
-                    {g.descricao && <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>{g.descricao}</p>}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                      <div style={{ flex: 1, maxWidth: 120, background: "#e5e7eb", borderRadius: 4, height: 6, overflow: "hidden" }}>
-                        <div style={{ background: "linear-gradient(90deg, #8b5cf6, #6366f1)", height: "100%", width: `${pct}%`, transition: "width 0.3s" }} />
-                      </div>
-                      <span style={{ color: "#8b5cf6", fontSize: 11, fontWeight: 700 }}>{qtdMarcadas}/{total} permissões ({pct}%)</span>
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => abrirEditar(g)}
-                      style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
-                    <button onClick={() => excluir(g)}
-                      style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {Object.entries(g.permissoes || {}).filter(([_, v]) => v).slice(0, 10).map(([k]) => (
-                    <span key={k} style={{ background: "#f3e8ff", color: "#8b5cf6", border: "1px solid #ddd6fe", fontSize: 10, padding: "3px 10px", borderRadius: 12, fontWeight: 600 }}>{LABELS_MAP[k] || k}</span>
-                  ))}
-                  {qtdMarcadas > 10 && <span style={{ color: "#9ca3af", fontSize: 10, padding: "3px 6px", fontStyle: "italic" }}>+{qtdMarcadas - 10} outras</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ⚙️ ABA GERAL — Config do sistema
 // ═══════════════════════════════════════════════════════════════════════
 function AbaGeral({ isMobile, IS, cardStyle, labelStyle, podeGerenciar }: any) {
   return (
