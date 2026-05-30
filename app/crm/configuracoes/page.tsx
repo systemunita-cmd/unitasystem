@@ -657,14 +657,26 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 disabled={!!editandoUsuario}
                 style={{ ...IS, background: editandoUsuario ? "#f3f4f6" : "#ffffff", opacity: editandoUsuario ? 0.6 : 1 }} />
             </div>
-            <div>
-              <label style={labelStyle}>Função (role)</label>
-              <select value={formUsuario.role} onChange={e => setFormUsuario({ ...formUsuario, role: e.target.value as any })} style={IS}>
-                <option value="admin">👑 Administrador</option>
-                <option value="supervisor">🎖️ Supervisor</option>
-                <option value="atendente">👤 Atendente</option>
+            {/* 🆕 GRUPO DE PERMISSÃO — Campo principal (cargo do usuário) */}
+            <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
+              <label style={{ ...labelStyle, color: "#7c3aed", fontSize: 12 }}>
+                🛡️ CARGO / GRUPO DE PERMISSÃO *
+              </label>
+              <select value={formUsuario.grupo_id}
+                onChange={e => setFormUsuario({ ...formUsuario, grupo_id: e.target.value })}
+                style={{ ...IS, borderColor: formUsuario.grupo_id ? "#a78bfa" : "#e5e7eb", borderWidth: 2, fontWeight: 700 }}>
+                <option value="">— Selecione o cargo do usuário —</option>
+                {gruposPermissao.map((g: GrupoPermissao) => (
+                  <option key={g.id} value={g.id.toString()}>
+                    {g.icone || "👥"} {g.nome}{g.descricao ? ` — ${g.descricao}` : ""}
+                  </option>
+                ))}
               </select>
+              <p style={{ color: "#7c3aed", fontSize: 10, margin: "4px 0 0", fontStyle: "italic" }}>
+                💡 É o GRUPO que define todas as permissões do usuário (configuráveis em Permissões).
+              </p>
             </div>
+
             <div>
               <label style={labelStyle}>🏢 Equipe</label>
               <select value={formUsuario.equipe_id} onChange={e => setFormUsuario({ ...formUsuario, equipe_id: e.target.value, fila_id: "" })} style={IS}>
@@ -674,14 +686,19 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 ))}
               </select>
             </div>
+
             <div>
-              <label style={labelStyle}>🔐 Grupo de Permissão</label>
-              <select value={formUsuario.grupo_id} onChange={e => setFormUsuario({ ...formUsuario, grupo_id: e.target.value })} style={IS}>
-                <option value="">Sem grupo (usa padrão do role)</option>
-                {gruposPermissao.map((g: GrupoPermissao) => (
-                  <option key={g.id} value={g.id.toString()}>{g.nome}</option>
-                ))}
+              <label style={labelStyle}>
+                Tipo base <span style={{ color: "#9ca3af", textTransform: "none", fontWeight: 500, fontSize: 10 }}>(compatibilidade)</span>
+              </label>
+              <select value={formUsuario.role} onChange={e => setFormUsuario({ ...formUsuario, role: e.target.value as any })} style={IS}>
+                <option value="admin">👑 Administrador</option>
+                <option value="supervisor">🎖️ Supervisor</option>
+                <option value="atendente">👤 Atendente</option>
               </select>
+              <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", fontStyle: "italic" }}>
+                Categoria base, usado por código legado. As permissões reais vêm do grupo acima.
+              </p>
             </div>
             <div>
               <label style={labelStyle}>📞 Ramal VOIP</label>
