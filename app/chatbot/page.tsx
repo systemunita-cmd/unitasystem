@@ -3,6 +3,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useWorkspace } from "../hooks/useWorkspace";
 import { usePermissao } from "../hooks/usePermissao";
+import { useTemPermissao } from "../hooks/useTemPermissao";
 import { ChatSection } from "./_sections/ChatSection";
 import { DashboardSection } from "./_sections/DashboardSection";
 import { ConexoesSection } from "./_sections/ConexoesSection";
@@ -25,6 +26,18 @@ function ChatbotInner() {
   const aba = searchParams.get("aba") || "chat";
   const { workspace } = useWorkspace();
   const { permissoes, isDono } = usePermissao();
+  // 🛡️ Sistema novo de permissões (combinado com antigo via OR)
+  const perm = useTemPermissao();
+  const novoVerChat        = perm.temAcesso("atendimentos.acessar");
+  const novoVerDashboard   = perm.tem("dashboard.ver");
+  const novoVerConexoes    = perm.tem("conexoes.ver");
+  const novoVerTemplates   = perm.tem("templates.ver");
+  const novoVerDisparos    = perm.temAcesso("disparos.acessar") || perm.tem("disparos.webjs") || perm.tem("disparos.waba");
+  const novoVerFluxos      = perm.tem("fluxos.acessar");
+  const novoVerRelatorios  = perm.temAcesso("relatorios_atend.ver");
+  const novoVerRespRapidas = perm.temAcesso("respostas_rapidas.acessar");
+  const novoVerRoleta      = perm.temAcesso("roleta.acessar");
+  const novoVerEtiquetas   = perm.temAcesso("etiquetas.acessar");
   const [menuAberto, setMenuAberto] = useState<string | null>("atendimentos");
 
   const [isMobile, setIsMobile] = useState(false);
@@ -42,20 +55,30 @@ function ChatbotInner() {
   };
 
   // Atalhos de permissão — `isDono` no Unita = admin
-  const podeVerAutomacao = isDono || permissoes.administrador;
-  const podeVerMarketing = isDono || permissoes.disparo_enviar || permissoes.templates_waba;
-  const podeVerCadastro = isDono || permissoes.etiquetas;
-  const podeVerRoleta = isDono || permissoes.roleta_gerenciar;
+  const podeVerAutomacao = isDono || permissoes.administrador || perm.superAdmin || novoVerFluxos;
+  const podeVerMarketing = isDono || permissoes.disparo_enviar || permissoes.templates_waba || novoVerDisparos || novoVerTemplates;
+  const podeVerCadastro = isDono || permissoes.etiquetas || novoVerEtiquetas;
+  const podeVerRoleta = isDono || permissoes.roleta_gerenciar || novoVerRoleta;
+
+  // Combinação: cada permissão é (antigo OR novo). Super-admin sempre passa.
+  const verChat       = perm.superAdmin || permissoes.chat_proprio || permissoes.chat_todos || novoVerChat;
+  const verDashboard  = perm.superAdmin || permissoes.dashboard || novoVerDashboard;
+  const verConexoes   = perm.superAdmin || permissoes.conexoes || novoVerConexoes;
+  const verTemplates  = perm.superAdmin || isDono || permissoes.templates_waba || novoVerTemplates;
+  const verDisparos   = perm.superAdmin || isDono || permissoes.disparo_enviar || novoVerDisparos;
+  const verRelatorios = perm.superAdmin || permissoes.relatorios || novoVerRelatorios;
+  const verRespRap    = perm.superAdmin || permissoes.respostas_rapidas || novoVerRespRapidas;
+  const verRoletaFinal = perm.superAdmin || podeVerRoleta;
 
   const menus = [
-    ...((permissoes.chat_proprio || permissoes.chat_todos || permissoes.dashboard) ? [{
+    ...((verChat || verDashboard) ? [{
       key: "atendimentos", icon: "💬", label: "Atendimentos", cor: "#2563eb",
       subitens: [
-        ...((permissoes.chat_proprio || permissoes.chat_todos) ? [{ key: "chat", label: "Conversas" }] : []),
-        ...(permissoes.dashboard ? [{ key: "dashboard_atendimentos", label: "Dashboard" }] : []),
+        ...(verChat ? [{ key: "chat", label: "Conversas" }] : []),
+        ...(verDashboard ? [{ key: "dashboard_atendimentos", label: "Dashboard" }] : []),
       ]
     }] : []),
-    ...(permissoes.conexoes ? [{
+    ...(verConexoes ? [{
       key: "conexoes_menu", icon: "📱", label: "Conexões", cor: "#10b981",
       subitens: [{ key: "conexoes", label: "Conexões" }]
     }] : []),
@@ -66,20 +89,20 @@ function ChatbotInner() {
     ...(podeVerMarketing ? [{
       key: "marketing", icon: "📢", label: "Marketing", cor: "#f59e0b",
       subitens: [
-        ...((isDono || permissoes.templates_waba) ? [{ key: "templates", label: "Templates", path: "/chatbot/templates" }] : []),
-        ...((isDono || permissoes.disparo_enviar) ? [{ key: "disparos", label: "Disparos em Massa", path: "/chatbot/disparos" }] : []),
+        ...(verTemplates ? [{ key: "templates", label: "Templates", path: "/chatbot/templates" }] : []),
+        ...(verDisparos ? [{ key: "disparos", label: "Disparos em Massa", path: "/chatbot/disparos" }] : []),
       ]
     }] : []),
     ...(podeVerCadastro ? [{
       key: "cadastro", icon: "📋", label: "Cadastro", cor: "#ec4899",
       subitens: [{ key: "etiquetas", label: "Etiquetas" }]
     }] : []),
-    ...((permissoes.relatorios || permissoes.respostas_rapidas || podeVerRoleta) ? [{
+    ...((verRelatorios || verRespRap || verRoletaFinal) ? [{
       key: "configuracoes", icon: "⚙️", label: "Configurações", cor: "#6b7280",
       subitens: [
-        ...(permissoes.relatorios ? [{ key: "relatorios", label: "Relatórios" }] : []),
-        ...(permissoes.respostas_rapidas ? [{ key: "respostas_rapidas", label: "Respostas Rápidas" }] : []),
-        ...(podeVerRoleta ? [{ key: "roleta", label: "🎯 Roleta de Distribuição" }] : []),
+        ...(verRelatorios ? [{ key: "relatorios", label: "Relatórios" }] : []),
+        ...(verRespRap ? [{ key: "respostas_rapidas", label: "Respostas Rápidas" }] : []),
+        ...(verRoletaFinal ? [{ key: "roleta", label: "🎯 Roleta de Distribuição" }] : []),
       ]
     }] : []),
   ];
@@ -267,15 +290,15 @@ function ChatbotInner() {
       {/* CONTEÚDO */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", width: isMobile ? "100%" : "auto", minWidth: 0 }}>
         {aba === "chat" && <ChatSection />}
-        {aba === "dashboard_atendimentos" && permissoes.dashboard && <DashboardSection />}
-        {aba === "conexoes" && !permissoes.conexoes && (
+        {aba === "dashboard_atendimentos" && verDashboard && <DashboardSection />}
+        {aba === "conexoes" && !verConexoes && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 16 }}>
             <span style={{ fontSize: 48 }}>🔒</span>
             <h2 style={{ color: "#1f2937", fontSize: 18, fontWeight: "bold", margin: 0 }}>Sem permissão</h2>
             <p style={{ color: "#6b7280", fontSize: 14, margin: 0 }}>Você não tem acesso a esta área</p>
           </div>
         )}
-        {aba === "conexoes" && permissoes.conexoes && <ConexoesSection />}
+        {aba === "conexoes" && verConexoes && <ConexoesSection />}
         {aba === "fluxos" && podeVerAutomacao && (
           <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, alignItems: "center", justifyContent: "center", flex: 1 }}>
             <div style={{

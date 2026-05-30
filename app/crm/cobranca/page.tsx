@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "../../lib/supabase";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💰 COBRANÇA — UnitaSystem
@@ -239,7 +240,18 @@ export default function CobrancaPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
-  const [permitido, setPermitido] = useState<boolean | null>(null);
+
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoCobranca = perm.escopo("cobranca.acessar");
+  const podeMudarStatus = perm.escopo("cobranca.mudar_status") !== "none" || perm.superAdmin;
+  const podeDisparar     = perm.tem("cobranca.disparar");
+  const podeCancelar     = perm.tem("cobranca.cancelar_fatura");
+  const podeJuridico     = perm.tem("cobranca.juridico");
+  const podeProtestada   = perm.tem("cobranca.protestada");
+  const permitido: boolean | null = perm.carregando
+    ? null
+    : (perm.superAdmin || escopoCobranca !== "none");
 
   const [aba, setAba] = useState<AbaKey>("do_crm");
   const [loading, setLoading] = useState(true);
@@ -299,25 +311,13 @@ export default function CobrancaPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // 🔐 Verifica permissão (admin/supervisor)
+  // 🔐 Pega só os dados básicos do user logado (permissão vem do hook acima)
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/"); return; }
       setUserEmail(user.email || "");
       setUserId(user.id);
-      const { data: me, error } = await supabase.from("usuarios").select("role").eq("auth_user_id", user.id).maybeSingle();
-      if (error?.code === "PGRST205") {
-        // Tabela `usuarios` não existe → primeira instalação, libera
-        setPermitido(true);
-        return;
-      }
-      if (!me) {
-        const { count } = await supabase.from("usuarios").select("*", { count: "exact", head: true });
-        setPermitido((count || 0) === 0);
-        return;
-      }
-      setPermitido(me.role === "admin" || me.role === "supervisor");
     })();
   }, [router]);
 
@@ -784,8 +784,11 @@ export default function CobrancaPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
         <div style={{ ...cardStyle, padding: 48, textAlign: "center", maxWidth: 480 }}>
           <div style={{ width: 80, height: 80, borderRadius: 20, background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 16px", boxShadow: "0 12px 24px rgba(220,38,38,0.25)" }}>🔒</div>
-          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Acesso restrito</h1>
-          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 22px" }}>O módulo de Cobrança é restrito a <b>administradores</b> e <b>supervisores</b> no UnitaSystem.</p>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Sem acesso à Cobrança</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo de permissão <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso ao módulo de Cobrança.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 22px" }}>Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>cobranca.acessar</code> no teu grupo.</p>
           <button onClick={() => router.back()}
             style={{ background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", color: "white", border: "none", borderRadius: 12, padding: "11px 24px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>← Voltar</button>
         </div>
@@ -912,9 +915,11 @@ export default function CobrancaPage() {
                     <button onClick={selecionarTodasFat} style={btnSecundario}>
                       {selecionadasFat.size === faturasFiltradas.length && faturasFiltradas.length > 0 ? "✗ Desmarcar todos" : "✓ Selecionar todos"}
                     </button>
-                    <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0} style={{ ...btnPrimario, opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
-                      📤 Cobrar {selecionadasFat.size} fatura(s)
-                    </button>
+                    {podeDisparar && (
+                      <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0} style={{ ...btnPrimario, opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
+                        📤 Cobrar {selecionadasFat.size} fatura(s)
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -982,25 +987,31 @@ export default function CobrancaPage() {
                               </td>
                               <td style={{ padding: "12px" }}>
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                  {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
-                                    <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga / outras opções"
-                                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                      ✓ Paga
-                                    </button>
+                                  {podeMudarStatus ? (
+                                    <>
+                                      {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
+                                        <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga / outras opções"
+                                          style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                          ✓ Paga
+                                        </button>
+                                      ) : (
+                                        <button onClick={() => marcarAPagar(f)} title="Reverter status"
+                                          style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                          ↩ A pagar
+                                        </button>
+                                      )}
+                                      <button onClick={() => abrirStatus(f, "promessa")} title="Mais opções de status"
+                                        style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                        ⚙ Status
+                                      </button>
+                                      <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço"
+                                        style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                        ✕ Cancelou
+                                      </button>
+                                    </>
                                   ) : (
-                                    <button onClick={() => marcarAPagar(f)} title="Reverter status"
-                                      style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                      ↩ A pagar
-                                    </button>
+                                    <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }} title="Você não tem permissão pra mudar status de fatura">somente leitura</span>
                                   )}
-                                  <button onClick={() => abrirStatus(f, "promessa")} title="Mais opções de status"
-                                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                    ⚙ Status
-                                  </button>
-                                  <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço"
-                                    style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                    ✕ Cancelou
-                                  </button>
                                 </div>
                               </td>
                             </tr>
@@ -1314,6 +1325,13 @@ export default function CobrancaPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6 }}>
                     {(Object.keys(STATUS_META) as StatusFatura[])
                       .filter(s => s !== "atrasada" && s !== "pendente")
+                      .filter(s => {
+                        // 🛡️ Filtra por toggles específicos
+                        if (s === "cancelada"  && !podeCancelar)   return false;
+                        if (s === "juridico"   && !podeJuridico)   return false;
+                        if (s === "protestada" && !podeProtestada) return false;
+                        return true;
+                      })
                       .map(s => {
                         const m = STATUS_META[s];
                         const at = novoStatus === s;

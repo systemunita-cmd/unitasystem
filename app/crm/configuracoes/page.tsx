@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { isSuperAdmin as ehSuperAdminMaster } from "../../lib/superAdmin";
 import GruposPermissaoSection from "../../components/GruposPermissaoSection";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // ⚙️ CONFIGURAÇÕES — UnitaSystem (single-tenant, premium)
@@ -130,10 +131,35 @@ export default function Configuracoes() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isDono, isSuperAdmin, perfil, permissoes } = usePermissao();
-  const podeGerenciarUsuarios = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.usuarios_gerenciar;
-  const podeGerenciarFilas = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.filas;
-  const podeGerenciarGrupos = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.grupos_permissao;
-  const podeConfigSistema = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.configuracoes_sistema;
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoVerUsuarios   = perm.escopo("cfg_usuarios.ver");
+  const escopoCriarUsuarios = perm.escopo("cfg_usuarios.criar");
+  const escopoEditarUsr     = perm.escopo("cfg_usuarios.editar");
+  const escopoExcluirUsr    = perm.escopo("cfg_usuarios.excluir");
+  const novoPodeMudarGrupo  = perm.tem("cfg_usuarios.mudar_grupo");
+  const escopoVerEquipes    = perm.escopo("cfg_equipes.ver");
+  const escopoEditarEquipes = perm.escopo("cfg_equipes.editar");
+  const novoPodeCriarEquipe = perm.tem("cfg_equipes.criar");
+  const novoPodeExcluirEquipe = perm.tem("cfg_equipes.excluir");
+  const escopoFilas         = perm.escopo("cfg_filas.gerenciar");
+  const novoPodeVerGrupos   = perm.tem("cfg_grupos.ver");
+  const novoPodeCrudGrupos  = perm.tem("cfg_grupos.crud");
+  const novoPodeConfigGeral = perm.tem("cfg_geral.acessar");
+
+  // Variáveis combinadas (antigo OR novo)
+  const podeGerenciarUsuarios = isDono || isSuperAdmin || perm.superAdmin || perfil === "Administrador"
+    || !!permissoes?.usuarios_gerenciar
+    || escopoVerUsuarios !== "none";
+  const podeGerenciarFilas = isDono || isSuperAdmin || perm.superAdmin || perfil === "Administrador"
+    || !!permissoes?.filas
+    || escopoFilas !== "none";
+  const podeGerenciarGrupos = isDono || isSuperAdmin || perm.superAdmin || perfil === "Administrador"
+    || !!permissoes?.grupos_permissao
+    || novoPodeVerGrupos || novoPodeCrudGrupos;
+  const podeConfigSistema = isDono || isSuperAdmin || perm.superAdmin || perfil === "Administrador"
+    || !!permissoes?.configuracoes_sistema
+    || novoPodeConfigGeral;
   const algumaPermissao = podeGerenciarUsuarios || podeGerenciarFilas || podeGerenciarGrupos || podeConfigSistema;
 
   // ═══ Aba atual (persistida em URL) ═══

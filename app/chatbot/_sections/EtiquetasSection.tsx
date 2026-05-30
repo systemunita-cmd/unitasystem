@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🏷️ ETIQUETAS — UnitaSystem (single-tenant)
@@ -39,6 +40,12 @@ const EMOJIS_COMUNS = [
 
 export function EtiquetasSection() {
   const { isDono, permissoes } = usePermissao();
+  // 🛡️ Sistema novo
+  const perm = useTemPermissao();
+  const escopoEtiq = perm.escopo("etiquetas.acessar");
+  const novoPodeCrud = perm.tem("etiquetas.crud");
+  const podeAcessar = perm.superAdmin || isDono || !!permissoes.etiquetas || escopoEtiq !== "none";
+  const podeMexer = perm.superAdmin || isDono || !!permissoes.etiquetas || novoPodeCrud;
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
@@ -102,7 +109,7 @@ export function EtiquetasSection() {
   };
 
   const salvar = async () => {
-    if (!isDono && !permissoes.etiquetas) {
+    if (!isDono && !permissoes.etiquetas && !novoPodeCrud && !perm.superAdmin) {
       alert("❌ Você não tem permissão para gerenciar etiquetas.");
       return;
     }
@@ -131,7 +138,7 @@ export function EtiquetasSection() {
   };
 
   const excluir = async (e: Etiqueta) => {
-    if (!isDono && !permissoes.etiquetas) {
+    if (!isDono && !permissoes.etiquetas && !novoPodeCrud && !perm.superAdmin) {
       alert("❌ Você não tem permissão para excluir etiquetas.");
       return;
     }
@@ -154,6 +161,20 @@ export function EtiquetasSection() {
     (filtroEquipe === "todas" || String(e.equipe_id || "") === filtroEquipe)
   );
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return <div style={{ padding: 24, color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>;
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+        <p style={{ color: "#1f2937", fontWeight: 700, margin: "0 0 4px" }}>Sem acesso a Etiquetas</p>
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>Grupo: <b>{perm.grupoNome || "(sem grupo)"}</b></p>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, background: "#f8fafc", minHeight: "100vh" }}>
 
@@ -369,7 +390,7 @@ export function EtiquetasSection() {
                   onMouseEnter={(ev) => ev.currentTarget.style.background = "#2563eb20"}
                   onMouseLeave={(ev) => ev.currentTarget.style.background = "#2563eb10"}
                 >✏️</button>
-                <button onClick={() => excluir(e)} title="Excluir"
+                {podeMexer && <button onClick={() => excluir(e)} title="Excluir"
                   style={{
                     background: "#fef2f2", color: "#dc2626",
                     border: "1px solid #fecaca", borderRadius: 8,
@@ -377,7 +398,7 @@ export function EtiquetasSection() {
                   }}
                   onMouseEnter={(ev) => ev.currentTarget.style.background = "#fee2e2"}
                   onMouseLeave={(ev) => ev.currentTarget.style.background = "#fef2f2"}
-                >🗑️</button>
+                >🗑️</button>}
               </div>
             </div>
           ))}

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "../../hooks/useToast";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import { traduzirErro } from "../../lib/traduzir_erro";
 
 // Tipagem do Facebook SDK
@@ -56,6 +57,10 @@ type FilaItem = { id: number; nome: string; conexao?: string; equipe_id?: number
 type Equipe = { id: number; nome: string; ativo?: boolean };
 
 export function ConexoesSection() {
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const podeAcessar = perm.superAdmin || perm.tem("conexoes.ver" as any);
+
   const router = useRouter();
   const { notify } = useToast();
   const { isDono } = usePermissao();
@@ -480,6 +485,20 @@ export function ConexoesSection() {
 
   const fecharModalNovoCanal = () => { setShowModalNovoCanal(false); setForm(formInicial); setWabaTeste(null); setEditandoId(null); setApiKeyTocada(false); setTokenTocado(false); setResultadoMeta(null); setPagesDisponiveis([]); setPagesSelecionadas(new Set()); };
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return <div style={{ padding: 24, color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>;
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+        <p style={{ color: "#1f2937", fontWeight: 700, margin: "0 0 4px" }}>Sem acesso</p>
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>Grupo: <b>{perm.grupoNome || "(sem grupo)"}</b></p>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, overflowY: "auto", height: "100vh", background: "#f8fafc" }}>
 

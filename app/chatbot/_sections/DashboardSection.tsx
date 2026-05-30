@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 📊 DASHBOARD DE ATENDIMENTOS — UnitaSystem (single-tenant)
@@ -29,6 +30,12 @@ type UsuarioUni = { email: string; nome: string };
 type Periodo = "hoje" | "semana" | "mes" | "ano" | "todos" | "personalizado";
 
 export function DashboardSection() {
+  // 🛡️ Sistema novo de permissões
+  const { tem, escopo, userEmail, equipeId, superAdmin, carregando: carregandoPerm } = useTemPermissao();
+  const escopoAtend = escopo("atendimentos.acessar");
+  const podeVerDashboard = tem("dashboard.ver") || superAdmin;
+  const [emailsDaEquipe, setEmailsDaEquipe] = useState<string[]>([]);
+
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
   const [canais, setCanais] = useState<Canal[]>([]);
   const [filas, setFilas] = useState<Fila[]>([]);
@@ -53,16 +60,30 @@ export function DashboardSection() {
     if (!silencioso) setCarregando(true);
     try {
       const fetchAtendimentosPaginado = async (): Promise<Atendimento[]> => {
+        // 🛡️ Se sem acesso a atendimentos, retorna vazio
+        if (escopoAtend === "none") return [];
+
         const PAGE_SIZE = 1000;
         const TOTAL_LIMITE = 5000;
         let lista: Atendimento[] = [];
         let offset = 0;
         while (offset < TOTAL_LIMITE) {
-          const { data: pagina, error } = await supabase
+          let q = supabase
             .from("atendimentos")
             .select("id, status, created_at, updated_at, fila, canal_id, atendente")
             .order("created_at", { ascending: false })
             .range(offset, offset + PAGE_SIZE - 1);
+          // 🛡️ Aplica filtro de escopo
+          if (escopoAtend === "own" && userEmail) {
+            q = q.eq("atendente", userEmail);
+          } else if (escopoAtend === "team" && emailsDaEquipe.length > 0) {
+            q = q.in("atendente", emailsDaEquipe);
+          } else if (escopoAtend === "team" && emailsDaEquipe.length === 0) {
+            // Equipe sem ninguém → não retorna nada
+            return [];
+          }
+          // escopo "all" e super-admin: sem filtro
+          const { data: pagina, error } = await q;
           if (error) { console.error("Erro fetchAtendimentos (Dashboard):", error); break; }
           if (!pagina || pagina.length === 0) break;
           lista = lista.concat(pagina as Atendimento[]);
@@ -99,7 +120,20 @@ export function DashboardSection() {
     setAtualizando(false);
   };
 
+  // 🛡️ Carrega emails da equipe quando escopo for "team"
   useEffect(() => {
+    if (escopoAtend === "team" && equipeId) {
+      supabase.from("usuarios").select("email").eq("equipe_id", equipeId).then(({ data }) => {
+        setEmailsDaEquipe((data || []).map(u => u.email).filter(Boolean));
+      });
+    } else {
+      setEmailsDaEquipe([]);
+    }
+  }, [escopoAtend, equipeId]);
+
+  useEffect(() => {
+    if (carregandoPerm) return;
+    if (!podeVerDashboard) { setCarregando(false); return; }
     fetchTudo();
     const ch = supabase
       .channel("dash_unita")
@@ -110,7 +144,7 @@ export function DashboardSection() {
       .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, () => fetchTudo())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
-  }, []);
+  }, [carregandoPerm, podeVerDashboard, escopoAtend, emailsDaEquipe, userEmail]);
 
   const dataInicio = useMemo(() => {
     const agora = new Date();
@@ -307,6 +341,26 @@ export function DashboardSection() {
     outline: "none",
     transition: "border-color 0.15s, box-shadow 0.15s",
   };
+
+  // 🛡️ Guards visuais
+  if (carregandoPerm) {
+    return (
+      <div style={{ padding: 32, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
+        <div style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>
+      </div>
+    );
+  }
+  if (!podeVerDashboard) {
+    return (
+      <div style={{ padding: 32, height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc" }}>
+        <div style={{ background: "white", borderRadius: 14, padding: 40, textAlign: "center", border: "1px solid #e5e7eb", maxWidth: 460 }}>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>🔒</div>
+          <h2 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso ao Dashboard</h2>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Teu grupo de permissão não tem acesso a essa tela. Peça ao admin se precisar.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: 32, height: "100vh", overflowY: "auto", boxSizing: "border-box", background: "#f8fafc" }}>

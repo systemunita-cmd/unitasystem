@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import {
   SECOES_LABEL,
   montarCamposUnificados,
@@ -102,6 +103,14 @@ const getSecaoKey = (campos: CampoUnificado[], idx: number): string => {
 };
 
 function PropostaForm() {
+  // 🛡️ Permissões
+  const perm = useTemPermissao();
+  const escopoCrud = perm.escopo("propostas.crud");
+  const podeAcessar = escopoCrud !== "none" || perm.superAdmin;
+  const podeEditarValores = perm.tem("propostas.editar_valores");
+  const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
+  const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
+
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -443,6 +452,8 @@ function PropostaForm() {
     setLoading(true);
 
     const payload: any = {
+      criado_por: perm.userEmail || null,
+      equipe_id_criador: perm.equipeId || null,
       data_proposta: form.data_proposta || null,
       nome: form.nome || "",
       cpf: form.cpf || "",
@@ -862,6 +873,32 @@ function PropostaForm() {
   // ═══════════════════════════════════════════════════════════════════
   // 📐 LAYOUT
   // ═══════════════════════════════════════════════════════════════════
+
+  // 🛡️ Guards visuais
+  if (perm.carregando) {
+    return (
+      <div style={{ background: "#f8fafc", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</p>
+      </div>
+    );
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ background: "#f8fafc", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <div style={{ background: "white", borderRadius: 14, padding: 48, textAlign: "center", maxWidth: 480, border: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem permissão pra criar propostas</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem essa permissão.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: 0 }}>
+            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>propostas.crud</code> no teu grupo.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: "100vh", background: "#f8fafc", fontFamily: "Arial, sans-serif" }}>
 

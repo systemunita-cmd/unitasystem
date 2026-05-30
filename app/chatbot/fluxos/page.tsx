@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 type TipoNo =
   | "texto" | "imagem" | "video" | "audio" | "embed"
@@ -287,6 +288,20 @@ function TVarComponent({
     ? variaveis.filter(v => v.toLowerCase().includes(filtro.toLowerCase()))
     : variaveis;
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return <div style={{ padding: 32, color: "#6b7280", fontSize: 13, textAlign: "center" }}>⏳ Verificando permissões...</div>;
+  }
+  if (!podeAcessarFluxos) {
+    return (
+      <div style={{ padding: 48, textAlign: "center" }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+        <h2 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso a Fluxos</h2>
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>Grupo: <b>{perm.grupoNome || "(sem grupo)"}</b></p>
+      </div>
+    );
+  }
   return (
     <div key={`tvar-${idSuffix}`}>
       <label style={LS}>{label}</label>
@@ -1675,6 +1690,12 @@ function NoCard({ no, sel, scale, onSelect, onOpen, onDelete, onConectarSaida, o
 }
 
 export default function FluxosPage() {
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const novoPodeAcessar = perm.tem("fluxos.acessar");
+  const novoPodeCrud = perm.tem("fluxos.crud");
+  const podeAcessarFluxos = perm.superAdmin || novoPodeAcessar || novoPodeCrud;
+
   const router = useRouter();
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -2110,14 +2131,14 @@ export default function FluxosPage() {
               })()}
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
                 <button onClick={()=>setShowNovo(false)} style={{background:"#ffffff",color:"#6b7280",border:"1px solid #e5e7eb",borderRadius:10,padding:"10px 20px",fontSize:13,cursor:"pointer",fontWeight:"600"}}>Cancelar</button>
-                <button onClick={criarFluxo} disabled={criando} style={{
+                {novoPodeCrud && <button onClick={criarFluxo} disabled={criando} style={{
                   background:criando?"linear-gradient(135deg, #9ca3af 0%, #6b7280 100%)":"linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)",
                   color:"#ffffff",border:"none",borderRadius:10,padding:"10px 24px",fontSize:13,
                   cursor:criando?"wait":"pointer",fontWeight:"700",
                   boxShadow:criando?"none":"0 4px 12px rgba(139,92,246,0.35)"
                 }}>
                   {criando?"⏳ Criando...":"🤖 Criar Fluxo"}
-                </button>
+                </button>}
               </div>
             </div>
           </div>

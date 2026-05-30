@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -27,6 +28,11 @@ type Etiqueta = { id: number; nome: string; cor: string; icone: string };
 type Equipe = { id: number; nome: string };
 
 export function RelatoriosSection() {
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoAcessar = perm.escopo("relatorios_atend.ver");
+  const podeAcessar = perm.superAdmin || escopoAcessar !== "none";
+
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
   const [resultado, setResultado] = useState<Atendimento[]>([]);
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
@@ -211,6 +217,20 @@ export function RelatoriosSection() {
     setGerado(false);
   };
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return <div style={{ padding: 24, color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>;
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+        <p style={{ color: "#1f2937", fontWeight: 700, margin: "0 0 4px" }}>Sem acesso</p>
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>Grupo: <b>{perm.grupoNome || "(sem grupo)"}</b></p>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, overflowY: "auto", height: "100vh", background: "#f8fafc" }}>
 

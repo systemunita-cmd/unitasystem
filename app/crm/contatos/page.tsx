@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -112,6 +113,16 @@ function gerarMockContatos(): { atendimentos: Atendimento[]; etiquetas: Etiqueta
 
 export default function Contatos() {
   const router = useRouter();
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoVer        = perm.escopo("contatos.ver");
+  const escopoCrud       = perm.escopo("contatos.crud");
+  const podeExcluir      = perm.tem("contatos.excluir");
+  const podeImportarExp  = perm.tem("contatos.importar_exportar");
+  const podeAcessar      = escopoVer !== "none" || perm.superAdmin;
+  const podeEditar       = escopoCrud !== "none" || perm.superAdmin;
+  const [emailsDaEquipe, setEmailsDaEquipe] = useState<string[]>([]);
+
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [etiquetasPorAtend, setEtiquetasPorAtend] = useState<Record<number, number[]>>({});
@@ -150,6 +161,18 @@ export default function Contatos() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // 🛡️ Carrega emails da equipe quando escopo for "team"
+  useEffect(() => {
+    if (escopoVer === "team" && perm.equipeId) {
+      supabase.from("usuarios").select("email").eq("equipe_id", perm.equipeId).then(({ data }) => {
+        setEmailsDaEquipe((data || []).map((u: any) => u.email).filter(Boolean));
+      });
+    } else {
+      setEmailsDaEquipe([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escopoVer, perm.equipeId]);
+
   // 🎨 ESTILOS
   const inputStyle = {
     width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10,
@@ -172,10 +195,19 @@ export default function Contatos() {
 
     try {
       while (offset < LIMITE) {
-        const { data: pagina, error } = await supabase.from("atendimentos")
+        let q = supabase.from("atendimentos")
           .select("*")
           .order("created_at", { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1);
+        // 🛡️ Aplica filtro de escopo
+        if (escopoVer === "own" && perm.userEmail) {
+          q = q.eq("atendente", perm.userEmail);
+        } else if (escopoVer === "team") {
+          if (emailsDaEquipe.length === 0) { lista = []; break; }
+          q = q.in("atendente", emailsDaEquipe);
+        }
+        // escopo "all" / super-admin: sem filtro
+        const { data: pagina, error } = await q;
         if (error) {
           if (error.code === "PGRST205") tabelaInexistente = true;
           break;
@@ -463,6 +495,31 @@ export default function Contatos() {
     setFiltroAtendente("todos"); setFiltroPeriodo("todos");
   };
 
+  // 🛡️ Guards visuais
+  if (perm.carregando) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <div style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>
+      </div>
+    );
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
+        <div style={{ ...cardStyle, padding: 48, textAlign: "center", maxWidth: 480 }}>
+          <div style={{ width: 80, height: 80, borderRadius: 20, background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 16px", boxShadow: "0 12px 24px rgba(220,38,38,0.25)" }}>🔒</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Sem acesso a Contatos</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso à lista de contatos.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 22px" }}>
+            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>contatos.ver</code> no teu grupo.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 18 : 24 }}>
 
@@ -592,16 +649,16 @@ export default function Contatos() {
 
             {/* Footer modal */}
             <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", gap: 10, justifyContent: "space-between", background: "#f9fafb", flexWrap: "wrap" }}>
-              <button onClick={() => excluirContato(contatoEditando)}
+              {podeExcluir && <button onClick={() => excluirContato(contatoEditando)}
                 style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "9px 18px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
                 🗑️ Excluir contato
-              </button>
+              </button>}
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => { fecharModal(); router.push("/chatbot"); }}
                   style={{ background: "#ffffff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 10, padding: "9px 18px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
                   💬 Abrir chat
                 </button>
-                <button onClick={salvarContato} disabled={salvandoContato}
+                {podeEditar && <button onClick={salvarContato} disabled={salvandoContato}
                   style={{
                     background: salvandoContato ? "#1e40af" : "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
                     color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 12,
@@ -609,7 +666,7 @@ export default function Contatos() {
                     boxShadow: "0 4px 12px rgba(37,99,235,0.3)",
                   }}>
                   {salvandoContato ? "Salvando..." : "💾 Salvar"}
-                </button>
+                </button>}
               </div>
             </div>
           </div>
@@ -637,7 +694,7 @@ export default function Contatos() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <EquipeSelector />
-          <button onClick={exportar} disabled={exportando || contatosFiltrados.length === 0}
+{podeImportarExp &&           <button onClick={exportar} disabled={exportando || contatosFiltrados.length === 0}
             style={{
               background: (exportando || contatosFiltrados.length === 0) ? "#f3f4f6" : "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
               color: (exportando || contatosFiltrados.length === 0) ? "#9ca3af" : "white",
@@ -647,7 +704,7 @@ export default function Contatos() {
               whiteSpace: "nowrap",
             }}>
             {exportando ? "⏳ Exportando..." : "📥 Exportar Excel"}
-          </button>
+          </button>}
         </div>
       </div>
 

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import { useSoftphone } from "../../hooks/useSoftphone";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
 import { montarCamposUnificados, type ConfigCampoPadrao, type CampoCustom } from "../../lib/campos_proposta_definicao";
@@ -203,6 +204,32 @@ function AudioPlayer({ src, isOwn }: { src: string; isOwn: boolean }) {
   const corInativa = isOwn ? "#0d7a5f" : "#5d7a80";
   const progress = duration ? current / duration : 0;
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</p>
+      </div>
+    );
+  }
+  if (!podeAcessarChats) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
+        <div style={{ background: "white", borderRadius: 14, padding: 48, textAlign: "center", maxWidth: 460, border: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso a Atendimentos</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso a esta tela.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: 0 }}>
+            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>atendimentos.acessar</code> no teu grupo.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 260, padding: "4px 2px" }}>
       <audio ref={audioRef} src={src} preload="metadata" style={{ display: "none" }} />
@@ -253,6 +280,17 @@ export function ChatSection() {
     return () => { alive = false; };
   }, []);
   const { permissoes, isDono } = usePermissao();
+  // 🛡️ Sistema novo de permissões (combinado com antigo via OR)
+  const perm = useTemPermissao();
+  const novoEscopoAtend     = perm.escopo("atendimentos.acessar");
+  const novoPodeAtender     = perm.tem("atendimentos.atender_chats");
+  const novoPodeTransferir  = perm.tem("atendimentos.transferir");
+  const novoPodeFinalizar   = perm.tem("atendimentos.finalizar_outros");
+  const novoPodeAudio       = perm.tem("atendimentos.enviar_audio");
+  const novoPodeMidia       = perm.tem("atendimentos.enviar_midia");
+  const novoPodeBloquear    = perm.tem("atendimentos.bloquear_cliente");
+  const novoPodeHistorico   = perm.tem("atendimentos.ver_historico");
+  const podeAcessarChats    = perm.superAdmin || isDono || novoEscopoAtend !== "none" || !!permissoes.chat_proprio || !!permissoes.chat_todos;
   // 🆕 Softphone — botão de ligar chama iniciarChamada(numero, nome)
   const { iniciarChamada } = useSoftphone();
   // 👥 Filtro de equipe (mesmo padrão de Vendas / Contatos / Dashboard)
@@ -2119,7 +2157,7 @@ export function ChatSection() {
     setAbaConversa("abertos");
   };
   const finalizarChat = async (numero: string, canalId?: number) => {
-    if (!isDono && !permissoes.finalizar_chat) { notify("Você não tem permissão para finalizar atendimentos.", "erro"); return; }
+    if (!isDono && !permissoes.finalizar_chat && !novoPodeFinalizar && !perm.superAdmin) { notify("Você não tem permissão para finalizar atendimentos.", "erro"); return; }
     await wa("finalizar", { numero, canalId, quemFinalizou: user?.email });
     await inserirMensagemSistema(numero, `Chat finalizado por: ${meuNome}`, canalId);
     fetchAtendimentos();
@@ -2149,7 +2187,7 @@ export function ChatSection() {
   };
   const transferirParaFila = async (fila: string) => {
     if (!atendimentoAtivo) return;
-    if (!isDono && !permissoes.transferir_chat) { notify("Você não tem permissão para transferir conversas.", "erro"); return; }
+    if (!isDono && !permissoes.transferir_chat && !novoPodeTransferir && !perm.superAdmin) { notify("Você não tem permissão para transferir conversas.", "erro"); return; }
     try {
       await supabase.from("atendimentos").update({ fila }).eq("id", atendimentoAtivo.id);
       await inserirMensagemSistema(atendimentoAtivo.numero, `Chat transferido para fila: ${fila}, por: ${meuNome}`, atendimentoAtivo.canal_id);
@@ -2161,7 +2199,7 @@ export function ChatSection() {
   const transferirParaAtendente = async (emailDestino: string, nomeDestino: string) => {
     if (!atendimentoAtivo) return;
     if (!emailDestino) { notify("Atendente sem email válido.", "aviso"); return; }
-    if (!isDono && !permissoes.transferir_chat) { notify("Você não tem permissão para transferir conversas.", "erro"); return; }
+    if (!isDono && !permissoes.transferir_chat && !novoPodeTransferir && !perm.superAdmin) { notify("Você não tem permissão para transferir conversas.", "erro"); return; }
     try {
       await supabase.from("atendimentos").update({ atendente: emailDestino, status: "aberto", bloqueado_ia: true, bloqueado_fluxo: true, bloqueado_typebot: true }).eq("id", atendimentoAtivo.id);
       await inserirMensagemSistema(atendimentoAtivo.numero, `Chat transferido para: ${nomeDestino}, por: ${meuNome}`, atendimentoAtivo.canal_id);
@@ -2576,7 +2614,7 @@ export function ChatSection() {
                       }
                       return <button onClick={() => devolverBot(atendimentoAtivo.numero, atendimentoAtivo.canal_id)} title="Devolver para o BOT" style={botaoToolbar("#8b5cf6")}>🤖</button>;
                     })()}
-                    {!isMobile && (isDono || permissoes.transferir_chat) && (
+                    {!isMobile && (isDono || permissoes.transferir_chat || novoPodeTransferir || perm.superAdmin) && (
                       <button onClick={() => setShowTransferir(!showTransferir)} title="Encaminhar para fila ou atendente"
                         style={{ ...botaoToolbar(showTransferir ? "#00a884" : "#aebac1"), background: showTransferir ? "#00a88422" : "none" }}>↗️</button>
                     )}
@@ -2589,7 +2627,7 @@ export function ChatSection() {
                         💰 Finalizar Venda
                       </button>
                     )}
-                    {!isMobile && (isDono || permissoes.finalizar_chat) && (
+                    {!isMobile && (isDono || permissoes.finalizar_chat || novoPodeFinalizar || perm.superAdmin) && (
                       <button onClick={() => { if (confirm(`Finalizar atendimento de ${atendimentoAtivo.nome}?`)) finalizarChat(atendimentoAtivo.numero, atendimentoAtivo.canal_id); }}
                         title="Finalizar atendimento" style={{ ...botaoToolbar("#dc2626"), fontSize: 18, fontWeight: "bold" }}>✓</button>
                     )}
@@ -2613,7 +2651,7 @@ export function ChatSection() {
                         onMouseEnter={e => e.currentTarget.style.background = "#2a3942"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
                         <span style={{ fontSize: 16 }}>🔄</span> Atualizar mensagens
                       </button>
-                      {(isDono || permissoes.transferir_chat) && (
+                      {(isDono || permissoes.transferir_chat || novoPodeTransferir || perm.superAdmin) && (
                         <button onClick={() => { setShowTransferir(true); setShowMenuMobileChat(false); }}
                           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: "none", border: "none", color: "#1f2937", padding: "10px 14px", fontSize: 13, cursor: "pointer", textAlign: "left", borderRadius: 6 }}
                           onMouseEnter={e => e.currentTarget.style.background = "#2a3942"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
@@ -2627,7 +2665,7 @@ export function ChatSection() {
                           <span style={{ fontSize: 16 }}>💰</span> Finalizar Venda
                         </button>
                       )}
-                      {(isDono || permissoes.finalizar_chat) && (
+                      {(isDono || permissoes.finalizar_chat || novoPodeFinalizar || perm.superAdmin) && (
                         <button onClick={() => { if (confirm(`Finalizar atendimento de ${atendimentoAtivo.nome}?`)) { finalizarChat(atendimentoAtivo.numero, atendimentoAtivo.canal_id); setShowMenuMobileChat(false); } }}
                           style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", background: "none", border: "none", color: "#dc2626", padding: "10px 14px", fontSize: 13, cursor: "pointer", textAlign: "left", borderRadius: 6, fontWeight: "bold", marginTop: 4, borderTop: "1px solid #2a3942" }}
                           onMouseEnter={e => e.currentTarget.style.background = "#dc262622"} onMouseLeave={e => e.currentTarget.style.background = "none"}>

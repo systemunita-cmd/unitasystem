@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 const UNITAZAP_URL = process.env.NEXT_PUBLIC_UNITAZAP_URL || "http://localhost:3001";
 
@@ -83,6 +84,11 @@ export default function TemplatesPage() {
     return () => { alive = false; };
   }, []);
   const { isDono, permissoes } = usePermissao();
+  // 🛡️ Sistema novo
+  const perm = useTemPermissao();
+  const novoPodeVer        = perm.tem("templates.ver");
+  const novoPodeCriar      = perm.tem("templates.criar");
+  const novoPodeSincronizar = perm.tem("templates.sincronizar");
 
   const [canais, setCanais] = useState<Canal[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -104,7 +110,7 @@ export default function TemplatesPage() {
     confirmarLabel?: string;  // texto do botão de continuar (default "Enviar mesmo assim")
   } | null>(null);
 
-  const podeAcessar = isDono;
+  const podeAcessar = isDono || perm.superAdmin || novoPodeVer || novoPodeCriar;
 
   const formInicial = {
     canalId: "",

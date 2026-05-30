@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🎯 ROLETA DE DISTRIBUIÇÃO — UnitaSystem (single-tenant)
@@ -45,6 +46,12 @@ const CONFIG_PADRAO: RoletaConfig = {
 };
 
 export function RoletaSection() {
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoAcessar = perm.escopo("roleta.acessar");
+  const novoPodeCrud = perm.tem("roleta.configurar") || perm.escopo("roleta.configurar") !== "none";
+  const podeAcessar = perm.superAdmin || escopoAcessar !== "none";
+
   const { isDono, permissoes } = usePermissao();
   const [config, setConfig] = useState<RoletaConfig>(CONFIG_PADRAO);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -174,6 +181,20 @@ export function RoletaSection() {
 
   const usuariosSelecionados = usuarios.filter(u => config.usuarios.includes(u.email));
 
+
+  // 🛡️ Guard visual
+  if (perm.carregando) {
+    return <div style={{ padding: 24, color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>;
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ padding: 32, textAlign: "center" }}>
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+        <p style={{ color: "#1f2937", fontWeight: 700, margin: "0 0 4px" }}>Sem acesso</p>
+        <p style={{ color: "#9ca3af", fontSize: 12 }}>Grupo: <b>{perm.grupoNome || "(sem grupo)"}</b></p>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, height: "100vh", overflowY: "auto", boxSizing: "border-box", background: "#f8fafc" }}>
 

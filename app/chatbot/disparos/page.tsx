@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import { useModulos, ModuloBloqueado } from "../../hooks/useModulos";
 
 const UNITAZAP_URL = process.env.NEXT_PUBLIC_UNITAZAP_URL || "http://localhost:3001";
@@ -62,6 +63,15 @@ export default function DisparosPage() {
     return () => { alive = false; };
   }, []);
   const { isDono, perfil, permissoes } = usePermissao();
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoAcessar    = perm.escopo("disparos.acessar");
+  const escopoCriar      = perm.escopo("disparos.criar");
+  const novoPodeWebjs    = perm.tem("disparos.webjs");
+  const novoPodeWaba     = perm.tem("disparos.waba");
+  const novoPodeControlarOutros = perm.tem("disparos.controlar_outros");
+  const podeAcessarTela  = perm.superAdmin || escopoAcessar !== "none" || isDono || perfil === "Administrador";
+  const podeCriarCampanha = perm.superAdmin || escopoCriar !== "none" || isDono || perfil === "Administrador";
   const { modulos, carregado: modulosCarregados } = useModulos();
 
   const [tipoDisparo, setTipoDisparo] = useState<"webjs" | "waba">("webjs");
@@ -94,13 +104,26 @@ export default function DisparosPage() {
   // Antes: `isDono || permissoes.supervisor` → "supervisor" não existe no tipo Permissoes, SEMPRE bloqueava.
   // Agora: respeita a permissão granular `disparo_enviar` OU perfil Administrador OU dono do workspace.
   //        Também aceita `templates_waba` como sinal indireto (quem gerencia templates geralmente dispara).
+  // Combinação: antigo OR novo. Pra disparar, precisa ter ALGUM dos tipos (webjs ou waba)
   const podeDisparar =
-    isDono
+    perm.superAdmin
+    || isDono
     || perfil === "Administrador"
     || !!(permissoes && (permissoes as any).disparo_enviar)
-    || !!(permissoes && (permissoes as any).templates_waba);
+    || !!(permissoes && (permissoes as any).templates_waba)
+    || novoPodeWebjs
+    || novoPodeWaba
+    || podeCriarCampanha;
 
   useEffect(() => {
+    // 🛡️ Se selecionou um tipo sem permissão, força pro tipo que tem
+    if (!perm.carregando && !perm.superAdmin) {
+      if (tipoDisparo === "webjs" && !novoPodeWebjs && (isDono || perfil === "Administrador" || podeCriarCampanha)) {
+        if (novoPodeWaba) { setTipoDisparo("waba"); return; }
+      } else if (tipoDisparo === "waba" && !novoPodeWaba && (isDono || perfil === "Administrador" || podeCriarCampanha)) {
+        if (novoPodeWebjs) { setTipoDisparo("webjs"); return; }
+      }
+    }
     if (tipoDisparo === "waba") {
       setDelayMin(1); setDelayMax(3);
     } else {
@@ -340,8 +363,20 @@ export default function DisparosPage() {
   };
 
   const pausarDisparo = async (id: number) => { await wa("disparos/pausar", { disparoId: id}); fetchDisparos(); };
+    // 🛡️ Pra pausar/cancelar campanha de OUTROS, precisa controlar_outros
+    const d = disparos.find(x => x.id === id);
+    if (d && d.criado_por !== user?.email && !novoPodeControlarOutros && !perm.superAdmin && !isDono && perfil !== "Administrador") {
+      alert("Você não pode controlar campanhas de outras pessoas.");
+      return;
+    }
   const retomarDisparo = async (id: number) => { await wa("disparos/retomar", { disparoId: id}); fetchDisparos(); };
   const cancelarDisparo = async (id: number) => {
+    // 🛡️ Pra pausar/cancelar campanha de OUTROS, precisa controlar_outros
+    const d = disparos.find(x => x.id === id);
+    if (d && d.criado_por !== user?.email && !novoPodeControlarOutros && !perm.superAdmin && !isDono && perfil !== "Administrador") {
+      alert("Você não pode controlar campanhas de outras pessoas.");
+      return;
+    }
     if (!confirm("Cancelar esse disparo?")) return;
     await wa("disparos/cancelar", { disparoId: id});
     fetchDisparos();
