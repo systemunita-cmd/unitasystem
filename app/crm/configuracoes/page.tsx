@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { isSuperAdmin as ehSuperAdminMaster } from "../../lib/superAdmin";
-import GruposPermissaoSection from "../components/GruposPermissaoSection";
+import GruposPermissaoSection from "../../components/GruposPermissaoSection";
 import { usePermissao } from "../../hooks/usePermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
