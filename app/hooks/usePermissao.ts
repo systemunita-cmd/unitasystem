@@ -4,71 +4,35 @@ import { supabase } from "../lib/supabase";
 // ═══════════════════════════════════════════════════════════════════════
 // 🔐 SISTEMA DE PERMISSÕES — UnitaSystem (single-tenant)
 // ═══════════════════════════════════════════════════════════════════════
-// Simplificado pra uso interno do Grupo Unita.
-// Lê role da tabela `usuarios` (single-tenant) — sem workspaces.
+// HIERARQUIA DE DECISÃO (do mais forte pro mais fraco):
 //
-// Roles:
-//   👑 admin       → tudo liberado
-//   🔍 supervisor  → quase tudo, sem configurações sensíveis
-//   👤 atendente   → padrão restrito
+//   1. 🛡️ Super Admin (admin@grupounita.net.br)     → sempre tudo liberado
+//   2. 🎯 Tem grupo_id atribuído                      → deriva TUDO do grupo
+//                                                       (IGNORA o role legado)
+//   3. 🟡 Sem grupo, mas tem role na tabela usuarios → usa role (admin/sup/atend)
+//   4. ⚪ Sem grupo e sem registro                    → bootstrap (admin total)
 //
-// Fallback: se a tabela `usuarios` não existir OU usuário não estiver lá,
-// vira admin (modo bootstrap até o sistema estar populado).
-//
-// INTERFACE IDÊNTICA ao Wolf — pra ter compatibilidade com componentes
-// que esperam `isDono`, `isSuperAdmin`, `permissoes`, `perfil`, `loading`.
+// Retorna a MESMA interface antiga (isDono, isSuperAdmin, perfil, permissoes)
+// mas agora deriva os booleanos do NOVO sistema quando o user tem grupo.
 // ═══════════════════════════════════════════════════════════════════════
 
+const SUPER_ADMIN_EMAIL = "admin@grupounita.net.br";
+
 export type Permissoes = {
-  // 💬 ATENDIMENTO
-  chat_proprio: boolean;
-  chat_todos: boolean;
-  chat_interno: boolean;
-  respostas_rapidas: boolean;
-  transferir_chat: boolean;
-  finalizar_chat: boolean;
-
-  // 🏷️ CONTATOS & ETIQUETAS
-  contatos_ver: boolean;
-  contatos_editar: boolean;
-  etiquetas: boolean;
-
-  // 💰 VENDAS & CRM
-  dashboard: boolean;
-  vendas_proprio: boolean;
-  vendas_equipe: boolean;
-  funil: boolean;
-  proposta_criar: boolean;
-
-  // 📤 MARKETING & DISPAROS
-  disparo_enviar: boolean;
-  templates_waba: boolean;
-
-  // 📞 TELEFONIA VOIP
-  voip_usar: boolean;
-  voip_conexoes: boolean;
-  voip_campanhas: boolean;
-
-  // ⚙️ ADMINISTRAÇÃO
-  conexoes: boolean;
-  filas: boolean;
-  usuarios_gerenciar: boolean;
-  grupos_permissao: boolean;
-  roleta_gerenciar: boolean;
+  chat_proprio: boolean; chat_todos: boolean; chat_interno: boolean;
+  respostas_rapidas: boolean; transferir_chat: boolean; finalizar_chat: boolean;
+  contatos_ver: boolean; contatos_editar: boolean; etiquetas: boolean;
+  dashboard: boolean; vendas_proprio: boolean; vendas_equipe: boolean;
+  funil: boolean; proposta_criar: boolean;
+  disparo_enviar: boolean; templates_waba: boolean;
+  voip_usar: boolean; voip_conexoes: boolean; voip_campanhas: boolean;
+  conexoes: boolean; filas: boolean; usuarios_gerenciar: boolean;
+  grupos_permissao: boolean; roleta_gerenciar: boolean;
   configuracoes_workspace: boolean;
-
-  // 📊 RELATÓRIOS
-  relatorios: boolean;
-  relatorios_voip: boolean;
-
-  // 👤 PESSOAL
-  config_proprio: boolean;
-
-  // ⚠️ ADMIN
-  administrador: boolean;
+  relatorios: boolean; relatorios_voip: boolean;
+  config_proprio: boolean; administrador: boolean;
 };
 
-// Admin: tudo liberado
 const PERMISSOES_ADMIN: Permissoes = {
   chat_proprio: true, chat_todos: true, chat_interno: true, respostas_rapidas: true,
   transferir_chat: true, finalizar_chat: true,
@@ -79,22 +43,15 @@ const PERMISSOES_ADMIN: Permissoes = {
   conexoes: true, filas: true, usuarios_gerenciar: true, grupos_permissao: true,
   roleta_gerenciar: true, configuracoes_workspace: true,
   relatorios: true, relatorios_voip: true,
-  config_proprio: true,
-  administrador: true,
+  config_proprio: true, administrador: true,
 };
 
-// Supervisor: quase tudo, sem configs sensíveis
 const PERMISSOES_SUPERVISOR: Permissoes = {
   ...PERMISSOES_ADMIN,
-  conexoes: false,
-  usuarios_gerenciar: false,
-  grupos_permissao: false,
-  configuracoes_workspace: false,
-  voip_conexoes: false,
-  administrador: false,
+  conexoes: false, usuarios_gerenciar: false, grupos_permissao: false,
+  configuracoes_workspace: false, voip_conexoes: false, administrador: false,
 };
 
-// Atendente: padrão restrito
 const PERMISSOES_ATENDENTE: Permissoes = {
   chat_proprio: true, chat_todos: false, chat_interno: true, respostas_rapidas: true,
   transferir_chat: true, finalizar_chat: true,
@@ -105,8 +62,7 @@ const PERMISSOES_ATENDENTE: Permissoes = {
   conexoes: false, filas: false, usuarios_gerenciar: false, grupos_permissao: false,
   roleta_gerenciar: false, configuracoes_workspace: false,
   relatorios: false, relatorios_voip: false,
-  config_proprio: true,
-  administrador: false,
+  config_proprio: true, administrador: false,
 };
 
 export const PERMISSOES_ZERO: Permissoes = Object.keys(PERMISSOES_ADMIN).reduce((acc, k) => {
@@ -114,10 +70,66 @@ export const PERMISSOES_ZERO: Permissoes = Object.keys(PERMISSOES_ADMIN).reduce(
   return acc;
 }, {} as Permissoes);
 
+// ─── 🆕 Deriva o objeto Permissoes antigo a partir do mapa de permissões do grupo ───
+function derivarPermissoesDoGrupo(mapa: Record<string, string>): Permissoes {
+  const tem = (slug: string) => mapa[slug] === "on";
+  const escopoVivo = (slug: string) => !!mapa[slug] && mapa[slug] !== "none" && mapa[slug] !== "off";
+  const escopoIs = (slug: string, ...vals: string[]) => vals.includes(mapa[slug]);
+
+  return {
+    // 💬 ATENDIMENTO
+    chat_proprio: escopoVivo("atendimentos.acessar"),
+    chat_todos: escopoIs("atendimentos.acessar", "all"),
+    chat_interno: escopoVivo("atendimentos.acessar"),
+    respostas_rapidas: escopoVivo("respostas_rapidas.acessar"),
+    transferir_chat: tem("atendimentos.transferir"),
+    finalizar_chat: tem("atendimentos.finalizar_outros"),
+
+    // 🏷️ CONTATOS & ETIQUETAS
+    contatos_ver: escopoVivo("contatos.ver"),
+    contatos_editar: escopoVivo("contatos.crud"),
+    etiquetas: escopoVivo("etiquetas.acessar"),
+
+    // 💰 VENDAS & CRM
+    dashboard: tem("dashboard.ver"),
+    vendas_proprio: escopoVivo("vendas.ver"),
+    vendas_equipe: escopoIs("vendas.ver", "team", "all"),
+    funil: escopoVivo("vendas.ver"),
+    proposta_criar: escopoVivo("propostas.crud"),
+
+    // 📤 MARKETING
+    disparo_enviar: escopoVivo("disparos.acessar") || tem("disparos.webjs") || tem("disparos.waba"),
+    templates_waba: tem("templates.ver"),
+
+    // 📞 TELEFONIA (sem equivalente no novo, derivar conservador)
+    voip_usar: escopoVivo("atendimentos.acessar"),
+    voip_conexoes: tem("conexoes.crud"),
+    voip_campanhas: tem("disparos.webjs") || tem("disparos.waba"),
+
+    // ⚙️ ADMINISTRAÇÃO
+    conexoes: tem("conexoes.ver"),
+    filas: escopoVivo("cfg_filas.gerenciar"),
+    usuarios_gerenciar: escopoVivo("cfg_usuarios.ver"),
+    grupos_permissao: tem("cfg_grupos.ver") || tem("cfg_grupos.crud"),
+    roleta_gerenciar: escopoVivo("roleta.acessar"),
+    configuracoes_workspace: tem("cfg_geral.acessar"),
+
+    // 📊 RELATÓRIOS
+    relatorios: escopoVivo("relatorios_atend.ver"),
+    relatorios_voip: escopoVivo("relatorios_atend.ver"),
+
+    // 👤 PESSOAL
+    config_proprio: true,
+
+    // 🛡️ Admin geral (só se grupo tem TUDO de configurações)
+    administrador: tem("cfg_geral.acessar") && (tem("cfg_grupos.crud") || tem("cfg_grupos.ver")),
+  };
+}
+
 export function usePermissao() {
   const [permissoes, setPermissoes] = useState<Permissoes>(PERMISSOES_ZERO);
-  const [isDono, setIsDono] = useState(false);          // mantido pra compat: true se admin
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false); // mantido pra compat: true se admin
+  const [isDono, setIsDono] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [perfil, setPerfil] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -127,18 +139,20 @@ export function usePermissao() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 
-      // Single-tenant: tenta ler role da tabela usuarios
+      const email = (user.email || "").toLowerCase();
+      const ehSuperAdmin = email === SUPER_ADMIN_EMAIL;
+
       try {
         const { data: usr, error } = await supabase.from("usuarios")
-          .select("role, nome")
+          .select("role, nome, grupo_id, equipe_id")
           .eq("email", user.email)
           .maybeSingle();
 
         if (error) throw error;
 
+        // ─── 1. Sem registro → bootstrap (libera tudo) ───
         if (!usr) {
-          // Usuário não cadastrado na tabela → vira admin (bootstrap)
-          setPerfil("admin");
+          setPerfil("Administrador");
           setIsDono(true);
           setIsSuperAdmin(true);
           setPermissoes(PERMISSOES_ADMIN);
@@ -146,31 +160,70 @@ export function usePermissao() {
           return;
         }
 
-        const role = (usr.role || "atendente").toLowerCase();
-        setPerfil(role);
+        // ─── 2. Super Admin (email) → sempre tudo, independente de grupo/role ───
+        if (ehSuperAdmin) {
+          setPerfil("Administrador");
+          setIsDono(true);
+          setIsSuperAdmin(true);
+          setPermissoes(PERMISSOES_ADMIN);
+          setLoading(false);
+          return;
+        }
 
+        // ─── 3. 🆕 TEM GRUPO → deriva DO GRUPO (ignora role legado) ───
+        if (usr.grupo_id) {
+          // Pega nome do grupo
+          const { data: grupo } = await supabase.from("grupos_permissao")
+            .select("nome").eq("id", usr.grupo_id).maybeSingle();
+          const nomeGrupo = grupo?.nome || "";
+
+          // "Administração Geral" = equivalente a admin total
+          if (nomeGrupo === "Administração Geral") {
+            setPerfil("Administrador");
+            setIsDono(true);
+            setIsSuperAdmin(true);
+            setPermissoes(PERMISSOES_ADMIN);
+          } else {
+            // Outro grupo → deriva do mapa de permissões
+            const { data: vinculos } = await supabase.from("grupo_permissoes")
+              .select("permissao_slug, valor").eq("grupo_id", usr.grupo_id);
+            const mapa: Record<string, string> = {};
+            for (const v of (vinculos || [])) mapa[v.permissao_slug] = v.valor;
+
+            setPerfil("Atendente");      // 🔑 força perfil baixo — desativa checks de "perfil === Administrador"
+            setIsDono(false);             // 🔑 desativa checks de "isDono"
+            setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"
+            setPermissoes(derivarPermissoesDoGrupo(mapa));
+          }
+          setLoading(false);
+          return;
+        }
+
+        // ─── 4. SEM grupo → fallback no role (comportamento antigo) ───
+        const role = (usr.role || "atendente").toLowerCase();
         if (role === "admin") {
+          setPerfil("Administrador");
           setIsDono(true);
           setIsSuperAdmin(true);
           setPermissoes(PERMISSOES_ADMIN);
         } else if (role === "supervisor") {
+          setPerfil("Supervisor");
           setIsDono(false);
           setIsSuperAdmin(false);
           setPermissoes(PERMISSOES_SUPERVISOR);
         } else {
+          setPerfil("Atendente");
           setIsDono(false);
           setIsSuperAdmin(false);
           setPermissoes(PERMISSOES_ATENDENTE);
         }
       } catch (e) {
-        // Tabela não existe ou erro → fallback admin
-        console.warn("[usePermissao] tabela usuarios não acessível, usando fallback admin", e);
-        setPerfil("admin");
+        console.warn("[usePermissao] erro, fallback admin:", e);
+        setPerfil("Administrador");
         setIsDono(true);
         setIsSuperAdmin(true);
         setPermissoes(PERMISSOES_ADMIN);
       }
-
       setLoading(false);
     };
     init();
