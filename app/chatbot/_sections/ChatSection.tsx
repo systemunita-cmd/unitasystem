@@ -204,32 +204,6 @@ function AudioPlayer({ src, isOwn }: { src: string; isOwn: boolean }) {
   const corInativa = isOwn ? "#0d7a5f" : "#5d7a80";
   const progress = duration ? current / duration : 0;
 
-
-  // 🛡️ Guard visual
-  if (perm.carregando) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <p style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</p>
-      </div>
-    );
-  }
-  if (!podeAcessarChats) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
-        <div style={{ background: "white", borderRadius: 14, padding: 48, textAlign: "center", maxWidth: 460, border: "1px solid #e5e7eb" }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
-          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso a Atendimentos</h1>
-          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
-            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso a esta tela.
-          </p>
-          <p style={{ color: "#9ca3af", fontSize: 11, margin: 0 }}>
-            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>atendimentos.acessar</code> no teu grupo.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 260, padding: "4px 2px" }}>
       <audio ref={audioRef} src={src} preload="metadata" style={{ display: "none" }} />
@@ -2292,6 +2266,31 @@ export function ChatSection() {
     border: cor === "#6b7280" ? "1px solid #e5e7eb" : `1px solid ${cor}30`,
     color: cor, cursor: "pointer" as const, fontSize: 15, width: 36, height: 36, padding: 0, borderRadius: 10,
     display: "flex" as const, alignItems: "center" as const, justifyContent: "center" as const, transition: "all 0.15s" as const});
+
+  // 🛡️ Guard visual — bloqueia tela se grupo não tem acesso a atendimentos
+  if (perm.carregando) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, minHeight: "60vh" }}>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</p>
+      </div>
+    );
+  }
+  if (!podeAcessarChats) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, minHeight: "60vh", padding: 32 }}>
+        <div style={{ background: "white", borderRadius: 14, padding: 48, textAlign: "center", maxWidth: 460, border: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso a Atendimentos</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso a esta tela.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: 0 }}>
+            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>atendimentos.acessar</code> no teu grupo.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flex: 1, height: "100vh" }}>
