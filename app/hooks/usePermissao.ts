@@ -1,180 +1,209 @@
-import { useEffect, useState } from "react";
+"use client";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  MapaPermissoes,
+  PermissaoSlug,
+  ValorEscopo,
+  isSuperAdmin,
+  temPermissaoToggle,
+  escopoPermissao,
+  temAcessoEscopo,
+} from "../lib/permissoes";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🔐 SISTEMA DE PERMISSÕES — UnitaSystem (single-tenant)
+// 🛡️ useTemPermissao — Hook React
+// ─────────────────────────────────────────────────────────────────────
+// Carrega o grupo do usuário logado e suas permissões. Expõe:
+//
+//   tem(slug)          → boolean (pra TOGGLE)
+//   escopo(slug)       → 'none' | 'own' | 'team' | 'all'  (pra ESCOPO)
+//   temAcesso(slug)    → boolean (escopo != 'none')
+//   filtroEscopo(slug) → { tipo, userId, equipeId } pra filtrar queries
+//
+// Estados:
+//   carregando         → true enquanto busca dados
+//   superAdmin         → true se é o admin@grupounita
+//   userId, userEmail  → dados do user logado
+//   equipeId           → equipe atribuída ao usuário
+//   grupoNome          → nome do grupo (pra mostrar como "cargo")
+//
+// Reage em tempo real a mudanças no grupo do user ou nas permissões do grupo.
 // ═══════════════════════════════════════════════════════════════════════
-// Simplificado pra uso interno do Grupo Unita.
-// Lê role da tabela `usuarios` (single-tenant) — sem workspaces.
-//
-// Roles:
-//   👑 admin       → tudo liberado
-//   🔍 supervisor  → quase tudo, sem configurações sensíveis
-//   👤 atendente   → padrão restrito
-//
-// Fallback: se a tabela `usuarios` não existir OU usuário não estiver lá,
-// vira admin (modo bootstrap até o sistema estar populado).
-//
-// INTERFACE IDÊNTICA ao Wolf — pra ter compatibilidade com componentes
-// que esperam `isDono`, `isSuperAdmin`, `permissoes`, `perfil`, `loading`.
-// ═══════════════════════════════════════════════════════════════════════
 
-export type Permissoes = {
-  // 💬 ATENDIMENTO
-  chat_proprio: boolean;
-  chat_todos: boolean;
-  chat_interno: boolean;
-  respostas_rapidas: boolean;
-  transferir_chat: boolean;
-  finalizar_chat: boolean;
-
-  // 🏷️ CONTATOS & ETIQUETAS
-  contatos_ver: boolean;
-  contatos_editar: boolean;
-  etiquetas: boolean;
-
-  // 💰 VENDAS & CRM
-  dashboard: boolean;
-  vendas_proprio: boolean;
-  vendas_equipe: boolean;
-  funil: boolean;
-  proposta_criar: boolean;
-
-  // 📤 MARKETING & DISPAROS
-  disparo_enviar: boolean;
-  templates_waba: boolean;
-
-  // 📞 TELEFONIA VOIP
-  voip_usar: boolean;
-  voip_conexoes: boolean;
-  voip_campanhas: boolean;
-
-  // ⚙️ ADMINISTRAÇÃO
-  conexoes: boolean;
-  filas: boolean;
-  usuarios_gerenciar: boolean;
-  grupos_permissao: boolean;
-  roleta_gerenciar: boolean;
-  configuracoes_workspace: boolean;
-
-  // 📊 RELATÓRIOS
-  relatorios: boolean;
-  relatorios_voip: boolean;
-
-  // 👤 PESSOAL
-  config_proprio: boolean;
-
-  // ⚠️ ADMIN
-  administrador: boolean;
+export type FiltroEscopo = {
+  tipo: ValorEscopo;
+  userId: string | null;        // pra escopo "own"
+  usuarioIdInterno: number | null; // pra usar em FKs (usuarios.id)
+  equipeId: number | null;      // pra escopo "team"
 };
 
-// Admin: tudo liberado
-const PERMISSOES_ADMIN: Permissoes = {
-  chat_proprio: true, chat_todos: true, chat_interno: true, respostas_rapidas: true,
-  transferir_chat: true, finalizar_chat: true,
-  contatos_ver: true, contatos_editar: true, etiquetas: true,
-  dashboard: true, vendas_proprio: true, vendas_equipe: true, funil: true, proposta_criar: true,
-  disparo_enviar: true, templates_waba: true,
-  voip_usar: true, voip_conexoes: true, voip_campanhas: true,
-  conexoes: true, filas: true, usuarios_gerenciar: true, grupos_permissao: true,
-  roleta_gerenciar: true, configuracoes_workspace: true,
-  relatorios: true, relatorios_voip: true,
-  config_proprio: true,
-  administrador: true,
+export type RetornoUseTemPermissao = {
+  carregando: boolean;
+  superAdmin: boolean;
+  userId: string | null;
+  userEmail: string | null;
+  usuarioIdInterno: number | null;
+  equipeId: number | null;
+  grupoId: number | null;
+  grupoNome: string | null;
+  mapa: MapaPermissoes;
+  tem: (slug: PermissaoSlug) => boolean;
+  escopo: (slug: PermissaoSlug) => ValorEscopo;
+  temAcesso: (slug: PermissaoSlug) => boolean;
+  filtroEscopo: (slug: PermissaoSlug) => FiltroEscopo;
+  recarregar: () => Promise<void>;
 };
 
-// Supervisor: quase tudo, sem configs sensíveis
-const PERMISSOES_SUPERVISOR: Permissoes = {
-  ...PERMISSOES_ADMIN,
-  conexoes: false,
-  usuarios_gerenciar: false,
-  grupos_permissao: false,
-  configuracoes_workspace: false,
-  voip_conexoes: false,
-  administrador: false,
-};
+export function useTemPermissao(): RetornoUseTemPermissao {
+  const [carregando, setCarregando] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [usuarioIdInterno, setUsuarioIdInterno] = useState<number | null>(null);
+  const [equipeId, setEquipeId] = useState<number | null>(null);
+  const [grupoId, setGrupoId] = useState<number | null>(null);
+  const [grupoNome, setGrupoNome] = useState<string | null>(null);
+  const [mapa, setMapa] = useState<MapaPermissoes>({});
 
-// Atendente: padrão restrito
-const PERMISSOES_ATENDENTE: Permissoes = {
-  chat_proprio: true, chat_todos: false, chat_interno: true, respostas_rapidas: true,
-  transferir_chat: true, finalizar_chat: true,
-  contatos_ver: true, contatos_editar: false, etiquetas: false,
-  dashboard: true, vendas_proprio: true, vendas_equipe: false, funil: false, proposta_criar: true,
-  disparo_enviar: false, templates_waba: false,
-  voip_usar: true, voip_conexoes: false, voip_campanhas: false,
-  conexoes: false, filas: false, usuarios_gerenciar: false, grupos_permissao: false,
-  roleta_gerenciar: false, configuracoes_workspace: false,
-  relatorios: false, relatorios_voip: false,
-  config_proprio: true,
-  administrador: false,
-};
+  const superAdmin = useMemo(() => isSuperAdmin(userEmail), [userEmail]);
 
-export const PERMISSOES_ZERO: Permissoes = Object.keys(PERMISSOES_ADMIN).reduce((acc, k) => {
-  (acc as any)[k] = false;
-  return acc;
-}, {} as Permissoes);
-
-export function usePermissao() {
-  const [permissoes, setPermissoes] = useState<Permissoes>(PERMISSOES_ZERO);
-  const [isDono, setIsDono] = useState(false);          // mantido pra compat: true se admin
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false); // mantido pra compat: true se admin
-  const [perfil, setPerfil] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const init = async () => {
-      setLoading(true);
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
-
-      // Single-tenant: tenta ler role da tabela usuarios
-      try {
-        const { data: usr, error } = await supabase.from("usuarios")
-          .select("role, nome")
-          .eq("email", user.email)
-          .maybeSingle();
-
-        if (error) throw error;
-
-        if (!usr) {
-          // Usuário não cadastrado na tabela → vira admin (bootstrap)
-          setPerfil("admin");
-          setIsDono(true);
-          setIsSuperAdmin(true);
-          setPermissoes(PERMISSOES_ADMIN);
-          setLoading(false);
-          return;
-        }
-
-        const role = (usr.role || "atendente").toLowerCase();
-        setPerfil(role);
-
-        if (role === "admin") {
-          setIsDono(true);
-          setIsSuperAdmin(true);
-          setPermissoes(PERMISSOES_ADMIN);
-        } else if (role === "supervisor") {
-          setIsDono(false);
-          setIsSuperAdmin(false);
-          setPermissoes(PERMISSOES_SUPERVISOR);
-        } else {
-          setIsDono(false);
-          setIsSuperAdmin(false);
-          setPermissoes(PERMISSOES_ATENDENTE);
-        }
-      } catch (e) {
-        // Tabela não existe ou erro → fallback admin
-        console.warn("[usePermissao] tabela usuarios não acessível, usando fallback admin", e);
-        setPerfil("admin");
-        setIsDono(true);
-        setIsSuperAdmin(true);
-        setPermissoes(PERMISSOES_ADMIN);
+      if (!user) {
+        setUserId(null);
+        setUserEmail(null);
+        setUsuarioIdInterno(null);
+        setEquipeId(null);
+        setGrupoId(null);
+        setGrupoNome(null);
+        setMapa({});
+        setCarregando(false);
+        return;
       }
 
-      setLoading(false);
-    };
-    init();
+      setUserId(user.id);
+      setUserEmail(user.email || null);
+
+      // Busca registro na tabela usuarios
+      const { data: usu } = await supabase
+        .from("usuarios")
+        .select("id, equipe_id, grupo_id, ativo")
+        .eq("auth_user_id", user.id)
+        .maybeSingle();
+
+      if (!usu) {
+        // Usuário ainda não cadastrado na tabela `usuarios` (super-admin pode bypass)
+        setUsuarioIdInterno(null);
+        setEquipeId(null);
+        setGrupoId(null);
+        setGrupoNome(null);
+        setMapa({});
+        setCarregando(false);
+        return;
+      }
+
+      setUsuarioIdInterno(usu.id);
+      setEquipeId(usu.equipe_id ?? null);
+      setGrupoId(usu.grupo_id ?? null);
+
+      // Sem grupo atribuído → mapa vazio (super-admin bypassa por código)
+      if (!usu.grupo_id) {
+        setGrupoNome(null);
+        setMapa({});
+        setCarregando(false);
+        return;
+      }
+
+      // Busca nome do grupo + todas as permissões dele
+      const [resGrupo, resPerm] = await Promise.all([
+        supabase.from("grupos_permissao").select("nome").eq("id", usu.grupo_id).maybeSingle(),
+        supabase.from("grupo_permissoes").select("permissao_slug, valor").eq("grupo_id", usu.grupo_id),
+      ]);
+
+      setGrupoNome(resGrupo.data?.nome ?? null);
+
+      const novoMapa: MapaPermissoes = {};
+      for (const row of (resPerm.data || [])) {
+        novoMapa[row.permissao_slug] = row.valor as any;
+      }
+      setMapa(novoMapa);
+    } catch (e) {
+      console.error("[useTemPermissao] erro:", e);
+    }
+    setCarregando(false);
   }, []);
 
-  return { permissoes, isDono, isSuperAdmin, perfil, loading };
+  useEffect(() => {
+    carregar();
+
+    // Real-time: se grupo mudar OU permissões do grupo mudarem, recarrega
+    const ch = supabase.channel("permissoes_user_rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, (payload: any) => {
+        if (payload.new?.auth_user_id && payload.new.auth_user_id === userId) {
+          carregar();
+        }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "grupo_permissoes" }, (payload: any) => {
+        if (payload.new?.grupo_id === grupoId || payload.old?.grupo_id === grupoId) {
+          carregar();
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, grupoId]);
+
+  // Funções de check (memorizadas)
+  const tem = useCallback(
+    (slug: PermissaoSlug) => temPermissaoToggle(mapa, slug, userEmail),
+    [mapa, userEmail]
+  );
+
+  const escopo = useCallback(
+    (slug: PermissaoSlug): ValorEscopo => escopoPermissao(mapa, slug, userEmail),
+    [mapa, userEmail]
+  );
+
+  const temAcesso = useCallback(
+    (slug: PermissaoSlug) => temAcessoEscopo(mapa, slug, userEmail),
+    [mapa, userEmail]
+  );
+
+  // 🆕 Helper poderoso: monta o objeto pra aplicar em queries
+  // Ex de uso:
+  //   const f = filtroEscopo("contatos.ver");
+  //   let q = supabase.from("contatos").select("*");
+  //   if (f.tipo === "none") return [];
+  //   if (f.tipo === "own") q = q.eq("atendente_id", f.usuarioIdInterno);
+  //   if (f.tipo === "team") q = q.eq("equipe_id", f.equipeId);
+  //   // tipo "all" => sem filtro
+  const filtroEscopo = useCallback(
+    (slug: PermissaoSlug): FiltroEscopo => ({
+      tipo: escopo(slug),
+      userId,
+      usuarioIdInterno,
+      equipeId,
+    }),
+    [escopo, userId, usuarioIdInterno, equipeId]
+  );
+
+  return {
+    carregando,
+    superAdmin,
+    userId,
+    userEmail,
+    usuarioIdInterno,
+    equipeId,
+    grupoId,
+    grupoNome,
+    mapa,
+    tem,
+    escopo,
+    temAcesso,
+    filtroEscopo,
+    recarregar: carregar,
+  };
 }
