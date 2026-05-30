@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
 import {
   STATUS_OPCOES,
@@ -116,6 +117,15 @@ function camposMockTelecom(): CampoUnificado[] {
 export default function Vendas() {
   const router = useRouter();
   const { isDono, perfil, permissoes } = usePermissao();
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
+  const escopoVer = perm.escopo("vendas.ver");
+  const podeAcessar = escopoVer !== "none" || perm.superAdmin;
+  const novoPodeExcluir = (perm.tem("vendas.excluir") || perm.tem("propostas.excluir"));
+  const novoPodeEditarValores = (perm.tem("vendas.editar_valor") || perm.tem("propostas.editar_valores"));
+  const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
+  const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
+  const [emailsDaEquipe, setEmailsDaEquipe] = useState<string[]>([]);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [loading, setLoading] = useState(true);
   const [modoDemo, setModoDemo] = useState(false);
@@ -160,6 +170,18 @@ export default function Vendas() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  // 🛡️ Carrega emails da equipe quando escopo for "team"
+  useEffect(() => {
+    if (escopoVer === "team" && perm.equipeId) {
+      supabase.from("usuarios").select("email").eq("equipe_id", perm.equipeId).then(({ data }) => {
+        setEmailsDaEquipe((data || []).map((u: any) => u.email).filter(Boolean));
+      });
+    } else {
+      setEmailsDaEquipe([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [escopoVer, perm.equipeId]);
+
   // 📏 Mede a tabela pra dimensionar o scrollbar superior e ver se transborda
   const [tabelaTransborda, setTabelaTransborda] = useState(false);
   useEffect(() => {
@@ -184,9 +206,10 @@ export default function Vendas() {
   const [dadosCustomizadosEdit, setDadosCustomizadosEdit] = useState<Record<string, any>>({});
   const [salvando, setSalvando] = useState(false);
 
-  const podeExcluir = isDono || perfil === "Administrador";
+  // Combinação: respeita o sistema antigo (role) E o novo (grupo de permissão)
+  const podeExcluir = (isDono || perfil === "Administrador") && (novoPodeExcluir || perm.superAdmin);
   const podeEditarCamposCustom = isDono || perfil === "Administrador";
-  const podeVerTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_equipe;
+  const podeVerTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_equipe || escopoVer === "all" || perm.superAdmin;
 
   // 🎨 ESTILOS
   const inputStyle = {
@@ -376,9 +399,22 @@ export default function Vendas() {
     let usouMock = false;
     try {
       while (offset < TOTAL_LIMITE) {
-        const { data: pagina, error } = await supabase.from("proposta").select("*")
+        let q = supabase.from("proposta").select("*")
           .order("created_at", { ascending: false })
           .range(offset, offset + PAGE_SIZE - 1);
+        // 🛡️ Aplica filtro de escopo (vendas.ver)
+        if (!perm.superAdmin) {
+          if (escopoVer === "own" && perm.userEmail) {
+            q = q.eq("criado_por", perm.userEmail);
+          } else if (escopoVer === "team") {
+            if (emailsDaEquipe.length === 0) {
+              return false; // equipe vazia → sem dados
+            }
+            q = q.in("criado_por", emailsDaEquipe);
+          }
+          // escopo "all": sem filtro
+        }
+        const { data: pagina, error } = await q;
         if (error) throw error;
         if (!pagina || pagina.length === 0) break;
         lista = lista.concat(pagina);
@@ -675,6 +711,31 @@ export default function Vendas() {
       .reduce((a, p) => a + (Number(p.valor_plano) || 0), 0);
     return { instaladas, pendentes, canceladas, ticketMedio, receita };
   }, [propostasFiltradas]);
+
+  // 🛡️ Guards visuais
+  if (perm.carregando) {
+    return (
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</p>
+      </div>
+    );
+  }
+  if (!podeAcessar) {
+    return (
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <div style={{ background: "white", borderRadius: 14, padding: 48, textAlign: "center", maxWidth: 480, border: "1px solid #e5e7eb" }}>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 6px" }}>Sem acesso a Vendas</h1>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
+            Teu grupo <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem essa permissão.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: 0 }}>
+            Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>vendas.ver</code> no teu grupo.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
