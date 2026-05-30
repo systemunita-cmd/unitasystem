@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
-import { isSuperAdmin } from "../../lib/superAdmin";
+import { isSuperAdmin as ehSuperAdminMaster } from "../../lib/superAdmin";
 import GruposPermissaoSection from "../components/GruposPermissaoSection";
 import { usePermissao } from "../../hooks/usePermissao";
 
@@ -496,7 +496,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
 
   const abrirEditar = (u: Usuario) => {
     // 🛡️ Defesa extra: bloqueia edição do super admin
-    if (isSuperAdmin(u.email)) {
+    if (ehSuperAdminMaster(u.email)) {
       alert("🛡️ Esse usuário é o Super Admin do sistema e seus dados são protegidos.");
       return;
     }
@@ -596,7 +596,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
 
   const excluirUsuario = async (u: Usuario) => {
     // 🛡️ Defesa extra: bloqueia exclusão do super admin
-    if (isSuperAdmin(u.email)) {
+    if (ehSuperAdminMaster(u.email)) {
       alert("🛡️ Esse usuário é o Super Admin do sistema e não pode ser excluído.");
       return;
     }
@@ -816,7 +816,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                         </div>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        {isSuperAdmin(u.email) ? (
+                        {ehSuperAdminMaster(u.email) ? (
                           <span style={{ background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)", color: "#7c2d12", border: "1px solid #f59e0b", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 800, boxShadow: "0 1px 3px rgba(245,158,11,0.3)" }}>🛡️ Super Admin</span>
                         ) : u.role === "admin" ? (
                           <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700 }}>👑 Admin</span>
@@ -875,7 +875,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                       <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 6 }}>
                           {/* 🛡️ Super Admin não pode ser editado nem excluído */}
-                          {isSuperAdmin(u.email) ? (
+                          {ehSuperAdminMaster(u.email) ? (
                             <span title="Super Admin protegido" style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", padding: "5px 11px" }}>🔒 Protegido</span>
                           ) : (
                             <>
