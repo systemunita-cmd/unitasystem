@@ -37,30 +37,19 @@ export default function Home() {
 
       {/* Conteúdo */}
       <div style={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-        {/* Logo */}
+        {/* 🆕 Logo Unità Group — como já tem o nome embutido, substitui o título */}
         <img
-          src="/logo1.png"
-          alt="Grupo Unita"
+          src="/logo-unita-group.png"
+          alt="Unità Group"
           style={{
-            width: 96,
-            height: 96,
-            marginBottom: 32,
-            filter: "brightness(0) invert(1)",
+            width: "100%",
+            maxWidth: 460,
+            height: "auto",
+            marginBottom: 28,
             objectFit: "contain",
+            filter: "drop-shadow(0 8px 30px rgba(59,130,246,0.35))",
           }}
         />
-
-        {/* Nome da empresa */}
-        <h1 style={{
-          color: "white",
-          fontSize: 56,
-          fontWeight: 800,
-          margin: "0 0 12px",
-          letterSpacing: -1,
-          lineHeight: 1.1,
-        }}>
-          Grupo Unita
-        </h1>
 
         {/* Subtítulo */}
         <p style={{
@@ -101,7 +90,7 @@ export default function Home() {
         bottom: 24,
         letterSpacing: 0.3,
       }}>
-        © {new Date().getFullYear()} Grupo Unita · Sistema interno
+        © {new Date().getFullYear()} Unità Group · Sistema interno
       </p>
     </div>
   );
