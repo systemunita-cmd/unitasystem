@@ -3,13 +3,15 @@ import { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import AuthGuard from "../components/AuthGuard";
+import { useTemPermissao } from "../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CRM LAYOUT — Grupo Unita (single-tenant)
 // ═══════════════════════════════════════════════════════════════════════
 // Sidebar com menu + área de conteúdo.
-// Sem workspaces, sem hierarquia complexa, sem plano/cobrança.
-// Apenas role: 'admin' | 'atendente' | 'supervisor'
+// 🛡️ Agora respeita o GRUPO de permissão (não só o role legado):
+//   - Mostra "Configurações" se o grupo tem QUALQUER permissão de config
+//   - Mostra o NOME DO GRUPO abaixo do usuário (ex: "Diretor"), não o role
 // ═══════════════════════════════════════════════════════════════════════
 
 type Role = "admin" | "atendente" | "supervisor";
@@ -21,6 +23,11 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const [userEmail, setUserEmail] = useState("");
   const [userNome, setUserNome] = useState("");
   const [role, setRole] = useState<Role>("admin"); // fallback admin se tabela não existir
+  const [grupoIcone, setGrupoIcone] = useState<string>("");
+  const [grupoId, setGrupoId] = useState<number | null>(null);
+
+  // 🛡️ Sistema novo de permissões
+  const perm = useTemPermissao();
 
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
@@ -42,16 +49,25 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
       try {
         const { data: usuario } = await supabase
           .from("usuarios")
-          .select("nome, role")
+          .select("nome, role, grupo_id")
           .eq("email", user.email)
           .maybeSingle();
 
         if (usuario) {
           if (usuario.nome) setUserNome(usuario.nome);
           if (usuario.role) setRole(usuario.role as Role);
+          if (usuario.grupo_id) {
+            setGrupoId(usuario.grupo_id);
+            // Busca ícone do grupo pra mostrar no card do usuário
+            const { data: g } = await supabase
+              .from("grupos_permissao")
+              .select("icone")
+              .eq("id", usuario.grupo_id)
+              .maybeSingle();
+            if (g?.icone) setGrupoIcone(g.icone);
+          }
         }
       } catch (e) {
-        // Tabela 'usuarios' ainda não existe — mantém fallback admin
         console.warn("Tabela 'usuarios' não encontrada — usando role 'admin' como fallback");
       }
     };
@@ -68,27 +84,40 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
-  const isAdmin = role === "admin";
-  const isAdminOuSupervisor = role === "admin" || role === "supervisor";
+  // 🛡️ Decide se mostra "Configurações" baseado no GRUPO (não só no role).
+  // Mostra se: super admin OU grupo tem qualquer permissão de config OU
+  //            (fallback) é admin legado sem grupo atribuído.
+  const podeVerConfiguracoes =
+    perm.superAdmin ||
+    perm.escopo("cfg_usuarios.ver") !== "none" ||
+    perm.escopo("cfg_equipes.ver") !== "none" ||
+    perm.escopo("cfg_filas.gerenciar") !== "none" ||
+    perm.tem("cfg_grupos.ver") ||
+    perm.tem("cfg_grupos.crud") ||
+    perm.tem("cfg_geral.acessar") ||
+    (role === "admin" && !grupoId); // admin antigo sem grupo
 
-  // Menu items — filtrados por role
+  // Menu items — Configurações condicional ao grupo
   const menuItems = [
     { path: "/crm/dashboard", icon: "📊", label: "Dashboard" },
     { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas" },
     { path: "/crm/vendas", icon: "💰", label: "Vendas" },
     { path: "/crm/contatos", icon: "👥", label: "Contatos" },
-    ...(isAdmin ? [{ path: "/crm/configuracoes", icon: "⚙️", label: "Configurações" }] : []),
+    ...(podeVerConfiguracoes ? [{ path: "/crm/configuracoes", icon: "⚙️", label: "Configurações" }] : []),
   ];
 
   const isActive = (path: string) => pathname === path || pathname?.startsWith(path + "/");
 
+  // 🛡️ Label/ícone: prioriza o NOME DO GRUPO. Fallback pro role legado.
   const roleLabel =
-    role === "admin" ? "Administrador" :
-    role === "supervisor" ? "Supervisor" : "Atendente";
+    perm.grupoNome ||
+    (role === "admin" ? "Administrador" :
+     role === "supervisor" ? "Supervisor" : "Atendente");
 
   const roleIcon =
-    role === "admin" ? "👑" :
-    role === "supervisor" ? "🔍" : "👤";
+    grupoIcone ||
+    (role === "admin" ? "👑" :
+     role === "supervisor" ? "🔍" : "👤");
 
   // Avatar = inicial do email
   const inicial = (userNome || userEmail || "?").charAt(0).toUpperCase();
