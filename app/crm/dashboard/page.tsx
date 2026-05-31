@@ -6,6 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from "recharts";
 import { supabase } from "../../lib/supabase";
+import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
 
 // ═══════════════════════════════════════════════════════════════════════
 // DASHBOARD — Grupo Unita (single-tenant)
@@ -17,6 +18,7 @@ import { supabase } from "../../lib/supabase";
 // - Insights automáticos
 // - Metas do mês + atividade recente
 // - Fallback com dados mockados se tabela 'proposta' não existir (modo DEMO)
+// 🔒 Filtra por equipe: Diretor/escopo team vê só a própria equipe.
 // ═══════════════════════════════════════════════════════════════════════
 
 type Proposta = {
@@ -29,6 +31,7 @@ type Proposta = {
   status_venda: string;
   operadora: string;
   plano: string;
+  equipe_id_criador?: number | null;
 };
 
 type Usuario = { email: string; nome: string };
@@ -75,6 +78,7 @@ function gerarMockData(): Proposta[] {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { equipeId, EquipeSelector } = useEquipeFiltro();
   const [periodo, setPeriodo] = useState<Periodo>("mes");
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -140,6 +144,16 @@ export default function Dashboard() {
     init();
   }, [router]);
 
+  // 🔒 Filtra por equipe ANTES de tudo (Diretor vê só a equipe dele).
+  // Admin geral / Super Admin → equipeId vazio → vê tudo.
+  // Modo demo (mock) não filtra, pois os mocks não têm equipe.
+  const propostasVisiveis = useMemo(() => {
+    if (!equipeId || modoDemo) return propostas;
+    return propostas.filter(
+      p => String(p.equipe_id_criador ?? "") === String(equipeId)
+    );
+  }, [propostas, equipeId, modoDemo]);
+
   // ─── Helpers ─────────────────────────────────────────────────────────
   const nomeVendedor = (email: string): string => {
     if (!email) return "—";
@@ -194,8 +208,8 @@ export default function Dashboard() {
   };
 
   // ─── Cálculos derivados ──────────────────────────────────────────────
-  const pf = useMemo(() => filtrarPorPeriodo(propostas, periodo), [propostas, periodo]);
-  const pAnt = useMemo(() => periodoAnterior(propostas, periodo), [propostas, periodo]);
+  const pf = useMemo(() => filtrarPorPeriodo(propostasVisiveis, periodo), [propostasVisiveis, periodo]);
+  const pAnt = useMemo(() => periodoAnterior(propostasVisiveis, periodo), [propostasVisiveis, periodo]);
 
   const calc = (lista: Proposta[]) => {
     const totalReceita = lista
@@ -279,7 +293,7 @@ export default function Dashboard() {
       const k = d.toISOString().slice(0, 10);
       dias[k] = 0;
     }
-    propostas.forEach(p => {
+    propostasVisiveis.forEach(p => {
       if (p.status_venda !== "INSTALADA") return;
       const k = p.created_at.slice(0, 10);
       if (dias[k] !== undefined) dias[k] += p.valor_plano || 0;
@@ -291,10 +305,10 @@ export default function Dashboard() {
         receita,
       };
     });
-  }, [propostas]);
+  }, [propostasVisiveis]);
 
   // Atividade recente (últimas 6 propostas)
-  const atividadeRecente = propostas.slice(0, 6);
+  const atividadeRecente = propostasVisiveis.slice(0, 6);
 
   // Insights automáticos
   const insights = useMemo(() => {
@@ -462,7 +476,8 @@ export default function Dashboard() {
             margin: "4px 0 0", letterSpacing: -0.8,
           }}>Visão Geral</h1>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <EquipeSelector />
           {([
             { key: "hoje", label: "Hoje" },
             { key: "semana", label: "Semana" },
