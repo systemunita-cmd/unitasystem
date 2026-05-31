@@ -21,13 +21,10 @@ declare global {
 // Gerencia conexões WhatsApp Web JS (via QR Code), API Meta (WABA),
 // e Facebook/Instagram (via OAuth). Backend separado é o UnitaZAP.
 //
-// Single-tenant: SEM workspace_id, SEM plano, SEM cadastros.
-// Apenas admins podem criar/editar/excluir canais (via `isDono` do usePermissao).
-//
-// Tabela `conexoes`: id, nome, tipo, status, numero, modo, ia, fluxo_id,
-//   fluxo_nome, fila, api_key, prompt, parar_se_atendente, phone_number_id,
-//   waba_id, token_waba, webhook_token, typebot_url, typebot_msg_*,
-//   messenger_ativo, instagram_ativo, instagram_business_id, instagram_username
+// 🔒 Usuário restrito (Diretor/escopo team) fica TRAVADO na própria equipe:
+//    no modal de canal o seletor de equipe vem fixo na equipe dele, e a
+//    lista de canais mostra só os da equipe dele (+ os sem equipe/gerais).
+//    Admin Geral / Super Admin escolhe qualquer equipe.
 //
 // Env vars necessárias:
 //   NEXT_PUBLIC_UNITAZAP_URL  → backend Node.js do UnitaZAP
@@ -60,6 +57,11 @@ export function ConexoesSection() {
   // 🛡️ Sistema novo de permissões
   const perm = useTemPermissao();
   const podeAcessar = perm.superAdmin || perm.tem("conexoes.ver" as any);
+
+  // 🔒 Trava por equipe (Diretor/escopo team)
+  const ehAdminGeralCon = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaCon = (!perm.carregando && !ehAdminGeralCon && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaCon !== null;
 
   const router = useRouter();
   const { notify } = useToast();
@@ -96,6 +98,11 @@ export function ConexoesSection() {
 
   const [apiKeyTocada, setApiKeyTocada] = useState(false);
   const [tokenTocado, setTokenTocado] = useState(false);
+
+  // 🔒 Form de novo canal já vem com a equipe travada (pro usuário restrito)
+  const equipeIdInicial = travadoEquipe && equipeForcadaCon ? equipeForcadaCon : "";
+  const nomeEquipeForcada = equipes.find(e => String(e.id) === equipeForcadaCon)?.nome || "Minha equipe";
+  const novoForm = () => ({ ...formInicial, equipeId: equipeIdInicial });
 
   // Carrega Facebook SDK uma vez (só se FB_APP_ID estiver configurado)
   useEffect(() => {
@@ -305,7 +312,7 @@ export function ConexoesSection() {
   const abrirEditar = (c: Conexao) => {
     setEditandoId(c.id);
     const equipeDaFila = filasBanco.find(f => f.nome === c.fila)?.equipe_id;
-    setForm({ nome: c.nome, tipo: c.tipo, phoneNumberId: c.phone_number_id || "", wabaId: c.waba_id || "", token: "", webhookToken: c.webhook_token || "", modo: c.modo, ia: c.ia, apiKey: "", prompt: c.prompt || "", fluxoId: c.fluxo_id || "", equipeId: equipeDaFila ? String(equipeDaFila) : "", fila: c.fila || "", pararSeAtendente: c.parar_se_atendente, typebot_url: c.typebot_url || "", typebot_msg_invalida: c.typebot_msg_invalida || "", typebot_msg_boas_vindas: c.typebot_msg_boas_vindas || "" });
+    setForm({ nome: c.nome, tipo: c.tipo, phoneNumberId: c.phone_number_id || "", wabaId: c.waba_id || "", token: "", webhookToken: c.webhook_token || "", modo: c.modo, ia: c.ia, apiKey: "", prompt: c.prompt || "", fluxoId: c.fluxo_id || "", equipeId: equipeDaFila ? String(equipeDaFila) : (travadoEquipe && equipeForcadaCon ? equipeForcadaCon : ""), fila: c.fila || "", pararSeAtendente: c.parar_se_atendente, typebot_url: c.typebot_url || "", typebot_msg_invalida: c.typebot_msg_invalida || "", typebot_msg_boas_vindas: c.typebot_msg_boas_vindas || "" });
     setApiKeyTocada(false); setTokenTocado(false); setShowModalNovoCanal(true); setShowMenuEngrenagem(null);
     fetchFluxos(); fetchFilas(); fetchEquipes();
   };
@@ -417,7 +424,7 @@ export function ConexoesSection() {
         notify("Canal criado", "sucesso");
       }
       await fetchConexoes();
-      setShowModalNovoCanal(false); setForm(formInicial); setWabaTeste(null);
+      setShowModalNovoCanal(false); setForm(novoForm()); setWabaTeste(null);
       setApiKeyTocada(false); setTokenTocado(false);
     } catch (e: any) { notify("Operação falhou", "erro", traduzirErro(e)); }
     setSalvandoCanal(false);
@@ -483,7 +490,17 @@ export function ConexoesSection() {
 
   const filasFiltradas = filasBanco.filter(f => !form.equipeId || String(f.equipe_id || "") === form.equipeId);
 
-  const fecharModalNovoCanal = () => { setShowModalNovoCanal(false); setForm(formInicial); setWabaTeste(null); setEditandoId(null); setApiKeyTocada(false); setTokenTocado(false); setResultadoMeta(null); setPagesDisponiveis([]); setPagesSelecionadas(new Set()); };
+  // 🔒 Lista de canais visíveis: restrito vê só os da equipe dele (+ sem equipe)
+  const conexoesVisiveis = travadoEquipe
+    ? conexoes.filter(c => {
+        const eqId = filasBanco.find(f => f.nome === c.fila)?.equipe_id;
+        return !eqId || String(eqId) === equipeForcadaCon;
+      })
+    : conexoes;
+
+  const fecharModalNovoCanal = () => { setShowModalNovoCanal(false); setForm(novoForm()); setWabaTeste(null); setEditandoId(null); setApiKeyTocada(false); setTokenTocado(false); setResultadoMeta(null); setPagesDisponiveis([]); setPagesSelecionadas(new Set()); };
+
+  const abrirNovoCanal = () => { setShowModalNovoCanal(true); setEditandoId(null); setForm(novoForm()); setApiKeyTocada(false); setTokenTocado(false); fetchFluxos(); fetchFilas(); fetchEquipes(); };
 
 
   // 🛡️ Guard visual
@@ -557,7 +574,7 @@ export function ConexoesSection() {
             <div style={{ padding: "20px 28px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <h2 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: 0 }}>{editandoId ? "✏️ Editar Canal" : "➕ Novo Canal"}</h2>
-                <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>{editandoId ? "Altere as configurações" : `${conexoes.length} canais cadastrados`}</p>
+                <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>{editandoId ? "Altere as configurações" : `${conexoesVisiveis.length} canais cadastrados`}</p>
               </div>
               <button onClick={fecharModalNovoCanal} style={{ background: "#f3f4f6", border: "none", color: "#6b7280", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
             </div>
@@ -759,7 +776,8 @@ export function ConexoesSection() {
               <div>
                 <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 12px" }}>{editandoId ? "3" : form.tipo === "waba" ? "5" : "4"}. Equipe & Fila / Departamento</p>
 
-                {equipes.length > 0 && (
+                {/* Admin: escolhe a equipe (afunila filas). Restrito: equipe fixa. */}
+                {equipes.length > 0 && !travadoEquipe && (
                   <div style={{ marginBottom: 12 }}>
                     <label style={{ color: "#6b7280", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>👥 Equipe <span style={{ color: "#9ca3af", fontWeight: 400 }}>(afunila as filas)</span></label>
                     <select value={form.equipeId}
@@ -775,6 +793,15 @@ export function ConexoesSection() {
                       {equipes.map(eq => (<option key={eq.id} value={String(eq.id)}>👥 {eq.nome}</option>))}
                     </select>
                     <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>Escolha a equipe e selecione abaixo qual fila (segmento) deste canal.</p>
+                  </div>
+                )}
+                {equipes.length > 0 && travadoEquipe && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ color: "#6b7280", fontSize: 11, display: "block", marginBottom: 4, fontWeight: 600 }}>👥 Equipe</label>
+                    <div style={{ ...IS, background: "#faf5ff", border: "1px solid #e9d5ff", color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                      👥 {nomeEquipeForcada}
+                    </div>
+                    <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>O canal será da sua equipe. Selecione abaixo a fila (segmento).</p>
                   </div>
                 )}
 
@@ -795,7 +822,7 @@ export function ConexoesSection() {
                       {filasFiltradas.map(f => (<option key={f.id} value={f.nome}>📋 {f.nome}{f.conexao ? ` (${f.conexao})` : ""}</option>))}
                     </select>
                     {form.equipeId && filasFiltradas.length === 0 && (
-                      <p style={{ color: "#dc2626", fontSize: 11, margin: "6px 0 0", lineHeight: 1.4 }}>⚠️ Essa equipe não tem nenhuma fila cadastrada. Crie uma fila pra ela em <b>Configurações → Filas</b> (ou escolha "Todas as equipes").</p>
+                      <p style={{ color: "#dc2626", fontSize: 11, margin: "6px 0 0", lineHeight: 1.4 }}>⚠️ Essa equipe não tem nenhuma fila cadastrada. Crie uma fila pra ela em <b>Configurações → Filas</b>.</p>
                     )}
                   </>
                 )}
@@ -832,10 +859,13 @@ export function ConexoesSection() {
           </div>
           <div>
             <h1 style={{ color: "#1f2937", fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>Conexões</h1>
-            <p style={{ color: "#6b7280", fontSize: 13, margin: "2px 0 0" }}>Grupo Unita · {conexoes.length} canal(is) cadastrado(s)</p>
+            <p style={{ color: "#6b7280", fontSize: 13, margin: "2px 0 0" }}>
+              Grupo Unita · {conexoesVisiveis.length} canal(is) cadastrado(s)
+              {travadoEquipe && <> · <b style={{ color: "#7c3aed" }}>👥 {nomeEquipeForcada}</b></>}
+            </p>
           </div>
         </div>
-        <button onClick={() => { setShowModalNovoCanal(true); setEditandoId(null); setForm(formInicial); setApiKeyTocada(false); setTokenTocado(false); fetchFluxos(); fetchFilas(); fetchEquipes(); }}
+        <button onClick={abrirNovoCanal}
           style={{
             background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)",
             color: "white", border: "none", borderRadius: 12, padding: "12px 22px", fontSize: 13,
@@ -846,18 +876,18 @@ export function ConexoesSection() {
       </div>
 
       {/* CARDS DE CONEXÕES */}
-      {conexoes.length === 0 ? (
+      {conexoesVisiveis.length === 0 ? (
         <div style={{ ...cardStyle, padding: 48, textAlign: "center" }}>
           <div style={{ width: 80, height: 80, borderRadius: 20, background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 16px", boxShadow: "0 12px 24px rgba(22,163,74,0.25)" }}>
             <span style={{ filter: "saturate(0) brightness(2)" }}>📱</span>
           </div>
           <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>Nenhum canal conectado</h3>
           <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px" }}>Crie seu primeiro canal pra começar</p>
-          <button onClick={() => { setShowModalNovoCanal(true); setEditandoId(null); setForm(formInicial); setApiKeyTocada(false); setTokenTocado(false); fetchFluxos(); fetchFilas(); fetchEquipes(); }} style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "white", border: "none", borderRadius: 12, padding: "12px 24px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>+ Novo Canal</button>
+          <button onClick={abrirNovoCanal} style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "white", border: "none", borderRadius: 12, padding: "12px 24px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>+ Novo Canal</button>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
-          {conexoes.map(c => (
+          {conexoesVisiveis.map(c => (
             <div key={c.id} style={{ ...cardStyle, padding: 24, borderTop: `3px solid ${c.status === "conectado" ? "#16a34a" : "#ef4444"}` }}
               onMouseEnter={(e) => { e.currentTarget.style.boxShadow = `0 8px 20px ${c.status === "conectado" ? "rgba(22,163,74,0.12)" : "rgba(239,68,68,0.08)"}`; e.currentTarget.style.transform = "translateY(-2px)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)"; e.currentTarget.style.transform = "translateY(0)"; }}>

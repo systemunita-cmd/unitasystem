@@ -10,6 +10,10 @@ import * as XLSX from "xlsx";
 // Filtra atendimentos por período/status/equipe/fila/atendente/etiqueta
 // e exporta tudo pra Excel (.xlsx). Paginação até 20k registros.
 //
+// 🔒 Usuário restrito (Diretor/escopo team) fica TRAVADO na própria equipe:
+//    o dropdown de equipe some e o relatório sai só com a equipe dele.
+//    Admin Geral / Super Admin escolhe qualquer equipe.
+//
 // Tabelas: atendimentos, etiquetas, atendimento_etiquetas, equipes, filas
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -33,6 +37,11 @@ export function RelatoriosSection() {
   const escopoAcessar = perm.escopo("relatorios_atend.ver");
   const podeAcessar = perm.superAdmin || escopoAcessar !== "none";
 
+  // 🔒 Trava por equipe (Diretor/escopo team)
+  const ehAdminGeralRel = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaRel = (!perm.carregando && !ehAdminGeralRel && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaRel !== null;
+
   const [atendimentos, setAtendimentos] = useState<Atendimento[]>([]);
   const [resultado, setResultado] = useState<Atendimento[]>([]);
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
@@ -52,6 +61,8 @@ export function RelatoriosSection() {
   const [filtroAtendente, setFiltroAtendente] = useState("todos");
   const [filtroEtiqueta, setFiltroEtiqueta] = useState("todas");
   const [truncado, setTruncado] = useState(false);
+
+  const nomeEquipeForcada = equipes.find(e => String(e.id) === equipeForcadaRel)?.nome || "Minha equipe";
 
   const IS = { background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", color: "#1f2937", fontSize: 13, width: "100%", boxSizing: "border-box" as const, outline: "none", transition: "border-color 0.15s, box-shadow 0.15s" };
 
@@ -118,6 +129,11 @@ export function RelatoriosSection() {
     fetchTudo();
   }, []);
 
+  // 🔒 Força o filtro pra equipe do usuário restrito
+  useEffect(() => {
+    if (travadoEquipe && equipeForcadaRel) setFiltroEquipe(equipeForcadaRel);
+  }, [travadoEquipe, equipeForcadaRel]);
+
   const filas = [...new Set(atendimentos.map(a => a.fila))].filter(Boolean);
   const atendentes = [...new Set(atendimentos.map(a => a.atendente))].filter(Boolean);
 
@@ -166,8 +182,10 @@ export function RelatoriosSection() {
   const gerarRelatorio = () => {
     setLoading(true);
     let filtrados = filtrarPorPeriodo(atendimentos);
+    // 🔒 Usuário restrito: sempre recorta pela equipe dele (independe do filtro visível)
+    const equipeAlvo = travadoEquipe && equipeForcadaRel ? equipeForcadaRel : filtroEquipe;
     if (filtroStatus !== "todos") filtrados = filtrados.filter(a => a.status === filtroStatus);
-    if (filtroEquipe !== "todas") filtrados = filtrados.filter(a => String(filaEquipeMap[a.fila || ""] || "") === filtroEquipe);
+    if (equipeAlvo !== "todas") filtrados = filtrados.filter(a => String(filaEquipeMap[a.fila || ""] || "") === equipeAlvo);
     if (filtroFila !== "todas") filtrados = filtrados.filter(a => a.fila === filtroFila);
     if (filtroAtendente !== "todos") filtrados = filtrados.filter(a => a.atendente === filtroAtendente);
     if (filtroEtiqueta !== "todas") {
@@ -210,7 +228,7 @@ export function RelatoriosSection() {
     setDataInicio("");
     setDataFim("");
     setFiltroStatus("todos");
-    setFiltroEquipe("todas");
+    setFiltroEquipe(travadoEquipe && equipeForcadaRel ? equipeForcadaRel : "todas");
     setFiltroFila("todas");
     setFiltroAtendente("todos");
     setFiltroEtiqueta("todas");
@@ -324,7 +342,8 @@ export function RelatoriosSection() {
               <option value="resolvido">✅ Resolvido</option>
             </select>
           </div>
-          {equipes.length > 0 && (
+          {/* Admin: dropdown de equipe. Restrito: campo fixo da equipe dele */}
+          {equipes.length > 0 && !travadoEquipe && (
             <div>
               <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>👥 Equipe</label>
               <select value={filtroEquipe}
@@ -336,6 +355,14 @@ export function RelatoriosSection() {
                 <option value="todas">Todas</option>
                 {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>👥 {eq.nome}</option>)}
               </select>
+            </div>
+          )}
+          {equipes.length > 0 && travadoEquipe && (
+            <div>
+              <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>👥 Equipe</label>
+              <div style={{ ...IS, background: "#faf5ff", border: "1px solid #e9d5ff", color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                👥 {nomeEquipeForcada}
+              </div>
             </div>
           )}
           <div>

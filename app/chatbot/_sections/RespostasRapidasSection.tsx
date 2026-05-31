@@ -9,6 +9,10 @@ import { useTemPermissao } from "../../hooks/useTemPermissao";
 // CRUD dos atalhos que o atendente usa digitando "/" no chat
 // (ex: /oi → "Olá! Como posso te ajudar?").
 //
+// 🔒 Usuário restrito (Diretor/escopo team) fica TRAVADO na própria equipe:
+//    o dropdown some e a lista mostra só as respostas da equipe dele + as
+//    gerais (sem equipe). Admin Geral / Super Admin escolhe qualquer equipe.
+//
 // Single-tenant: SEM workspace_id em nenhuma query.
 // Estrutura esperada da tabela `respostas_rapidas`:
 //   id (int4, pk, auto)
@@ -33,6 +37,11 @@ export function RespostasRapidasSection() {
   const novoPodeCrud = perm.tem("respostas_rapidas.crud") || perm.escopo("respostas_rapidas.crud") !== "none";
   const podeAcessar = perm.superAdmin || escopoAcessar !== "none";
 
+  // 🔒 Trava por equipe (Diretor/escopo team)
+  const ehAdminGeralRR = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaRR = (!perm.carregando && !ehAdminGeralRR && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaRR !== null;
+
   const [respostas, setRespostas] = useState<RespostaRapida[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
@@ -40,6 +49,8 @@ export function RespostasRapidasSection() {
   const [form, setForm] = useState({ atalho: "", mensagem: "", equipeId: "" });
   const [salvando, setSalvando] = useState(false);
   const [carregando, setCarregando] = useState(false);
+
+  const nomeEquipeForcada = equipes.find(e => String(e.id) === equipeForcadaRR)?.nome || "Minha equipe";
 
   const IS = {
     width: "100%",
@@ -97,6 +108,11 @@ export function RespostasRapidasSection() {
     fetchEquipes();
   }, []);
 
+  // 🔒 Força o filtro pra equipe do usuário restrito
+  useEffect(() => {
+    if (travadoEquipe && equipeForcadaRR) setFiltroEquipe(equipeForcadaRR);
+  }, [travadoEquipe, equipeForcadaRR]);
+
   const salvar = async () => {
     if (!form.atalho.trim() || !form.mensagem.trim()) {
       alert("Preencha atalho e mensagem!");
@@ -109,12 +125,16 @@ export function RespostasRapidasSection() {
 
     setSalvando(true);
     try {
+      // 🔒 Usuário restrito só cria dentro da própria equipe
+      const equipeIdFinal = travadoEquipe && equipeForcadaRR
+        ? parseInt(equipeForcadaRR)
+        : (form.equipeId ? parseInt(form.equipeId) : null);
       const { data, error } = await supabase
         .from("respostas_rapidas")
         .insert([{
           atalho: form.atalho.trim(),
           mensagem: form.mensagem.trim(),
-          equipe_id: form.equipeId ? parseInt(form.equipeId) : null,
+          equipe_id: equipeIdFinal,
         }])
         .select("id")
         .single();
@@ -153,6 +173,10 @@ export function RespostasRapidasSection() {
 
   // Respostas filtradas pela equipe escolhida
   const respostasFiltradas = respostas.filter(r => {
+    // 🔒 Restrito: vê só as da equipe dele + as gerais (sem equipe)
+    if (travadoEquipe) {
+      return !r.equipe_id || String(r.equipe_id) === equipeForcadaRR;
+    }
     if (filtroEquipe === "todas") return true;
     if (filtroEquipe === "") return !r.equipe_id;
     return String(r.equipe_id || "") === filtroEquipe;
@@ -205,7 +229,8 @@ export function RespostasRapidasSection() {
       </div>
 
       {/* ═══ FILTRO DE EQUIPE ═══ */}
-      {equipes.length > 0 && (
+      {/* Admin: dropdown. Restrito: rótulo fixo da equipe dele */}
+      {equipes.length > 0 && !travadoEquipe && (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ color: "#a855f7", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
           <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)} style={{ ...IS, width: "auto", minWidth: 200, cursor: "pointer" }}>
@@ -213,6 +238,12 @@ export function RespostasRapidasSection() {
             <option value="">⚪ Geral (sem equipe)</option>
             {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
           </select>
+        </div>
+      )}
+      {equipes.length > 0 && travadoEquipe && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 12, padding: "7px 14px", alignSelf: "flex-start" }}>
+          <span style={{ color: "#a855f7", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
+          <span style={{ color: "#7c3aed", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{nomeEquipeForcada}</span>
         </div>
       )}
 
@@ -233,8 +264,8 @@ export function RespostasRapidasSection() {
               <input placeholder="Olá! Como posso te ajudar?" value={form.mensagem} onChange={e => setForm({ ...form, mensagem: e.target.value })} style={IS} />
             </div>
           </div>
-          {/* EQUIPE */}
-          {equipes.length > 0 && (
+          {/* EQUIPE — admin escolhe; restrito vê fixo */}
+          {equipes.length > 0 && !travadoEquipe && (
             <div>
               <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>👥 Equipe</label>
               <select value={form.equipeId} onChange={e => setForm({ ...form, equipeId: e.target.value })} style={IS}>
@@ -242,6 +273,15 @@ export function RespostasRapidasSection() {
                 {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
               </select>
               <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>Deixe "Geral" pra valer pra todas as equipes, ou escolha uma equipe específica.</p>
+            </div>
+          )}
+          {equipes.length > 0 && travadoEquipe && (
+            <div>
+              <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>👥 Equipe</label>
+              <div style={{ ...IS, background: "#faf5ff", border: "1px solid #e9d5ff", color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                👥 {nomeEquipeForcada}
+              </div>
+              <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>A resposta será criada na sua equipe.</p>
             </div>
           )}
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid #e5e7eb", paddingTop: 14 }}>
@@ -280,7 +320,7 @@ export function RespostasRapidasSection() {
               <span style={{ filter: "saturate(0) brightness(2)" }}>⚡</span>
             </div>
             <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
-              {filtroEquipe !== "todas" ? "Nenhuma resposta nessa equipe" : "Nenhuma resposta rápida cadastrada ainda"}
+              {(!travadoEquipe && filtroEquipe !== "todas") ? "Nenhuma resposta nessa equipe" : "Nenhuma resposta rápida cadastrada ainda"}
             </h3>
             <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Clique em <b>+ Nova Resposta</b> pra criar a primeira</p>
           </div>

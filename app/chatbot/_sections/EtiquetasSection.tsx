@@ -11,6 +11,10 @@ import { useTemPermissao } from "../../hooks/useTemPermissao";
 // Cada etiqueta pode ser geral (vale pra todas as equipes) ou específica
 // de uma equipe.
 //
+// 🔒 Usuário restrito (Diretor/escopo team) fica TRAVADO na própria equipe:
+//    o dropdown some e a lista mostra só as etiquetas da equipe dele + as
+//    gerais (sem equipe). Admin Geral / Super Admin escolhe qualquer equipe.
+//
 // Tabela esperada `etiquetas`: id(int4), nome, cor, icone, equipe_id(int4 FK opcional), created_at
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -46,6 +50,12 @@ export function EtiquetasSection() {
   const novoPodeCrud = perm.tem("etiquetas.crud");
   const podeAcessar = perm.superAdmin || isDono || !!permissoes.etiquetas || escopoEtiq !== "none";
   const podeMexer = perm.superAdmin || isDono || !!permissoes.etiquetas || novoPodeCrud;
+
+  // 🔒 Trava por equipe (Diretor/escopo team não escolhe equipe)
+  const ehAdminGeralEq = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaEq = (!perm.carregando && !ehAdminGeralEq && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaEq !== null;
+
   const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
@@ -56,6 +66,8 @@ export function EtiquetasSection() {
   const [busca, setBusca] = useState("");
 
   const [form, setForm] = useState({ nome: "", cor: "#2563eb", icone: "🏷️", equipeId: "" });
+
+  const nomeEquipeForcada = equipes.find(e => String(e.id) === equipeForcadaEq)?.nome || "Minha equipe";
 
   const IS = { width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", color: "#1f2937", fontSize: 14, boxSizing: "border-box" as const, outline: "none", transition: "border-color 0.15s, box-shadow 0.15s" };
 
@@ -90,9 +102,17 @@ export function EtiquetasSection() {
     return () => { supabase.removeChannel(ch); };
   }, []);
 
+  // 🔒 Força o filtro pra equipe do usuário restrito
+  useEffect(() => {
+    if (travadoEquipe && equipeForcadaEq) setFiltroEquipe(equipeForcadaEq);
+  }, [travadoEquipe, equipeForcadaEq]);
+
   const abrirNovo = () => {
     setEditando(null);
-    setForm({ nome: "", cor: "#2563eb", icone: "🏷️", equipeId: filtroEquipe !== "todas" ? filtroEquipe : "" });
+    const eqInicial = travadoEquipe && equipeForcadaEq
+      ? equipeForcadaEq
+      : (filtroEquipe !== "todas" ? filtroEquipe : "");
+    setForm({ nome: "", cor: "#2563eb", icone: "🏷️", equipeId: eqInicial });
     setShowForm(true);
   };
 
@@ -116,7 +136,10 @@ export function EtiquetasSection() {
     if (!form.nome.trim()) { alert("Digite o nome da etiqueta!"); return; }
     setSalvando(true);
     try {
-      const equipeIdNum = form.equipeId ? parseInt(form.equipeId) : null;
+      // 🔒 Usuário restrito só cria/edita dentro da própria equipe
+      const equipeIdNum = travadoEquipe && equipeForcadaEq
+        ? parseInt(equipeForcadaEq)
+        : (form.equipeId ? parseInt(form.equipeId) : null);
       if (editando) {
         const { error } = await supabase.from("etiquetas")
           .update({ nome: form.nome.trim(), cor: form.cor, icone: form.icone, equipe_id: equipeIdNum })
@@ -156,10 +179,15 @@ export function EtiquetasSection() {
     return equipes.find(e => e.id === equipeId)?.nome || "";
   };
 
-  const etiquetasFiltradas = etiquetas.filter(e =>
-    (!busca || e.nome.toLowerCase().includes(busca.toLowerCase())) &&
-    (filtroEquipe === "todas" || String(e.equipe_id || "") === filtroEquipe)
-  );
+  const etiquetasFiltradas = etiquetas.filter(e => {
+    const passaBusca = !busca || e.nome.toLowerCase().includes(busca.toLowerCase());
+    if (!passaBusca) return false;
+    // 🔒 Restrito: vê só as da equipe dele + as gerais (sem equipe)
+    if (travadoEquipe) {
+      return !e.equipe_id || String(e.equipe_id) === equipeForcadaEq;
+    }
+    return filtroEquipe === "todas" || String(e.equipe_id || "") === filtroEquipe;
+  });
 
 
   // 🛡️ Guard visual
@@ -215,7 +243,8 @@ export function EtiquetasSection() {
               onBlur={(e) => { e.currentTarget.style.borderColor = "#e5e7eb"; e.currentTarget.style.boxShadow = "none"; }}
             />
           )}
-          {equipes.length > 0 && (
+          {/* Admin: dropdown de equipe. Restrito: rótulo fixo da equipe dele */}
+          {equipes.length > 0 && !travadoEquipe && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ color: "#a855f7", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
               <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)} style={{ ...IS, width: "auto", minWidth: 180, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>
@@ -223,6 +252,12 @@ export function EtiquetasSection() {
                 <option value="">⚪ Geral (sem equipe)</option>
                 {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
               </select>
+            </div>
+          )}
+          {travadoEquipe && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 12, padding: "7px 14px" }}>
+              <span style={{ color: "#a855f7", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
+              <span style={{ color: "#7c3aed", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{nomeEquipeForcada}</span>
             </div>
           )}
         </div>
@@ -252,8 +287,8 @@ export function EtiquetasSection() {
             <input placeholder="Ex: Lead Quente" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} style={IS} maxLength={40} />
           </div>
 
-          {/* EQUIPE */}
-          {equipes.length > 0 && (
+          {/* EQUIPE — admin escolhe; restrito vê fixo */}
+          {equipes.length > 0 && !travadoEquipe && (
             <div>
               <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", display: "block", marginBottom: 6 }}>👥 Equipe</label>
               <select value={form.equipeId} onChange={e => setForm({ ...form, equipeId: e.target.value })} style={IS}>
@@ -261,6 +296,15 @@ export function EtiquetasSection() {
                 {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
               </select>
               <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>Deixe "Geral" pra valer pra todas as equipes, ou escolha uma específica.</p>
+            </div>
+          )}
+          {equipes.length > 0 && travadoEquipe && (
+            <div>
+              <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", display: "block", marginBottom: 6 }}>👥 Equipe</label>
+              <div style={{ ...IS, background: "#f9fafb", color: "#7c3aed", fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                👥 {nomeEquipeForcada}
+              </div>
+              <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>A etiqueta será criada na sua equipe.</p>
             </div>
           )}
 
@@ -337,12 +381,12 @@ export function EtiquetasSection() {
             <span style={{ filter: "saturate(0) brightness(2)" }}>🏷️</span>
           </div>
           <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: "0 0 8px" }}>
-            {busca || filtroEquipe !== "todas" ? "Nenhuma etiqueta encontrada" : "Nenhuma etiqueta cadastrada ainda"}
+            {busca || (!travadoEquipe && filtroEquipe !== "todas") ? "Nenhuma etiqueta encontrada" : "Nenhuma etiqueta cadastrada ainda"}
           </h3>
           <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 16px" }}>
-            {busca || filtroEquipe !== "todas" ? "Tente outro termo ou equipe" : "Crie etiquetas pra organizar seus atendimentos"}
+            {busca || (!travadoEquipe && filtroEquipe !== "todas") ? "Tente outro termo ou equipe" : "Crie etiquetas pra organizar seus atendimentos"}
           </p>
-          {!busca && filtroEquipe === "todas" && (
+          {!busca && (travadoEquipe || filtroEquipe === "todas") && (
             <button onClick={abrirNovo} style={{
               background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
               color: "white", border: "none", borderRadius: 12,

@@ -10,6 +10,10 @@ import { useTemPermissao } from "../../hooks/useTemPermissao";
 // Distribui novos leads automaticamente entre atendentes selecionados.
 // Single-tenant: única configuração com id=1 (singleton).
 //
+// 🔒 Usuário restrito (Diretor/escopo team) fica TRAVADO na própria equipe:
+//    o dropdown de equipe some e só lista atendentes da equipe dele.
+//    Admin Geral / Super Admin escolhe qualquer equipe.
+//
 // Tabelas esperadas:
 //   `usuarios` (id, nome, email, role, fila, equipe_id, ativo)
 //   `roleta_config` (id PK, ativa, tipo, usuarios JSON, proximo_index,
@@ -52,6 +56,11 @@ export function RoletaSection() {
   const novoPodeCrud = perm.tem("roleta.configurar") || perm.escopo("roleta.configurar") !== "none";
   const podeAcessar = perm.superAdmin || escopoAcessar !== "none";
 
+  // 🔒 Trava por equipe (Diretor/escopo team)
+  const ehAdminGeralRol = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaRol = (!perm.carregando && !ehAdminGeralRol && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaRol !== null;
+
   const { isDono, permissoes } = usePermissao();
   const [config, setConfig] = useState<RoletaConfig>(CONFIG_PADRAO);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -62,6 +71,8 @@ export function RoletaSection() {
   const [showDropdown, setShowDropdown] = useState(false);
 
   const podeGerenciar = isDono || permissoes.roleta_gerenciar;
+
+  const nomeEquipeForcada = equipes.find(e => String(e.id) === equipeForcadaRol)?.nome || "Minha equipe";
 
   const cardStyle = {
     background: "#ffffff",
@@ -106,6 +117,11 @@ export function RoletaSection() {
 
   useEffect(() => { fetchTudo(); }, []);
 
+  // 🔒 Força o filtro de atendentes pra equipe do usuário restrito
+  useEffect(() => {
+    if (travadoEquipe && equipeForcadaRol) setFiltroEquipeUsuarios(equipeForcadaRol);
+  }, [travadoEquipe, equipeForcadaRol]);
+
   const salvar = async () => {
     setSalvando(true);
     try {
@@ -149,7 +165,11 @@ export function RoletaSection() {
     return equipes.find(e => e.id === equipeId)?.nome || "";
   };
 
-  const usuariosVisiveis = usuarios.filter(u => filtroEquipeUsuarios === "todas" || String(u.equipe_id || "") === filtroEquipeUsuarios);
+  // 🔒 Restrito: só enxerga atendentes da própria equipe
+  const usuariosVisiveis = usuarios.filter(u => {
+    if (travadoEquipe) return String(u.equipe_id || "") === equipeForcadaRol;
+    return filtroEquipeUsuarios === "todas" || String(u.equipe_id || "") === filtroEquipeUsuarios;
+  });
 
   if (!podeGerenciar) {
     return (
@@ -212,6 +232,7 @@ export function RoletaSection() {
           <h1 style={{ color: "#1f2937", fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>Roleta de Distribuição</h1>
           <p style={{ color: "#6b7280", fontSize: 13, margin: "2px 0 0", maxWidth: 720, lineHeight: 1.5 }}>
             Distribui novos leads automaticamente entre os atendentes. O supervisor não precisa ficar dizendo "fulano pega esse lead aí".
+            {travadoEquipe && <> · <b style={{ color: "#7c3aed" }}>👥 {nomeEquipeForcada}</b></>}
           </p>
         </div>
       </div>
@@ -306,7 +327,8 @@ export function RoletaSection() {
             </button>
             {showDropdown && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, zIndex: 100, marginTop: 6, overflow: "hidden", maxHeight: 380, overflowY: "auto", boxShadow: "0 10px 25px rgba(0,0,0,0.10), 0 4px 10px rgba(0,0,0,0.04)" }}>
-                {equipes.length > 0 && (
+                {/* Admin: dropdown de equipe. Restrito: rótulo fixo */}
+                {equipes.length > 0 && !travadoEquipe && (
                   <div style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6", background: "#fafbfc", display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, zIndex: 1 }}>
                     <span style={{ color: "#a855f7", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
                     <select value={filtroEquipeUsuarios} onChange={e => setFiltroEquipeUsuarios(e.target.value)}
@@ -314,6 +336,12 @@ export function RoletaSection() {
                       <option value="todas">Todas as equipes</option>
                       {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
                     </select>
+                  </div>
+                )}
+                {equipes.length > 0 && travadoEquipe && (
+                  <div style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6", background: "#faf5ff", display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, zIndex: 1 }}>
+                    <span style={{ color: "#a855f7", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>👥 Equipe</span>
+                    <span style={{ color: "#7c3aed", fontSize: 12, fontWeight: 700 }}>{nomeEquipeForcada}</span>
                   </div>
                 )}
                 {usuariosVisiveis.length === 0 ? (
@@ -346,11 +374,11 @@ export function RoletaSection() {
                 <div style={{ padding: 10, display: "flex", gap: 6, background: "#f9fafb", borderTop: "1px solid #e5e7eb" }}>
                   <button onClick={() => setConfig(c => ({ ...c, usuarios: [...new Set([...c.usuarios, ...usuariosVisiveis.map(u => u.email)])] }))}
                     style={{ flex: 1, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 8, padding: "7px 12px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>
-                    {filtroEquipeUsuarios === "todas" ? "Selecionar todos" : "Selecionar a equipe"}
+                    {(!travadoEquipe && filtroEquipeUsuarios === "todas") ? "Selecionar todos" : "Selecionar a equipe"}
                   </button>
                   <button onClick={() => { const vis = new Set(usuariosVisiveis.map(u => u.email)); setConfig(c => ({ ...c, usuarios: c.usuarios.filter(e => !vis.has(e)) })); }}
                     style={{ flex: 1, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 12px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>
-                    {filtroEquipeUsuarios === "todas" ? "Desmarcar todos" : "Desmarcar a equipe"}
+                    {(!travadoEquipe && filtroEquipeUsuarios === "todas") ? "Desmarcar todos" : "Desmarcar a equipe"}
                   </button>
                   <button onClick={() => setShowDropdown(false)}
                     style={{ flex: 1, background: "#ffffff", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 8, padding: "7px 12px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
