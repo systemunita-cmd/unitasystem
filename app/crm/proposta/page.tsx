@@ -24,7 +24,7 @@ import {
 
 type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string };
 type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: string };
-type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
+type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type AnexoMeta = { url: string; nome: string; tipo: string; tamanho: number; enviado_em: string };
 
@@ -110,6 +110,11 @@ function PropostaForm() {
   const podeEditarValores = perm.tem("propostas.editar_valores");
   const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
   const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
+
+  // 🔒 Trava por equipe (Diretor/escopo team) — só puxa a equipe de quem cadastra
+  const ehAdminGeralProp = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const equipeForcadaProp = (!perm.carregando && !ehAdminGeralProp && perm.equipeId != null) ? String(perm.equipeId) : null;
+  const travadoEquipe = equipeForcadaProp !== null;
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -256,7 +261,7 @@ function PropostaForm() {
         }
         if (tiposPresentes.has("fila")) {
           promises.push(
-            supabase.from("filas").select("id, nome, cor, icone").order("nome")
+            supabase.from("filas").select("id, nome, cor, icone, equipe_id").order("nome")
               .then(r => { if (r.error?.code === "PGRST205") faltando.push("filas"); setFilasAuto(r.data || []); })
           );
         }
@@ -598,6 +603,31 @@ function PropostaForm() {
     setDirty(true);
   };
 
+  // 🔒 Listas filtradas pra equipe do usuário restrito
+  const equipesVisiveis = travadoEquipe
+    ? equipesAuto.filter(e => String(e.id) === equipeForcadaProp)
+    : equipesAuto;
+  const filasVisiveis = travadoEquipe
+    ? filasAuto.filter(f => String(f.equipe_id ?? "") === equipeForcadaProp)
+    : filasAuto;
+
+  // 🔒 Pré-seleciona a equipe do usuário restrito nos campos do tipo "equipe"
+  useEffect(() => {
+    if (!travadoEquipe || !equipeForcadaProp || camposUnificados.length === 0) return;
+    setDadosCustomizados(prev => {
+      const novo = { ...prev };
+      let mudou = false;
+      for (const c of camposUnificados) {
+        if (c.origem === "custom" && (c.tipo as string) === "equipe" && !novo[c.slug]) {
+          novo[c.slug] = equipeForcadaProp;
+          mudou = true;
+        }
+      }
+      return mudou ? novo : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travadoEquipe, equipeForcadaProp, camposUnificados]);
+
   // ═══ RENDER CAMPOS ═══
   const renderCampoVendedor = () => {
     if (carregandoUsuarios) {
@@ -789,7 +819,7 @@ function PropostaForm() {
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
-          {renderCampoAuto(c, equipesAuto)}
+          {renderCampoAuto(c, equipesVisiveis)}
         </div>
       );
     }
@@ -797,7 +827,7 @@ function PropostaForm() {
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
-          {renderCampoAuto(c, filasAuto)}
+          {renderCampoAuto(c, filasVisiveis)}
         </div>
       );
     }
