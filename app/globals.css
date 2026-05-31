@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Sistema Unita é sempre claro — trava o tema pra inputs/scrollbars
+     nativos não virarem escuros quando o SO está em modo dark. */
+  color-scheme: light;
 }
 
 @theme inline {
@@ -15,15 +18,21 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ❌ REMOVIDO: @media (prefers-color-scheme: dark)
+   Era ele que deixava o --background preto (#0a0a0a) quando o navegador/SO
+   estava em modo escuro, fazendo o fundo do sistema inteiro ficar preto. */
+
+html {
+  color-scheme: light;
+  background: #f8fafc;
 }
 
+html,
 body {
-  background: var(--background);
+  /* Fundo cinza bem claro padrão dos painéis — nunca preto.
+     Cobre qualquer área que sobre, sem faixas escuras. */
+  min-height: 100%;
+  background: #f8fafc;
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
