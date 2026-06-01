@@ -1,6 +1,59 @@
 "use client";
 import { useState, useEffect } from "react";
+import type { ComponentType } from "react";
 import { DashboardSection } from "./_sections/dashboardsection";
+import { IndicadoresSection } from "./_sections/indicadoressection";
+import { FuncionariosSection } from "./_sections/funcionariossection";
+import { DepartamentosSection } from "./_sections/departamentossection";
+import { CargosSection } from "./_sections/cargossection";
+import { FolhaSection } from "./_sections/folhasection";
+import { HoleritesSection } from "./_sections/holeritessection";
+import { EncargosSection } from "./_sections/encargossection";
+import { PontoSection } from "./_sections/pontosection";
+import { FeriasSection } from "./_sections/feriassection";
+import { AfastamentosSection } from "./_sections/afastamentossection";
+import { BancoHorasSection } from "./_sections/bancohorassection";
+import { BeneficiosSection } from "./_sections/beneficiossection";
+import { ValeTransporteSection } from "./_sections/valetransportesection";
+import { ValeRefeicaoSection } from "./_sections/valerefeicaosection";
+import { PlanoSaudeSection } from "./_sections/planosaudesection";
+import { VagasSection } from "./_sections/vagassection";
+import { CandidatosSection } from "./_sections/candidatossection";
+import { SelecaoSection } from "./_sections/selecaosection";
+import { TreinamentosSection } from "./_sections/treinamentossection";
+import { AvaliacoesSection } from "./_sections/avaliacoessection";
+import { DocumentosSection } from "./_sections/documentossection";
+import { ContratosSection } from "./_sections/contratossection";
+import { ConfigSection } from "./_sections/configsection";
+
+// 🗂️ Registry de seções — cada key bate com a key do menu (GRUPOS).
+// Pra ligar uma nova section: importe acima e adicione uma linha aqui.
+const SECTIONS: Record<string, ComponentType> = {
+  dashboard: DashboardSection,
+  indicadores: IndicadoresSection,
+  funcionarios: FuncionariosSection,
+  departamentos: DepartamentosSection,
+  cargos: CargosSection,
+  folha: FolhaSection,
+  holerites: HoleritesSection,
+  encargos: EncargosSection,
+  ponto: PontoSection,
+  ferias: FeriasSection,
+  afastamentos: AfastamentosSection,
+  banco_horas: BancoHorasSection,
+  beneficios: BeneficiosSection,
+  vale_transporte: ValeTransporteSection,
+  vale_refeicao: ValeRefeicaoSection,
+  plano_saude: PlanoSaudeSection,
+  vagas: VagasSection,
+  candidatos: CandidatosSection,
+  selecao: SelecaoSection,
+  treinamentos: TreinamentosSection,
+  avaliacoes: AvaliacoesSection,
+  documentos: DocumentosSection,
+  contratos: ContratosSection,
+  config: ConfigSection,
+};
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🧑‍💼 RH — Shell do módulo (UnitaSystem)
@@ -186,9 +239,10 @@ export default function RHLayolt() {
 
       {/* CONTEÚDO */}
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
-        {aba === "dashboard"
-          ? <DashboardSection />
-          : <EmConstrucao titulo={LABELS[aba] || "Seção"} />}
+        {(() => {
+          const Comp = SECTIONS[aba];
+          return Comp ? <Comp /> : <EmConstrucao titulo={LABELS[aba] || "Seção"} />;
+        })()}
       </div>
     </div>
   );
