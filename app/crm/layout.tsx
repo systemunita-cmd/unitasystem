@@ -226,6 +226,34 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             background: #d1fae5;
             border-color: #10b981;
           }
+          .shortcut-financeiro {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #b45309;
+          }
+          .shortcut-financeiro:hover {
+            background: #fef3c7;
+            border-color: #fcd34d;
+            box-shadow: 0 2px 6px rgba(180, 83, 9, 0.15);
+          }
+          .shortcut-financeiro.active {
+            background: #fef3c7;
+            border-color: #f59e0b;
+          }
+          .shortcut-rh {
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #4338ca;
+          }
+          .shortcut-rh:hover {
+            background: #e0e7ff;
+            border-color: #a5b4fc;
+            box-shadow: 0 2px 6px rgba(67, 56, 202, 0.15);
+          }
+          .shortcut-rh.active {
+            background: #e0e7ff;
+            border-color: #6366f1;
+          }
           .logout-btn {
             display: flex;
             align-items: center;
@@ -466,6 +494,20 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             className={`shortcut-btn shortcut-cobranca ${isActive("/crm/cobranca") ? "active" : ""}`}
           >
             <span>🧾</span> Cobrança
+          </button>
+
+          <button
+            onClick={() => navegarPara("/crm/financeiro")}
+            className={`shortcut-btn shortcut-financeiro ${isActive("/crm/financeiro") ? "active" : ""}`}
+          >
+            <span>💵</span> Financeiro
+          </button>
+
+          <button
+            onClick={() => navegarPara("/crm/rh")}
+            className={`shortcut-btn shortcut-rh ${isActive("/crm/rh") ? "active" : ""}`}
+          >
+            <span>🧑‍💼</span> RH
           </button>
 
           {/* Botão Sair (fundo) */}
