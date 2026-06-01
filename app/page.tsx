@@ -4,9 +4,8 @@ import Link from "next/link";
 export default function Home() {
   return (
     <div style={{
-      flex: 1,                     // 🔧 preenche o <body min-h-full flex flex-col>, sem deixar sobra branca no fundo
-      minHeight: "100vh",          // 🔧 garante a viewport inteira (igual ao Wolf) — nunca encolhe
-      width: "100%",
+      position: "fixed",           // 🔧 trava na viewport inteira, fora do fluxo — nada empurra, sem scroll
+      inset: 0,                    // top/right/bottom/left = 0 → cobre a tela completa
       background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
       display: "flex",
       flexDirection: "column",
@@ -14,7 +13,6 @@ export default function Home() {
       justifyContent: "center",
       padding: "32px",
       fontFamily: "Arial, sans-serif",
-      position: "relative",
       overflow: "hidden",
     }}>
       {/* Brilho decorativo de fundo */}
