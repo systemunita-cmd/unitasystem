@@ -1,31 +1,18 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
+import { supabase } from "../../../lib/supabase";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🧑‍💼 RH · Funcionários
+// 🧑‍💼 RH · Funcionários  (CONECTADO AO SUPABASE — tabela 'funcionarios')
 // ───────────────────────────────────────────────────────────────────────
-// Cadastro de pessoas: lista/tabela com busca e filtros + modal de
-// cadastro/edição. Base de todo o RH (folha, ponto, férias apontam aqui).
-// Dados MOCK em estado local — salvar/excluir mexe só no array por enquanto.
-// Pra produção, trocar pelas queries do Supabase (tabela 'funcionarios').
-//
-// 📋 Estrutura sugerida da tabela `funcionarios`:
-//   id (uuid, pk) · nome (text) · cpf (text) · email (text) · telefone (text)
-//   cargo (text) · departamento (text) · admissao (date) · salario (numeric)
-//   status (text: ativo|ferias|afastado|desligado) · created_at (timestamptz)
+// select ao abrir · insert/update/delete nos botões. Os campos batem 1:1
+// com as colunas da tabela. 'admissao' vazio vira null (coluna date).
 // ═══════════════════════════════════════════════════════════════════════
 
 const COR = "#4f46e5";
 const COR_TEXTO = "#4338ca";
-
-const card = {
-  background: "#ffffff", borderRadius: 14, border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-};
-const inputStyle = {
-  width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10,
-  padding: "10px 14px", color: "#1f2937", fontSize: 13, boxSizing: "border-box" as const, outline: "none",
-};
+const card = { background: "#ffffff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
+const inputStyle = { width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", color: "#1f2937", fontSize: 13, boxSizing: "border-box" as const, outline: "none" };
 
 const DEPARTAMENTOS = ["Comercial", "Atendimento", "Financeiro", "TI", "Administrativo"];
 
@@ -35,16 +22,6 @@ type Funcionario = {
   cargo: string; departamento: string; admissao: string; salario: number; status: Status;
 };
 
-const MOCK: Funcionario[] = [
-  { id: "1", nome: "Ana Beatriz Souza", cpf: "123.456.789-01", email: "ana.souza@grupounita.net.br", telefone: "(62) 99111-2233", cargo: "Analista Comercial", departamento: "Comercial", admissao: "2023-03-12", salario: 3800, status: "ativo" },
-  { id: "2", nome: "Carlos Mendes", cpf: "234.567.890-12", email: "carlos.mendes@grupounita.net.br", telefone: "(62) 99222-3344", cargo: "Supervisor de Atendimento", departamento: "Atendimento", admissao: "2021-07-01", salario: 5200, status: "ativo" },
-  { id: "3", nome: "Juliana Prado", cpf: "345.678.901-23", email: "juliana.prado@grupounita.net.br", telefone: "(62) 99333-4455", cargo: "Desenvolvedora", departamento: "TI", admissao: "2022-11-20", salario: 7100, status: "ferias" },
-  { id: "4", nome: "Rafael Lima", cpf: "456.789.012-34", email: "rafael.lima@grupounita.net.br", telefone: "(62) 99444-5566", cargo: "Assistente Financeiro", departamento: "Financeiro", admissao: "2024-01-15", salario: 2900, status: "ativo" },
-  { id: "5", nome: "Patrícia Gomes", cpf: "567.890.123-45", email: "patricia.gomes@grupounita.net.br", telefone: "(62) 99555-6677", cargo: "Gerente Administrativo", departamento: "Administrativo", admissao: "2020-02-10", salario: 8400, status: "ativo" },
-  { id: "6", nome: "Bruno Tavares", cpf: "678.901.234-56", email: "bruno.tavares@grupounita.net.br", telefone: "(62) 99666-7788", cargo: "Atendente", departamento: "Atendimento", admissao: "2023-09-05", salario: 2400, status: "afastado" },
-  { id: "7", nome: "Larissa Nunes", cpf: "789.012.345-67", email: "larissa.nunes@grupounita.net.br", telefone: "(62) 99777-8899", cargo: "Vendedora", departamento: "Comercial", admissao: "2024-05-02", salario: 2600, status: "ativo" },
-];
-
 const STATUS_INFO: Record<Status, { label: string; cor: string }> = {
   ativo: { label: "Ativo", cor: "#16a34a" },
   ferias: { label: "Em férias", cor: "#0ea5e9" },
@@ -52,34 +29,45 @@ const STATUS_INFO: Record<Status, { label: string; cor: string }> = {
   desligado: { label: "Desligado", cor: "#6b7280" },
 };
 
-const real = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const dataBR = (iso: string) => { try { return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR"); } catch { return iso; } };
+const real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const dataBR = (iso: string) => { if (!iso) return "—"; try { return new Date(iso + "T00:00:00").toLocaleDateString("pt-BR"); } catch { return iso; } };
 
 const FORM_VAZIO: Funcionario = { id: "", nome: "", cpf: "", email: "", telefone: "", cargo: "", departamento: DEPARTAMENTOS[0], admissao: "", salario: 0, status: "ativo" };
 
 export function FuncionariosSection() {
-  const [lista, setLista] = useState<Funcionario[]>(MOCK);
+  const [lista, setLista] = useState<Funcionario[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [filtroDepto, setFiltroDepto] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
 
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState<Funcionario>(FORM_VAZIO);
+  const [salvando, setSalvando] = useState(false);
   const editando = !!form.id;
 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
+    check(); window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // 🔌 Carrega da tabela
+  const carregar = async () => {
+    setCarregando(true);
+    const { data, error } = await supabase.from("funcionarios").select("*").order("created_at", { ascending: false });
+    if (error) { console.error(error); alert("Erro ao carregar funcionários: " + error.message); }
+    else setLista((data || []) as Funcionario[]);
+    setCarregando(false);
+  };
+  useEffect(() => { carregar(); }, []);
 
   const filtrados = useMemo(() => {
     let l = lista;
     if (busca) {
       const b = busca.toLowerCase();
-      l = l.filter(f => f.nome.toLowerCase().includes(b) || f.cpf.includes(busca) || f.cargo.toLowerCase().includes(b) || f.email.toLowerCase().includes(b));
+      l = l.filter(f => (f.nome || "").toLowerCase().includes(b) || (f.cpf || "").includes(busca) || (f.cargo || "").toLowerCase().includes(b) || (f.email || "").toLowerCase().includes(b));
     }
     if (filtroDepto !== "todos") l = l.filter(f => f.departamento === filtroDepto);
     if (filtroStatus !== "todos") l = l.filter(f => f.status === filtroStatus);
@@ -90,28 +78,37 @@ export function FuncionariosSection() {
     total: lista.length,
     ativos: lista.filter(f => f.status === "ativo").length,
     ferias: lista.filter(f => f.status === "ferias").length,
-    folha: lista.filter(f => f.status !== "desligado").reduce((s, f) => s + f.salario, 0),
+    folha: lista.filter(f => f.status !== "desligado").reduce((s, f) => s + (f.salario || 0), 0),
   }), [lista]);
 
   const abrirNovo = () => { setForm(FORM_VAZIO); setModalAberto(true); };
-  const abrirEditar = (f: Funcionario) => { setForm({ ...f }); setModalAberto(true); };
+  const abrirEditar = (f: Funcionario) => { setForm({ ...f, admissao: f.admissao || "" }); setModalAberto(true); };
   const fechar = () => { setModalAberto(false); setForm(FORM_VAZIO); };
 
-  const salvar = () => {
+  // 🔌 insert / update
+  const salvar = async () => {
     if (!form.nome.trim()) { alert("Informe o nome do funcionário."); return; }
-    if (editando) {
-      setLista(l => l.map(f => f.id === form.id ? form : f));
-    } else {
-      setLista(l => [{ ...form, id: Date.now().toString() }, ...l]);
-    }
-    // 🔌 Supabase: substituir por insert/update na tabela 'funcionarios'
+    setSalvando(true);
+    const payload = {
+      nome: form.nome, cpf: form.cpf, email: form.email, telefone: form.telefone,
+      cargo: form.cargo, departamento: form.departamento,
+      admissao: form.admissao || null, salario: form.salario || 0, status: form.status,
+    };
+    const resp = editando
+      ? await supabase.from("funcionarios").update(payload).eq("id", form.id)
+      : await supabase.from("funcionarios").insert(payload);
+    setSalvando(false);
+    if (resp.error) { alert("Erro ao salvar: " + resp.error.message); return; }
     fechar();
+    carregar();
   };
 
-  const excluir = (f: Funcionario) => {
+  // 🔌 delete
+  const excluir = async (f: Funcionario) => {
     if (!confirm(`Remover ${f.nome} do quadro?`)) return;
-    setLista(l => l.filter(x => x.id !== f.id));
-    // 🔌 Supabase: substituir por delete na tabela 'funcionarios'
+    const { error } = await supabase.from("funcionarios").delete().eq("id", f.id);
+    if (error) { alert("Erro ao excluir: " + error.message); return; }
+    carregar();
   };
 
   const set = (campo: keyof Funcionario, valor: any) => setForm(f => ({ ...f, [campo]: valor }));
@@ -169,15 +166,19 @@ export function FuncionariosSection() {
       </div>
 
       {/* LISTA */}
-      {filtrados.length === 0 ? (
+      {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 36, margin: "0 0 8px" }}>🔍</p>
-          <p style={{ color: "#6b7280", fontSize: 13 }}>Nenhum funcionário com esses filtros</p>
+          <p style={{ color: "#6b7280", fontSize: 13 }}>Carregando funcionários...</p>
+        </div>
+      ) : filtrados.length === 0 ? (
+        <div style={{ ...card, padding: 40, textAlign: "center" }}>
+          <p style={{ fontSize: 36, margin: "0 0 8px" }}>{lista.length === 0 ? "📭" : "🔍"}</p>
+          <p style={{ color: "#6b7280", fontSize: 13 }}>{lista.length === 0 ? "Nenhum funcionário cadastrado ainda. Clique em “+ Novo Funcionário”." : "Nenhum funcionário com esses filtros"}</p>
         </div>
       ) : isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {filtrados.map(f => {
-            const st = STATUS_INFO[f.status];
+            const st = STATUS_INFO[f.status] || STATUS_INFO.ativo;
             return (
               <div key={f.id} onClick={() => abrirEditar(f)} style={{ ...card, padding: 14, cursor: "pointer", borderLeft: `4px solid ${st.cor}`, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -209,7 +210,7 @@ export function FuncionariosSection() {
               </thead>
               <tbody>
                 {filtrados.map((f, i) => {
-                  const st = STATUS_INFO[f.status];
+                  const st = STATUS_INFO[f.status] || STATUS_INFO.ativo;
                   return (
                     <tr key={f.id} onClick={() => abrirEditar(f)}
                       style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#ffffff" : "#fafbfc", cursor: "pointer" }}
@@ -273,15 +274,11 @@ export function FuncionariosSection() {
             </div>
             <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", gap: 10, justifyContent: "flex-end", background: "#f9fafb" }}>
               <button onClick={fechar} style={{ background: "#ffffff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 18px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={salvar} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40` }}>{editando ? "💾 Salvar" : "+ Cadastrar"}</button>
+              <button onClick={salvar} disabled={salvando} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: salvando ? "wait" : "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40`, opacity: salvando ? 0.7 : 1 }}>{salvando ? "Salvando..." : editando ? "💾 Salvar" : "+ Cadastrar"}</button>
             </div>
           </div>
         </div>
       )}
-
-      <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, textAlign: "center", fontStyle: "italic" }}>
-        Dados de exemplo — conecte à tabela <b>funcionarios</b> do Supabase pra persistir de verdade.
-      </p>
     </div>
   );
 }

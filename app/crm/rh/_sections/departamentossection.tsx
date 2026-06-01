@@ -1,62 +1,58 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
+import { supabase } from "../../../lib/supabase";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🧑‍💼 RH · Departamentos
+// 🧑‍💼 RH · Departamentos  (CONECTADO — tabela 'departamentos')
 // ───────────────────────────────────────────────────────────────────────
-// Estrutura organizacional: lista de departamentos com gestor responsável,
-// nº de pessoas alocadas e centro de custo. Alimenta o cadastro de
-// funcionários (campo departamento) e o rateio do financeiro.
-// Dados MOCK em estado local. Pra produção, ligar na tabela 'departamentos'.
-//
-// 📋 Estrutura sugerida da tabela `departamentos`:
-//   id (uuid, pk) · nome (text) · gestor (text) · centro_custo (text)
-//   descricao (text) · created_at (timestamptz)
-//   (a contagem de pessoas vem de um count em 'funcionarios' por departamento)
+// Coluna do banco: centro_custo. No app uso centroCusto (mapeado nas bordas).
+// qtdFuncionarios = contagem real em 'funcionarios' por departamento.
 // ═══════════════════════════════════════════════════════════════════════
 
 const COR = "#4f46e5";
 const COR_TEXTO = "#4338ca";
-
-const card = {
-  background: "#ffffff", borderRadius: 14, border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-};
-const inputStyle = {
-  width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10,
-  padding: "10px 14px", color: "#1f2937", fontSize: 13, boxSizing: "border-box" as const, outline: "none",
-};
+const card = { background: "#ffffff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
+const inputStyle = { width: "100%", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", color: "#1f2937", fontSize: 13, boxSizing: "border-box" as const, outline: "none" };
 
 const PALETA = ["#6366f1", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6"];
 
-type Departamento = {
-  id: string; nome: string; gestor: string; centroCusto: string; descricao: string; qtdFuncionarios: number;
-};
-
-const MOCK: Departamento[] = [
-  { id: "1", nome: "Comercial", gestor: "Patrícia Gomes", centroCusto: "CC-001", descricao: "Vendas, prospecção e relacionamento com clientes.", qtdFuncionarios: 28 },
-  { id: "2", nome: "Atendimento", gestor: "Carlos Mendes", centroCusto: "CC-002", descricao: "Suporte e atendimento ao cliente via WhatsApp e telefone.", qtdFuncionarios: 34 },
-  { id: "3", nome: "Financeiro", gestor: "Rafael Lima", centroCusto: "CC-003", descricao: "Contas a pagar/receber, faturamento e cobrança.", qtdFuncionarios: 9 },
-  { id: "4", nome: "TI", gestor: "Juliana Prado", centroCusto: "CC-004", descricao: "Desenvolvimento, infraestrutura e suporte técnico.", qtdFuncionarios: 12 },
-  { id: "5", nome: "Administrativo", gestor: "Patrícia Gomes", centroCusto: "CC-005", descricao: "RH, compras e rotinas administrativas.", qtdFuncionarios: 7 },
-];
-
+type Departamento = { id: string; nome: string; gestor: string; centroCusto: string; descricao: string; qtdFuncionarios: number };
 const FORM_VAZIO: Departamento = { id: "", nome: "", gestor: "", centroCusto: "", descricao: "", qtdFuncionarios: 0 };
 
 export function DepartamentosSection() {
-  const [lista, setLista] = useState<Departamento[]>(MOCK);
+  const [lista, setLista] = useState<Departamento[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState<Departamento>(FORM_VAZIO);
+  const [salvando, setSalvando] = useState(false);
   const editando = !!form.id;
 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
+    check(); window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // 🔌 Carrega departamentos + contagem de funcionários por departamento
+  const carregar = async () => {
+    setCarregando(true);
+    const [depsResp, funcsResp] = await Promise.all([
+      supabase.from("departamentos").select("*").order("created_at", { ascending: false }),
+      supabase.from("funcionarios").select("departamento"),
+    ]);
+    if (depsResp.error) { console.error(depsResp.error); alert("Erro ao carregar departamentos: " + depsResp.error.message); setCarregando(false); return; }
+    const contagem: Record<string, number> = {};
+    (funcsResp.data || []).forEach((f: any) => { if (f.departamento) contagem[f.departamento] = (contagem[f.departamento] || 0) + 1; });
+    const mapeada: Departamento[] = (depsResp.data || []).map((d: any) => ({
+      id: d.id, nome: d.nome, gestor: d.gestor || "", centroCusto: d.centro_custo || "", descricao: d.descricao || "",
+      qtdFuncionarios: contagem[d.nome] || 0,
+    }));
+    setLista(mapeada);
+    setCarregando(false);
+  };
+  useEffect(() => { carregar(); }, []);
 
   const filtrados = useMemo(() => {
     if (!busca) return lista;
@@ -71,18 +67,26 @@ export function DepartamentosSection() {
   const abrirEditar = (d: Departamento) => { setForm({ ...d }); setModalAberto(true); };
   const fechar = () => { setModalAberto(false); setForm(FORM_VAZIO); };
 
-  const salvar = () => {
+  // 🔌 insert / update (mapeando centroCusto -> centro_custo)
+  const salvar = async () => {
     if (!form.nome.trim()) { alert("Informe o nome do departamento."); return; }
-    if (editando) setLista(l => l.map(d => d.id === form.id ? form : d));
-    else setLista(l => [{ ...form, id: Date.now().toString() }, ...l]);
-    // 🔌 Supabase: insert/update na tabela 'departamentos'
+    setSalvando(true);
+    const payload = { nome: form.nome, gestor: form.gestor, centro_custo: form.centroCusto, descricao: form.descricao };
+    const resp = editando
+      ? await supabase.from("departamentos").update(payload).eq("id", form.id)
+      : await supabase.from("departamentos").insert(payload);
+    setSalvando(false);
+    if (resp.error) { alert("Erro ao salvar: " + resp.error.message); return; }
     fechar();
+    carregar();
   };
 
-  const excluir = (d: Departamento) => {
+  // 🔌 delete
+  const excluir = async (d: Departamento) => {
     if (!confirm(`Remover o departamento "${d.nome}"?`)) return;
-    setLista(l => l.filter(x => x.id !== d.id));
-    // 🔌 Supabase: delete na tabela 'departamentos'
+    const { error } = await supabase.from("departamentos").delete().eq("id", d.id);
+    if (error) { alert("Erro ao excluir: " + error.message); return; }
+    carregar();
   };
 
   const set = (campo: keyof Departamento, valor: any) => setForm(f => ({ ...f, [campo]: valor }));
@@ -90,7 +94,6 @@ export function DepartamentosSection() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* HEADER */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: `0 8px 20px ${COR}30` }}>
@@ -107,7 +110,6 @@ export function DepartamentosSection() {
         </button>
       </div>
 
-      {/* MINI STATS */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 14 }}>
         {[
           { label: "Departamentos", value: String(lista.length), cor: "#6366f1", icon: "🏢" },
@@ -124,17 +126,17 @@ export function DepartamentosSection() {
         ))}
       </div>
 
-      {/* BUSCA */}
       <div style={{ ...card, padding: 14 }}>
         <input placeholder="🔍 Buscar por nome, gestor ou centro de custo..." value={busca} onChange={e => setBusca(e.target.value)}
           style={{ ...inputStyle, borderRadius: 20 }} />
       </div>
 
-      {/* GRID DE DEPARTAMENTOS */}
-      {filtrados.length === 0 ? (
+      {carregando ? (
+        <div style={{ ...card, padding: 40, textAlign: "center" }}><p style={{ color: "#6b7280", fontSize: 13 }}>Carregando departamentos...</p></div>
+      ) : filtrados.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 36, margin: "0 0 8px" }}>🔍</p>
-          <p style={{ color: "#6b7280", fontSize: 13 }}>Nenhum departamento encontrado</p>
+          <p style={{ fontSize: 36, margin: "0 0 8px" }}>{lista.length === 0 ? "📭" : "🔍"}</p>
+          <p style={{ color: "#6b7280", fontSize: 13 }}>{lista.length === 0 ? "Nenhum departamento cadastrado ainda." : "Nenhum departamento encontrado"}</p>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
@@ -148,7 +150,7 @@ export function DepartamentosSection() {
                     <div style={{ width: 40, height: 40, borderRadius: 11, background: `${cor}15`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>🏢</div>
                     <div style={{ minWidth: 0 }}>
                       <p style={{ color: "#1f2937", fontSize: 15, fontWeight: 800, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nome}</p>
-                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{d.centroCusto}</p>
+                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{d.centroCusto || "—"}</p>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
@@ -180,7 +182,6 @@ export function DepartamentosSection() {
         </div>
       )}
 
-      {/* MODAL */}
       {modalAberto && (
         <div onClick={fechar} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(4px)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...card, width: "100%", maxWidth: 520, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -200,24 +201,15 @@ export function DepartamentosSection() {
             </div>
             <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", gap: 10, justifyContent: "flex-end", background: "#f9fafb" }}>
               <button onClick={fechar} style={{ background: "#ffffff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 18px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={salvar} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40` }}>{editando ? "💾 Salvar" : "+ Cadastrar"}</button>
+              <button onClick={salvar} disabled={salvando} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: salvando ? "wait" : "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40`, opacity: salvando ? 0.7 : 1 }}>{salvando ? "Salvando..." : editando ? "💾 Salvar" : "+ Cadastrar"}</button>
             </div>
           </div>
         </div>
       )}
-
-      <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, textAlign: "center", fontStyle: "italic" }}>
-        Dados de exemplo — conecte à tabela <b>departamentos</b> do Supabase pra persistir de verdade.
-      </p>
     </div>
   );
 }
 
 function Campo({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>{label}</label>
-      {children}
-    </div>
-  );
+  return (<div><label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>{label}</label>{children}</div>);
 }

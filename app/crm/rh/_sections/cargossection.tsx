@@ -1,14 +1,12 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
+import { supabase } from "../../../lib/supabase";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🧑‍💼 RH · Cargos & Salários
+// 🧑‍💼 RH · Cargos & Salários  (CONECTADO — tabela 'cargos')
 // ───────────────────────────────────────────────────────────────────────
-// Plano de cargos: nível, departamento e faixa salarial (mín/méd/máx) +
-// nº de ocupantes. Base pra folha e para o cadastro de funcionários.
-// MOCK em estado local. Tabela sugerida `cargos`:
-//   id (uuid) · nome (text) · departamento (text) · nivel (text)
-//   sal_min (numeric) · sal_med (numeric) · sal_max (numeric) · created_at
+// Colunas do banco: sal_min, sal_med, sal_max (mapeadas p/ salMin/Med/Max).
+// ocupantes = contagem real em 'funcionarios' por cargo (campo cargo = nome).
 // ═══════════════════════════════════════════════════════════════════════
 
 const COR = "#4f46e5";
@@ -21,26 +19,17 @@ const NIVEIS = ["Júnior", "Pleno", "Sênior", "Especialista", "Gestão"];
 const NIVEL_COR: Record<string, string> = { "Júnior": "#0ea5e9", "Pleno": "#6366f1", "Sênior": "#8b5cf6", "Especialista": "#ec4899", "Gestão": "#f59e0b" };
 
 type Cargo = { id: string; nome: string; departamento: string; nivel: string; salMin: number; salMed: number; salMax: number; ocupantes: number };
-
-const MOCK: Cargo[] = [
-  { id: "1", nome: "Atendente", departamento: "Atendimento", nivel: "Júnior", salMin: 1800, salMed: 2200, salMax: 2700, ocupantes: 22 },
-  { id: "2", nome: "Supervisor de Atendimento", departamento: "Atendimento", nivel: "Gestão", salMin: 4500, salMed: 5200, salMax: 6200, ocupantes: 4 },
-  { id: "3", nome: "Vendedor", departamento: "Comercial", nivel: "Pleno", salMin: 2200, salMed: 2800, salMax: 3600, ocupantes: 18 },
-  { id: "4", nome: "Analista Comercial", departamento: "Comercial", nivel: "Pleno", salMin: 3200, salMed: 3900, salMax: 4800, ocupantes: 6 },
-  { id: "5", nome: "Desenvolvedor", departamento: "TI", nivel: "Sênior", salMin: 6000, salMed: 7500, salMax: 9500, ocupantes: 8 },
-  { id: "6", nome: "Assistente Financeiro", departamento: "Financeiro", nivel: "Júnior", salMin: 2200, salMed: 2900, salMax: 3500, ocupantes: 5 },
-  { id: "7", nome: "Gerente Administrativo", departamento: "Administrativo", nivel: "Gestão", salMin: 7000, salMed: 8400, salMax: 10500, ocupantes: 2 },
-];
-
 const FORM_VAZIO: Cargo = { id: "", nome: "", departamento: DEPARTAMENTOS[0], nivel: NIVEIS[0], salMin: 0, salMed: 0, salMax: 0, ocupantes: 0 };
-const real = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
 export function CargosSection() {
-  const [lista, setLista] = useState<Cargo[]>(MOCK);
+  const [lista, setLista] = useState<Cargo[]>([]);
+  const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [filtroNivel, setFiltroNivel] = useState("todos");
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState<Cargo>(FORM_VAZIO);
+  const [salvando, setSalvando] = useState(false);
   const editando = !!form.id;
 
   const [isMobile, setIsMobile] = useState(false);
@@ -49,6 +38,26 @@ export function CargosSection() {
     check(); window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // 🔌 Carrega cargos + contagem de ocupantes por cargo
+  const carregar = async () => {
+    setCarregando(true);
+    const [cargosResp, funcsResp] = await Promise.all([
+      supabase.from("cargos").select("*").order("created_at", { ascending: false }),
+      supabase.from("funcionarios").select("cargo"),
+    ]);
+    if (cargosResp.error) { console.error(cargosResp.error); alert("Erro ao carregar cargos: " + cargosResp.error.message); setCarregando(false); return; }
+    const contagem: Record<string, number> = {};
+    (funcsResp.data || []).forEach((f: any) => { if (f.cargo) contagem[f.cargo] = (contagem[f.cargo] || 0) + 1; });
+    const mapeada: Cargo[] = (cargosResp.data || []).map((c: any) => ({
+      id: c.id, nome: c.nome, departamento: c.departamento || "", nivel: c.nivel || NIVEIS[0],
+      salMin: Number(c.sal_min) || 0, salMed: Number(c.sal_med) || 0, salMax: Number(c.sal_max) || 0,
+      ocupantes: contagem[c.nome] || 0,
+    }));
+    setLista(mapeada);
+    setCarregando(false);
+  };
+  useEffect(() => { carregar(); }, []);
 
   const filtrados = useMemo(() => {
     let l = lista;
@@ -63,13 +72,29 @@ export function CargosSection() {
   const abrirNovo = () => { setForm(FORM_VAZIO); setModalAberto(true); };
   const abrirEditar = (c: Cargo) => { setForm({ ...c }); setModalAberto(true); };
   const fechar = () => { setModalAberto(false); setForm(FORM_VAZIO); };
-  const salvar = () => {
+
+  // 🔌 insert / update (salMin/Med/Max -> sal_min/med/max)
+  const salvar = async () => {
     if (!form.nome.trim()) { alert("Informe o nome do cargo."); return; }
-    if (editando) setLista(l => l.map(c => c.id === form.id ? form : c));
-    else setLista(l => [{ ...form, id: Date.now().toString() }, ...l]);
-    fechar(); // 🔌 Supabase: insert/update em 'cargos'
+    setSalvando(true);
+    const payload = { nome: form.nome, departamento: form.departamento, nivel: form.nivel, sal_min: form.salMin || 0, sal_med: form.salMed || 0, sal_max: form.salMax || 0 };
+    const resp = editando
+      ? await supabase.from("cargos").update(payload).eq("id", form.id)
+      : await supabase.from("cargos").insert(payload);
+    setSalvando(false);
+    if (resp.error) { alert("Erro ao salvar: " + resp.error.message); return; }
+    fechar();
+    carregar();
   };
-  const excluir = (c: Cargo) => { if (!confirm(`Remover o cargo "${c.nome}"?`)) return; setLista(l => l.filter(x => x.id !== c.id)); };
+
+  // 🔌 delete
+  const excluir = async (c: Cargo) => {
+    if (!confirm(`Remover o cargo "${c.nome}"?`)) return;
+    const { error } = await supabase.from("cargos").delete().eq("id", c.id);
+    if (error) { alert("Erro ao excluir: " + error.message); return; }
+    carregar();
+  };
+
   const set = (k: keyof Cargo, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   return (
@@ -109,8 +134,10 @@ export function CargosSection() {
         </select>
       </div>
 
-      {filtrados.length === 0 ? (
-        <div style={{ ...card, padding: 40, textAlign: "center" }}><p style={{ fontSize: 36, margin: "0 0 8px" }}>🔍</p><p style={{ color: "#6b7280", fontSize: 13 }}>Nenhum cargo encontrado</p></div>
+      {carregando ? (
+        <div style={{ ...card, padding: 40, textAlign: "center" }}><p style={{ color: "#6b7280", fontSize: 13 }}>Carregando cargos...</p></div>
+      ) : filtrados.length === 0 ? (
+        <div style={{ ...card, padding: 40, textAlign: "center" }}><p style={{ fontSize: 36, margin: "0 0 8px" }}>{lista.length === 0 ? "📭" : "🔍"}</p><p style={{ color: "#6b7280", fontSize: 13 }}>{lista.length === 0 ? "Nenhum cargo cadastrado ainda." : "Nenhum cargo encontrado"}</p></div>
       ) : (
         <div style={{ ...card, overflow: "hidden" }}>
           <div style={{ overflowX: "auto" }}>
@@ -164,13 +191,11 @@ export function CargosSection() {
             </div>
             <div style={{ padding: "14px 24px", borderTop: "1px solid #e5e7eb", display: "flex", gap: 10, justifyContent: "flex-end", background: "#f9fafb" }}>
               <button onClick={fechar} style={{ background: "#ffffff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 18px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
-              <button onClick={salvar} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40` }}>{editando ? "💾 Salvar" : "+ Cadastrar"}</button>
+              <button onClick={salvar} disabled={salvando} style={{ background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`, color: "white", border: "none", borderRadius: 10, padding: "9px 22px", fontSize: 13, cursor: salvando ? "wait" : "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${COR}40`, opacity: salvando ? 0.7 : 1 }}>{salvando ? "Salvando..." : editando ? "💾 Salvar" : "+ Cadastrar"}</button>
             </div>
           </div>
         </div>
       )}
-
-      <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, textAlign: "center", fontStyle: "italic" }}>Dados de exemplo — conecte à tabela <b>cargos</b> do Supabase.</p>
     </div>
   );
 }
