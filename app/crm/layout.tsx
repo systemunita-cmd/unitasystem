@@ -126,10 +126,13 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     <AuthGuard>
       <div style={{
         display: "flex",
-        height: "100vh",
+        // 🔧 App-shell travado na viewport: fixed + inset 0 → a JANELA nunca rola.
+        // (antes era height: 100vh dentro do body flex-col, o que gerava scroll duplo/gigante.)
+        // O scroll fica 100% interno na área de conteúdo (overflowY: auto), como deve ser num dashboard.
+        position: "fixed",
+        inset: 0,
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         background: "#f8fafc",
-        position: "relative",
       }}>
 
         {/* Estilos globais para hover/transições */}
