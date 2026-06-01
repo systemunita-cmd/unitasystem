@@ -4,7 +4,9 @@ import Link from "next/link";
 export default function Home() {
   return (
     <div style={{
-      minHeight: "100vh",
+      flex: "1 0 auto",            // 🔧 preenche o <body min-h-full flex flex-col> sem estourar com 100vh
+      minHeight: 0,                // 🔧 deixa o flex item se ajustar certinho (sem sobra no fundo)
+      width: "100%",
       background: "linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%)",
       display: "flex",
       flexDirection: "column",
