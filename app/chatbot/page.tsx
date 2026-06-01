@@ -108,7 +108,16 @@ function ChatbotInner() {
   ];
 
   return (
-    <div style={{ display: "flex", height: "100vh", fontFamily: "Arial, sans-serif", background: "#f8fafc", position: "relative" }}>
+    <div style={{
+      display: "flex",
+      // 🔧 App-shell travado na viewport: fixed + inset 0 → a JANELA nunca rola.
+      // (antes era height: 100vh dentro do body flex-col, o que gerava scroll duplo/gigante.)
+      // As sections internas rolam dentro da própria área de conteúdo.
+      position: "fixed",
+      inset: 0,
+      fontFamily: "Arial, sans-serif",
+      background: "#f8fafc",
+    }}>
 
       {/* BOTÃO HAMBÚRGUER (mobile) */}
       {isMobile && !menuMobileAberto && (
