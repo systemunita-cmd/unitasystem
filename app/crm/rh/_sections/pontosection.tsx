@@ -1,88 +1,128 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
-// 🧑‍💼 RH · Ponto (CONECTADO — 'ponto' por competência; leitura)
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🧑‍💼 RH · Ponto / Frequência  (CONECTADO — lê 'ponto_registros')
+// ───────────────────────────────────────────────────────────────────────
+// Folha de ponto do mês: batidas reais por funcionário e dia, com horário,
+// tipo e link 📍 pro mapa de onde a pessoa bateu. Calcula horas por dia.
+// ═══════════════════════════════════════════════════════════════════════
+
 const COR = "#4f46e5";
+const COR_TEXTO = "#4338ca";
 const card = {
   background: "#ffffff",
   borderRadius: 14,
   border: "1px solid #e5e7eb",
   boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
 };
-type Ponto = {
+
+const TIPO_COR: Record<string, string> = {
+  Entrada: "#16a34a",
+  "Saída p/ almoço": "#f59e0b",
+  "Retorno do almoço": "#0ea5e9",
+  Saída: "#dc2626",
+  Marcação: "#6b7280",
+};
+
+type Registro = {
   id: string;
-  competencia: string;
-  nome: string;
+  funcionario: string;
   cargo: string;
-  previstas: number;
-  trabalhadas: number;
-  extras: number;
-  atrasosMin: number;
-  faltas: number;
-  saldoBanco: number;
+  tipo: string;
+  data_hora: string;
+  latitude: number | null;
+  longitude: number | null;
 };
-const hm = (min: number) => {
-  const s = min < 0 ? "-" : "";
-  const a = Math.abs(min);
-  return `${s}${Math.floor(a / 60)}h${String(a % 60).padStart(2, "0")}`;
+
+function mesAtual() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+const horaFmt = (iso: string) => {
+  try {
+    return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "--:--";
+  }
 };
+const diaChave = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
+const fmtHoras = (h: number) => {
+  const horas = Math.floor(h);
+  const min = Math.round((h - horas) * 60);
+  return `${horas}h${String(min).padStart(2, "0")}`;
+};
+
+// soma os intervalos (entrada→saída em pares) de um dia
+function horasDoDia(batidas: Registro[]): number {
+  const ord = [...batidas].sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+  let ms = 0;
+  for (let i = 0; i + 1 < ord.length; i += 2) {
+    ms += new Date(ord[i + 1].data_hora).getTime() - new Date(ord[i].data_hora).getTime();
+  }
+  return ms / 3600000;
+}
+
 export function PontoSection() {
-  const [todos, setTodos] = useState<Ponto[]>([]);
+  const [registros, setRegistros] = useState<Registro[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const [comp, setComp] = useState("");
-  const carregar = async () => {
+  const [mes, setMes] = useState(mesAtual());
+  const [aberto, setAberto] = useState<string | null>(null);
+
+  const carregar = async (m: string) => {
     setCarregando(true);
-    const { data, error } = await supabase.from("ponto").select("*").order("nome", { ascending: true });
+    const [ano, mm] = m.split("-").map(Number);
+    const inicio = new Date(ano, mm - 1, 1, 0, 0, 0);
+    const fim = new Date(ano, mm, 1, 0, 0, 0); // 1º dia do mês seguinte
+    const { data, error } = await supabase
+      .from("ponto_registros")
+      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude")
+      .gte("data_hora", inicio.toISOString())
+      .lt("data_hora", fim.toISOString())
+      .order("data_hora", { ascending: true });
     if (error) {
       console.error(error);
-      alert("Erro: " + error.message);
-      setCarregando(false);
-      return;
+      alert("Erro ao carregar o ponto: " + error.message);
+    } else {
+      setRegistros((data || []) as Registro[]);
     }
-    const items = (data || []).map((r: any) => ({
-      id: r.id,
-      competencia: r.competencia || "",
-      nome: r.nome,
-      cargo: r.cargo || "",
-      previstas: Number(r.previstas) || 0,
-      trabalhadas: Number(r.trabalhadas) || 0,
-      extras: Number(r.extras) || 0,
-      atrasosMin: Number(r.atrasos_min) || 0,
-      faltas: Number(r.faltas) || 0,
-      saldoBanco: Number(r.saldo_banco) || 0,
-    })) as Ponto[];
-    setTodos(items);
-    const comps = Array.from(new Set(items.map((i) => i.competencia)))
-      .sort()
-      .reverse();
-    if (comps.length && !comp) setComp(comps[0]);
     setCarregando(false);
   };
   useEffect(() => {
-    carregar();
-  }, []);
-  const competencias = useMemo(
-    () =>
-      Array.from(new Set(todos.map((i) => i.competencia)))
-        .sort()
-        .reverse(),
-    [todos]
+    carregar(mes);
+  }, [mes]);
+
+  // agrupa: funcionário → dia → batidas
+  const porFunc = useMemo(() => {
+    const m: Record<string, { cargo: string; dias: Record<string, Registro[]> }> = {};
+    registros.forEach((r) => {
+      if (!m[r.funcionario]) m[r.funcionario] = { cargo: r.cargo, dias: {} };
+      const dia = diaChave(r.data_hora);
+      if (!m[r.funcionario].dias[dia]) m[r.funcionario].dias[dia] = [];
+      m[r.funcionario].dias[dia].push(r);
+    });
+    return Object.entries(m).map(([funcionario, info]) => {
+      const dias = Object.entries(info.dias)
+        .map(([dia, batidas]) => ({ dia, batidas, horas: horasDoDia(batidas) }))
+        .sort((a, b) => b.dia.localeCompare(a.dia));
+      const totalHoras = dias.reduce((s, d) => s + d.horas, 0);
+      return { funcionario, cargo: info.cargo, dias, totalHoras };
+    });
+  }, [registros]);
+
+  const stats = useMemo(
+    () => ({
+      pessoas: porFunc.length,
+      batidas: registros.length,
+      horas: porFunc.reduce((s, f) => s + f.totalHoras, 0),
+    }),
+    [porFunc, registros]
   );
-  const itens = useMemo(() => todos.filter((p) => p.competencia === comp), [todos, comp]);
-  const tot = useMemo(
-    () =>
-      itens.reduce(
-        (a, p) => ({
-          extras: a.extras + p.extras,
-          faltas: a.faltas + p.faltas,
-          atrasos: a.atrasos + p.atrasosMin,
-        }),
-        { extras: 0, faltas: 0, atrasos: 0 }
-      ),
-    [itens]
-  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* HEADER */}
       <div
         style={{
           display: "flex",
@@ -110,41 +150,36 @@ export function PontoSection() {
           </div>
           <div>
             <h1 style={{ color: "#1f2937", fontSize: 24, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>
-              Controle de Ponto
+              Ponto / Frequência
             </h1>
             <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-              Espelho de ponto por competência
+              Folha de ponto do mês com horários e localização
             </p>
           </div>
         </div>
-        {competencias.length > 0 && (
-          <select
-            value={comp}
-            onChange={(e) => setComp(e.target.value)}
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 10,
-              padding: "9px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#1f2937",
-              outline: "none",
-            }}
-          >
-            {competencias.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        )}
+        <input
+          type="month"
+          value={mes}
+          onChange={(e) => setMes(e.target.value)}
+          style={{
+            background: "#ffffff",
+            border: "1px solid #e5e7eb",
+            borderRadius: 10,
+            padding: "9px 14px",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "#1f2937",
+            outline: "none",
+          }}
+        />
       </div>
+
+      {/* STATS */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
         {[
-          { label: "Horas extras", value: hm(tot.extras), cor: "#16a34a", icon: "➕" },
-          { label: "Atrasos", value: hm(tot.atrasos), cor: "#f59e0b", icon: "⏳" },
-          { label: "Faltas", value: String(tot.faltas), cor: "#dc2626", icon: "🚫" },
+          { label: "Funcionários", value: String(stats.pessoas), cor: "#6366f1", icon: "👥" },
+          { label: "Batidas no mês", value: String(stats.batidas), cor: "#0ea5e9", icon: "🕐" },
+          { label: "Horas trabalhadas", value: fmtHoras(stats.horas), cor: "#16a34a", icon: "⏱️" },
         ].map((s) => (
           <div key={s.label} style={{ ...card, padding: 16, borderTop: `3px solid ${s.cor}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
@@ -180,105 +215,142 @@ export function PontoSection() {
           </div>
         ))}
       </div>
+
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
-          <p style={{ color: "#6b7280", fontSize: 13 }}>Carregando...</p>
+          <p style={{ color: "#6b7280", fontSize: 13 }}>Carregando folha de ponto...</p>
         </div>
-      ) : itens.length === 0 ? (
+      ) : porFunc.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 36, margin: "0 0 8px" }}>📭</p>
-          <p style={{ color: "#6b7280", fontSize: 13 }}>
-            {todos.length === 0 ? "Nenhum registro de ponto ainda." : "Sem registros nesta competência."}
-          </p>
+          <p style={{ fontSize: 36, margin: "0 0 8px" }}>🕐</p>
+          <p style={{ color: "#6b7280", fontSize: 13 }}>Nenhuma batida de ponto neste mês.</p>
         </div>
       ) : (
-        <div style={{ ...card, overflow: "hidden" }}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f9fafb" }}>
-                  {["Colaborador", "Previstas", "Trabalhadas", "Extras", "Atrasos", "Faltas", "Banco h."].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: "12px 16px",
-                          color: "#6b7280",
-                          fontSize: 11,
-                          textAlign: h === "Colaborador" ? "left" : "right",
-                          textTransform: "uppercase",
-                          letterSpacing: 0.5,
-                          whiteSpace: "nowrap",
-                          fontWeight: 700,
-                          borderBottom: "1px solid #e5e7eb",
-                        }}
-                      >
-                        {h}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {itens.map((p, i) => (
-                  <tr
-                    key={p.id}
-                    style={{
-                      borderTop: "1px solid #f3f4f6",
-                      background: i % 2 === 0 ? "#ffffff" : "#fafbfc",
-                    }}
-                  >
-                    <td style={{ padding: "12px 16px" }}>
-                      <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>{p.nome}</p>
-                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{p.cargo}</p>
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#6b7280", fontSize: 12, textAlign: "right" }}>
-                      {hm(p.previstas)}
-                    </td>
-                    <td
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {porFunc.map((f) => {
+            const exp = aberto === f.funcionario;
+            return (
+              <div key={f.funcionario} style={{ ...card, overflow: "hidden" }}>
+                {/* cabeçalho do funcionário */}
+                <div
+                  onClick={() => setAberto(exp ? null : f.funcionario)}
+                  style={{
+                    padding: 16,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div
                       style={{
-                        padding: "12px 16px",
-                        color: "#1f2937",
-                        fontSize: 12,
-                        textAlign: "right",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {hm(p.trabalhadas)}
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#16a34a", fontSize: 12, textAlign: "right" }}>
-                      {hm(p.extras)}
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "#f59e0b", fontSize: 12, textAlign: "right" }}>
-                      {hm(p.atrasosMin)}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        color: p.faltas > 0 ? "#dc2626" : "#9ca3af",
-                        fontSize: 12,
-                        textAlign: "right",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {p.faltas}
-                    </td>
-                    <td
-                      style={{
-                        padding: "12px 16px",
-                        textAlign: "right",
-                        fontSize: 12,
+                        width: 38,
+                        height: 38,
+                        borderRadius: "50%",
+                        background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "white",
+                        fontSize: 14,
                         fontWeight: 700,
-                        color: p.saldoBanco >= 0 ? "#16a34a" : "#dc2626",
                       }}
                     >
-                      {hm(p.saldoBanco)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {f.funcionario.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>
+                        {f.funcionario}
+                      </p>
+                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>
+                        {f.cargo} · {f.dias.length} dia(s) com registro
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ color: "#16a34a", fontSize: 16, fontWeight: 800 }}>
+                      {fmtHoras(f.totalHoras)}
+                    </span>
+                    <span style={{ color: "#9ca3af", fontSize: 14 }}>{exp ? "▲" : "▼"}</span>
+                  </div>
+                </div>
+
+                {/* dias do funcionário */}
+                {exp && (
+                  <div style={{ borderTop: "1px solid #f3f4f6", background: "#fafbfc" }}>
+                    {f.dias.map((d) => (
+                      <div key={d.dia} style={{ padding: "12px 16px", borderBottom: "1px solid #f3f4f6" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: 8,
+                          }}
+                        >
+                          <span style={{ color: "#374151", fontSize: 13, fontWeight: 700 }}>📅 {d.dia}</span>
+                          <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>
+                            {fmtHoras(d.horas)} trabalhadas
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {[...d.batidas]
+                            .sort((a, b) => a.data_hora.localeCompare(b.data_hora))
+                            .map((b) => {
+                              const cor = TIPO_COR[b.tipo] || "#6b7280";
+                              const temGps = b.latitude != null && b.longitude != null;
+                              const mapsUrl = temGps
+                                ? `https://www.google.com/maps?q=${b.latitude},${b.longitude}`
+                                : null;
+                              return (
+                                <div
+                                  key={b.id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 8,
+                                    background: "#ffffff",
+                                    border: `1px solid ${cor}30`,
+                                    borderRadius: 10,
+                                    padding: "6px 10px",
+                                  }}
+                                >
+                                  <span
+                                    style={{ width: 8, height: 8, borderRadius: "50%", background: cor }}
+                                  />
+                                  <div>
+                                    <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>
+                                      {horaFmt(b.data_hora)}
+                                    </p>
+                                    <p style={{ color: "#9ca3af", fontSize: 10, margin: 0 }}>{b.tipo}</p>
+                                  </div>
+                                  {mapsUrl ? (
+                                    <a
+                                      href={mapsUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Ver no mapa onde bateu"
+                                      style={{ textDecoration: "none", fontSize: 15, marginLeft: 2 }}
+                                    >
+                                      📍
+                                    </a>
+                                  ) : (
+                                    <span title="Sem localização" style={{ fontSize: 13, opacity: 0.4 }}>
+                                      🚫
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
