@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
-import { DashboardSection } from "./_sections/dashboardsection";
-import { FolhaSection } from "./_sections/folhaSection";
+import { ResumoSection } from "./_sections/resumosection";
+import { OperadorasSection } from "./_sections/operadorassection";
+import { DespesasSection } from "./_sections/despesassection";
+import { FolhaSection } from "./_sections/folhasection";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 💵 FINANCEIRO — Shell do módulo (UnitaSystem)
@@ -321,7 +323,11 @@ export default function FinanceiroLayolt() {
       {/* CONTEÚDO */}
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
         {aba === "resumo" ? (
-          <DashboardSection />
+          <ResumoSection />
+        ) : aba === "receber" ? (
+          <OperadorasSection />
+        ) : aba === "pagar" ? (
+          <DespesasSection />
         ) : aba === "folha" ? (
           <FolhaSection />
         ) : (
