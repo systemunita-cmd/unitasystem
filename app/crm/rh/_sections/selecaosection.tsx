@@ -6,8 +6,9 @@ import { supabase } from "../../../lib/supabase";
 // 🧑‍💼 RH · Processo Seletivo (CONECTADO — 'candidatos'). Kanban + triagem.
 // ───────────────────────────────────────────────────────────────────────
 // Move o candidato pelas fases com ‹ ›. Pode REPROVAR em qualquer fase
-// (botão ✕) — ele sai do funil e vai pra "Reprovados", guardando a fase
-// em que parou. Dá pra reativar depois. Usa a coluna candidatos.reprovado.
+// (✕) — vai pra "Reprovados" guardando a fase. Erros aparecem em toast
+// amigável (nunca alert cru): mensagem limpa pro usuário, detalhe técnico
+// só no console (F12) pra quem administra.
 // ═══════════════════════════════════════════════════════════════════════
 
 const COR = "#4f46e5";
@@ -27,30 +28,72 @@ const COL_COR: Record<string, string> = {
 };
 type Candidato = { id: string; nome: string; vaga: string; etapa: string; reprovado: boolean };
 
+// converte erro técnico do banco numa frase amigável (sem expor código pro cliente)
+function msgAmigavel(error: any, padrao: string): string {
+  const code = error?.code;
+  const txt = (error?.message || "").toLowerCase();
+  if (code === "42703" || txt.includes("does not exist")) {
+    return "Esse recurso precisa de uma atualização no sistema que ainda não foi aplicada.";
+  }
+  if (code === "23505") return "Esse registro já existe.";
+  if (code === "PGRST301" || txt.includes("permission") || txt.includes("rls")) {
+    return "Você não tem permissão para fazer isso.";
+  }
+  if (txt.includes("network") || txt.includes("fetch")) {
+    return "Falha de conexão. Verifique a internet e tente de novo.";
+  }
+  return padrao;
+}
+
+type Aviso = { tipo: "erro" | "ok"; titulo: string } | null;
+
 export function SelecaoSection() {
   const [lista, setLista] = useState<Candidato[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [aviso, setAviso] = useState<Aviso>(null);
+
+  // toast some sozinho
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(() => setAviso(null), 4500);
+    return () => clearTimeout(t);
+  }, [aviso]);
+
+  const erro = (titulo: string, e?: any) => {
+    if (e) console.error("[ProcessoSeletivo]", e);
+    setAviso({ tipo: "erro", titulo });
+  };
+  const ok = (titulo: string) => setAviso({ tipo: "ok", titulo });
 
   const carregar = async () => {
     setCarregando(true);
-    const { data, error } = await supabase
+    // tenta com a coluna 'reprovado'; se ela ainda não existe no banco, faz fallback
+    let { data, error } = await supabase
       .from("candidatos")
       .select("id, nome, vaga, etapa, reprovado")
       .order("created_at", { ascending: false });
-    if (error) {
-      console.error(error);
-      alert("Erro: " + error.message);
-    } else {
-      setLista(
-        (data || []).map((c: any) => ({
-          id: c.id,
-          nome: c.nome,
-          vaga: c.vaga || "",
-          etapa: c.etapa || COLUNAS[0],
-          reprovado: !!c.reprovado,
-        }))
-      );
+    if (error && (error.code === "42703" || (error.message || "").toLowerCase().includes("reprovado"))) {
+      const r = await supabase
+        .from("candidatos")
+        .select("id, nome, vaga, etapa")
+        .order("created_at", { ascending: false });
+      data = r.data as any;
+      error = r.error;
     }
+    if (error) {
+      erro("Não consegui carregar os candidatos.", error);
+      setCarregando(false);
+      return;
+    }
+    setLista(
+      (data || []).map((c: any) => ({
+        id: c.id,
+        nome: c.nome,
+        vaga: c.vaga || "",
+        etapa: c.etapa || COLUNAS[0],
+        reprovado: !!c.reprovado,
+      }))
+    );
     setCarregando(false);
   };
   useEffect(() => {
@@ -76,7 +119,7 @@ export function SelecaoSection() {
     setLista((l) => l.map((x) => (x.id === c.id ? { ...x, etapa: novo } : x)));
     const { error } = await supabase.from("candidatos").update({ etapa: novo }).eq("id", c.id);
     if (error) {
-      alert("Erro: " + error.message);
+      erro(msgAmigavel(error, "Não consegui mover o candidato."), error);
       carregar();
     }
   };
@@ -86,8 +129,10 @@ export function SelecaoSection() {
     setLista((l) => l.map((x) => (x.id === c.id ? { ...x, reprovado: true } : x)));
     const { error } = await supabase.from("candidatos").update({ reprovado: true }).eq("id", c.id);
     if (error) {
-      alert("Erro: " + error.message);
+      erro(msgAmigavel(error, "Não consegui reprovar o candidato."), error);
       carregar();
+    } else {
+      ok(`${c.nome} movido para Reprovados.`);
     }
   };
 
@@ -95,13 +140,17 @@ export function SelecaoSection() {
     setLista((l) => l.map((x) => (x.id === c.id ? { ...x, reprovado: false } : x)));
     const { error } = await supabase.from("candidatos").update({ reprovado: false }).eq("id", c.id);
     if (error) {
-      alert("Erro: " + error.message);
+      erro(msgAmigavel(error, "Não consegui reativar o candidato."), error);
       carregar();
     }
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <style>{`
+        @keyframes aviso-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div
           style={{
@@ -353,6 +402,60 @@ export function SelecaoSection() {
             </div>
           )}
         </>
+      )}
+
+      {/* TOAST de aviso — bonito, sem código cru. Some sozinho. */}
+      {aviso && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 3000,
+            maxWidth: 360,
+            background: "#ffffff",
+            borderRadius: 12,
+            borderLeft: `4px solid ${aviso.tipo === "erro" ? "#dc2626" : "#16a34a"}`,
+            boxShadow: "0 12px 28px rgba(0,0,0,0.16)",
+            padding: "14px 16px",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            animation: "aviso-in 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 9,
+              flexShrink: 0,
+              background: aviso.tipo === "erro" ? "#fef2f2" : "#f0fdf4",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+            }}
+          >
+            {aviso.tipo === "erro" ? "⚠️" : "✅"}
+          </div>
+          <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 600, margin: 0, flex: 1, lineHeight: 1.4 }}>
+            {aviso.titulo}
+          </p>
+          <button
+            onClick={() => setAviso(null)}
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "#9ca3af",
+              fontSize: 16,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
       )}
     </div>
   );
