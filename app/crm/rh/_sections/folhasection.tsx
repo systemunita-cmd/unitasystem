@@ -69,6 +69,19 @@ function compAtual() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// ── Saldo de horas (informativo, vindo do PONTO) — pra folga/compensação, NÃO entra no líquido ──
+const JORNADA_DIA = 8; // horas/dia esperadas
+const diaChave = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
+function horasDoDia(batidas: { data_hora: string }[]): number {
+  const ord = [...batidas].sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+  let ms = 0;
+  for (let i = 0; i + 1 < ord.length; i += 2) {
+    ms += new Date(ord[i + 1].data_hora).getTime() - new Date(ord[i].data_hora).getTime();
+  }
+  return ms / 3600000;
+}
+const hh = (h: number) => `${h >= 0 ? "+" : ""}${(h || 0).toFixed(1)}h`;
+
 type Item = {
   id: string;
   competencia: string;
@@ -95,6 +108,7 @@ export function FolhaSection() {
   const [gerando, setGerando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [processando, setProcessando] = useState(false);
+  const [saldoHoras, setSaldoHoras] = useState<Record<string, number>>({});
 
   const carregar = async (manterComp?: string) => {
     setCarregando(true);
@@ -129,6 +143,42 @@ export function FolhaSection() {
   useEffect(() => {
     carregar();
   }, []);
+
+  // Saldo de horas do mês (do ponto) — informativo, pra saber quem deve hora / tem folga.
+  // NÃO mexe em nenhum cálculo financeiro.
+  useEffect(() => {
+    if (!comp) {
+      setSaldoHoras({});
+      return;
+    }
+    (async () => {
+      const [ano, mm] = comp.split("-").map(Number);
+      const inicio = new Date(ano, mm - 1, 1, 0, 0, 0);
+      const fim = new Date(ano, mm, 1, 0, 0, 0);
+      const { data } = await supabase
+        .from("ponto_registros")
+        .select("funcionario, data_hora")
+        .gte("data_hora", inicio.toISOString())
+        .lt("data_hora", fim.toISOString())
+        .order("data_hora", { ascending: true });
+      const porFunc: Record<string, Record<string, { data_hora: string }[]>> = {};
+      (data || []).forEach((r: any) => {
+        const dia = diaChave(r.data_hora);
+        if (!porFunc[r.funcionario]) porFunc[r.funcionario] = {};
+        if (!porFunc[r.funcionario][dia]) porFunc[r.funcionario][dia] = [];
+        porFunc[r.funcionario][dia].push({ data_hora: r.data_hora });
+      });
+      const saldos: Record<string, number> = {};
+      Object.entries(porFunc).forEach(([nome, dias]) => {
+        let s = 0;
+        Object.values(dias).forEach((batidas) => {
+          s += horasDoDia(batidas) - JORNADA_DIA;
+        });
+        saldos[nome] = s;
+      });
+      setSaldoHoras(saldos);
+    })();
+  }, [comp]);
 
   const competencias = useMemo(
     () =>
@@ -479,6 +529,7 @@ export function FolhaSection() {
                       "IRRF",
                       "Outros desc.",
                       "Líquido",
+                      "Saldo Horas",
                       "Status",
                     ].map((h) => (
                       <th
@@ -598,6 +649,31 @@ export function FolhaSection() {
                         >
                           {real(liquido(it))}
                         </td>
+                        <td style={{ padding: "12px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          {saldoHoras[it.nome] === undefined ? (
+                            <span
+                              style={{ color: "#cbd5e1", fontSize: 12 }}
+                              title="Sem batidas de ponto neste mês"
+                            >
+                              —
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                color: saldoHoras[it.nome] >= 0 ? "#16a34a" : "#dc2626",
+                                fontSize: 13,
+                                fontWeight: 700,
+                              }}
+                              title={
+                                saldoHoras[it.nome] >= 0
+                                  ? "Horas a compensar (pode folgar)"
+                                  : "Está devendo horas"
+                              }
+                            >
+                              {hh(saldoHoras[it.nome])}
+                            </span>
+                          )}
+                        </td>
                         <td style={{ padding: "12px 16px", textAlign: "right" }}>
                           <span
                             style={{
@@ -624,6 +700,10 @@ export function FolhaSection() {
           <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, textAlign: "center" }}>
             Editou os valores? Clique em <b>💾 Salvar alterações</b>. O INSS e o IRRF recalculam sozinhos ao
             mudar a base ou a comissão.
+          </p>
+          <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0", textAlign: "center" }}>
+            🕐 <b>Saldo Horas</b> vem do ponto eletrônico (jornada {JORNADA_DIA}h/dia) e é só informativo —
+            verde = pode folgar, vermelho = está devendo. Não afeta o valor a pagar.
           </p>
         </>
       )}
