@@ -34,6 +34,7 @@ type Registro = {
   data_hora: string;
   latitude: number | null;
   longitude: number | null;
+  selfie_url: string | null;
 };
 
 function mesAtual() {
@@ -69,6 +70,7 @@ export function PontoSection() {
   const [carregando, setCarregando] = useState(true);
   const [mes, setMes] = useState(mesAtual());
   const [aberto, setAberto] = useState<string | null>(null);
+  const [fotoModal, setFotoModal] = useState<{ url: string; mapsUrl: string | null } | null>(null);
 
   const carregar = async (m: string) => {
     setCarregando(true);
@@ -77,7 +79,7 @@ export function PontoSection() {
     const fim = new Date(ano, mm, 1, 0, 0, 0); // 1º dia do mês seguinte
     const { data, error } = await supabase
       .from("ponto_registros")
-      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude")
+      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url")
       .gte("data_hora", inicio.toISOString())
       .lt("data_hora", fim.toISOString())
       .order("data_hora", { ascending: true });
@@ -340,6 +342,28 @@ export function PontoSection() {
                                       🚫
                                     </span>
                                   )}
+                                  {b.selfie_url ? (
+                                    <img
+                                      src={b.selfie_url}
+                                      alt="selfie"
+                                      onClick={() => setFotoModal({ url: b.selfie_url!, mapsUrl })}
+                                      title="Ver a selfie da batida"
+                                      style={{
+                                        width: 30,
+                                        height: 30,
+                                        borderRadius: 8,
+                                        objectFit: "cover",
+                                        cursor: "pointer",
+                                        border: "2px solid #fff",
+                                        boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                                        marginLeft: 2,
+                                      }}
+                                    />
+                                  ) : (
+                                    <span title="Sem selfie" style={{ fontSize: 13, opacity: 0.4 }}>
+                                      📷
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })}
@@ -351,6 +375,68 @@ export function PontoSection() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* LIGHTBOX DA SELFIE */}
+      {fotoModal && (
+        <div
+          onClick={() => setFotoModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.8)",
+            backdropFilter: "blur(4px)",
+            zIndex: 4000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ ...card, maxWidth: 380, width: "100%", overflow: "hidden" }}
+          >
+            <img src={fotoModal.url} alt="selfie do ponto" style={{ width: "100%", display: "block" }} />
+            <div
+              style={{
+                padding: 14,
+                display: "flex",
+                gap: 10,
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              {fotoModal.mapsUrl ? (
+                <a
+                  href={fotoModal.mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: COR_TEXTO, fontSize: 13, fontWeight: 700, textDecoration: "none" }}
+                >
+                  📍 Ver no mapa onde bateu
+                </a>
+              ) : (
+                <span style={{ color: "#9ca3af", fontSize: 13 }}>Sem localização</span>
+              )}
+              <button
+                onClick={() => setFotoModal(null)}
+                style={{
+                  background: "#f3f4f6",
+                  border: "none",
+                  color: "#374151",
+                  borderRadius: 8,
+                  padding: "7px 14px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
