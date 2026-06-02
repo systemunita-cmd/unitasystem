@@ -48,6 +48,7 @@ export function ValeRefeicaoSection() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<VR>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [funcionarios, setFuncionarios] = useState<{ nome: string; cargo: string }[]>([]);
   const carregar = async () => {
     setCarregando(true);
     const { data, error } = await supabase
@@ -73,6 +74,17 @@ export function ValeRefeicaoSection() {
   };
   useEffect(() => {
     carregar();
+  }, []);
+
+  // carrega os funcionários cadastrados pro select
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("funcionarios")
+        .select("nome, cargo")
+        .order("nome", { ascending: true });
+      if (data) setFuncionarios(data as { nome: string; cargo: string }[]);
+    })();
   }, []);
   const totalMes = useMemo(() => lista.reduce((s, v) => s + mensal(v), 0), [lista]);
   const salvar = async () => {
@@ -347,18 +359,28 @@ export function ValeRefeicaoSection() {
             <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <Campo label="Colaborador">
-                  <input
+                  <select
                     value={form.nome}
-                    onChange={(e) => set("nome", e.target.value)}
+                    onChange={(e) => {
+                      const f = funcionarios.find((x) => x.nome === e.target.value);
+                      setForm((prev) => ({ ...prev, nome: e.target.value, cargo: f?.cargo || "" }));
+                    }}
                     style={inputStyle}
-                    placeholder="Nome"
-                  />
+                  >
+                    <option value="">— Selecione o funcionário —</option>
+                    {funcionarios.map((f) => (
+                      <option key={f.nome} value={f.nome}>
+                        {f.nome}
+                      </option>
+                    ))}
+                  </select>
                 </Campo>
                 <Campo label="Cargo">
                   <input
                     value={form.cargo}
                     onChange={(e) => set("cargo", e.target.value)}
                     style={inputStyle}
+                    placeholder="Preenchido pelo funcionário"
                   />
                 </Campo>
               </div>
