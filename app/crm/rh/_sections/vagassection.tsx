@@ -129,7 +129,9 @@ export function VagasSection() {
       status: form.status,
       aberta_em: form.abertaEm || null,
     };
-    const { error } = await supabase.from("vagas").insert(payload);
+    const { error } = form.id
+      ? await supabase.from("vagas").update(payload).eq("id", form.id)
+      : await supabase.from("vagas").insert(payload);
     setSalvando(false);
     if (error) {
       alert("Erro: " + error.message);
@@ -138,6 +140,10 @@ export function VagasSection() {
     setModal(false);
     setForm(FORM_VAZIO);
     carregar();
+  };
+  const abrirEditar = (v: Vaga) => {
+    setForm(v);
+    setModal(true);
   };
   const excluir = async (v: Vaga) => {
     if (!confirm(`Remover a vaga "${v.titulo}"?`)) return;
@@ -350,6 +356,21 @@ export function VagasSection() {
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <span style={{ color: "#9ca3af", fontSize: 11 }}>{dataBR(v.abertaEm)}</span>
                     <button
+                      onClick={() => abrirEditar(v)}
+                      style={{
+                        background: "#eef2ff",
+                        color: "#4338ca",
+                        border: "1px solid #c7d2fe",
+                        borderRadius: 8,
+                        padding: "3px 8px",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      ✏️
+                    </button>
+                    <button
                       onClick={() => excluir(v)}
                       style={{
                         background: "#fef2f2",
@@ -399,7 +420,9 @@ export function VagasSection() {
                 alignItems: "center",
               }}
             >
-              <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: 0 }}>Nova Vaga</h3>
+              <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: 0 }}>
+                {form.id ? "Editar Vaga" : "Nova Vaga"}
+              </h3>
               <button
                 onClick={() => setModal(false)}
                 style={{

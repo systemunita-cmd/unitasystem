@@ -1,7 +1,15 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
-// 🧑‍💼 RH · Seleção (CONECTADO — lê 'candidatos'; mover = update etapa). Kanban.
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🧑‍💼 RH · Processo Seletivo (CONECTADO — 'candidatos'). Kanban + triagem.
+// ───────────────────────────────────────────────────────────────────────
+// Move o candidato pelas fases com ‹ ›. Pode REPROVAR em qualquer fase
+// (botão ✕) — ele sai do funil e vai pra "Reprovados", guardando a fase
+// em que parou. Dá pra reativar depois. Usa a coluna candidatos.reprovado.
+// ═══════════════════════════════════════════════════════════════════════
+
 const COR = "#4f46e5";
 const card = {
   background: "#ffffff",
@@ -17,33 +25,50 @@ const COL_COR: Record<string, string> = {
   Proposta: "#f59e0b",
   Contratado: "#16a34a",
 };
-type Candidato = { id: string; nome: string; vaga: string; etapa: string };
+type Candidato = { id: string; nome: string; vaga: string; etapa: string; reprovado: boolean };
+
 export function SelecaoSection() {
   const [lista, setLista] = useState<Candidato[]>([]);
   const [carregando, setCarregando] = useState(true);
+
   const carregar = async () => {
     setCarregando(true);
     const { data, error } = await supabase
       .from("candidatos")
-      .select("id, nome, vaga, etapa")
+      .select("id, nome, vaga, etapa, reprovado")
       .order("created_at", { ascending: false });
     if (error) {
       console.error(error);
       alert("Erro: " + error.message);
-    } else setLista((data || []) as Candidato[]);
+    } else {
+      setLista(
+        (data || []).map((c: any) => ({
+          id: c.id,
+          nome: c.nome,
+          vaga: c.vaga || "",
+          etapa: c.etapa || COLUNAS[0],
+          reprovado: !!c.reprovado,
+        }))
+      );
+    }
     setCarregando(false);
   };
   useEffect(() => {
     carregar();
   }, []);
+
+  const ativos = useMemo(() => lista.filter((c) => !c.reprovado), [lista]);
+  const reprovados = useMemo(() => lista.filter((c) => c.reprovado), [lista]);
+
   const porColuna = useMemo(() => {
     const m: Record<string, Candidato[]> = {};
     COLUNAS.forEach((c) => (m[c] = []));
-    lista.forEach((c) => {
+    ativos.forEach((c) => {
       if (m[c.etapa]) m[c.etapa].push(c);
     });
     return m;
-  }, [lista]);
+  }, [ativos]);
+
   const mover = async (c: Candidato, dir: 1 | -1) => {
     const idx = COLUNAS.indexOf(c.etapa);
     const novo = COLUNAS[idx + dir];
@@ -55,6 +80,26 @@ export function SelecaoSection() {
       carregar();
     }
   };
+
+  const reprovar = async (c: Candidato) => {
+    if (!confirm(`Reprovar ${c.nome} na fase "${c.etapa}"?`)) return;
+    setLista((l) => l.map((x) => (x.id === c.id ? { ...x, reprovado: true } : x)));
+    const { error } = await supabase.from("candidatos").update({ reprovado: true }).eq("id", c.id);
+    if (error) {
+      alert("Erro: " + error.message);
+      carregar();
+    }
+  };
+
+  const reativar = async (c: Candidato) => {
+    setLista((l) => l.map((x) => (x.id === c.id ? { ...x, reprovado: false } : x)));
+    const { error } = await supabase.from("candidatos").update({ reprovado: false }).eq("id", c.id);
+    if (error) {
+      alert("Erro: " + error.message);
+      carregar();
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -78,10 +123,11 @@ export function SelecaoSection() {
             Processo Seletivo
           </h1>
           <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-            Pipeline dos candidatos por etapa — use ‹ › para mover
+            Mova com ‹ › entre as fases · ✕ reprova na fase atual
           </p>
         </div>
       </div>
+
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
           <p style={{ color: "#6b7280", fontSize: 13 }}>Carregando pipeline...</p>
@@ -94,108 +140,219 @@ export function SelecaoSection() {
           </p>
         </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${COLUNAS.length}, minmax(200px, 1fr))`,
-            gap: 12,
-            overflowX: "auto",
-          }}
-        >
-          {COLUNAS.map((col) => {
-            const cor = COL_COR[col];
-            const itens = porColuna[col];
-            return (
-              <div
-                key={col}
-                style={{
-                  background: "#f9fafb",
-                  borderRadius: 12,
-                  border: "1px solid #e5e7eb",
-                  display: "flex",
-                  flexDirection: "column",
-                  minHeight: 200,
-                }}
-              >
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${COLUNAS.length}, minmax(200px, 1fr))`,
+              gap: 12,
+              overflowX: "auto",
+            }}
+          >
+            {COLUNAS.map((col) => {
+              const cor = COL_COR[col];
+              const itens = porColuna[col];
+              return (
                 <div
+                  key={col}
                   style={{
-                    padding: "12px 14px",
-                    borderBottom: `2px solid ${cor}`,
+                    background: "#f9fafb",
+                    borderRadius: 12,
+                    border: "1px solid #e5e7eb",
                     display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
+                    flexDirection: "column",
+                    minHeight: 200,
                   }}
                 >
-                  <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 800 }}>{col}</span>
-                  <span
+                  <div
                     style={{
-                      background: `${cor}15`,
-                      color: cor,
-                      fontSize: 11,
-                      padding: "2px 8px",
-                      borderRadius: 8,
-                      fontWeight: 700,
+                      padding: "12px 14px",
+                      borderBottom: `2px solid ${cor}`,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
                     }}
                   >
-                    {itens.length}
-                  </span>
-                </div>
-                <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {itens.map((c) => {
-                    const idx = COLUNAS.indexOf(c.etapa);
-                    return (
-                      <div key={c.id} style={{ ...card, padding: 12 }}>
-                        <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>{c.nome}</p>
-                        <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 8px" }}>{c.vaga}</p>
-                        <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <button
-                            onClick={() => mover(c, -1)}
-                            disabled={idx === 0}
-                            style={{
-                              background: idx === 0 ? "#f3f4f6" : "#eef2ff",
-                              color: idx === 0 ? "#cbd5e1" : "#4338ca",
-                              border: "none",
-                              borderRadius: 7,
-                              padding: "3px 10px",
-                              fontSize: 13,
-                              cursor: idx === 0 ? "default" : "pointer",
-                              fontWeight: 700,
-                            }}
-                          >
-                            ‹
-                          </button>
-                          <button
-                            onClick={() => mover(c, 1)}
-                            disabled={idx === COLUNAS.length - 1}
-                            style={{
-                              background: idx === COLUNAS.length - 1 ? "#f3f4f6" : "#eef2ff",
-                              color: idx === COLUNAS.length - 1 ? "#cbd5e1" : "#4338ca",
-                              border: "none",
-                              borderRadius: 7,
-                              padding: "3px 10px",
-                              fontSize: 13,
-                              cursor: idx === COLUNAS.length - 1 ? "default" : "pointer",
-                              fontWeight: 700,
-                            }}
-                          >
-                            ›
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {itens.length === 0 && (
-                    <p
-                      style={{ color: "#cbd5e1", fontSize: 11, textAlign: "center", padding: 12, margin: 0 }}
+                    <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 800 }}>{col}</span>
+                    <span
+                      style={{
+                        background: `${cor}15`,
+                        color: cor,
+                        fontSize: 11,
+                        padding: "2px 8px",
+                        borderRadius: 8,
+                        fontWeight: 700,
+                      }}
                     >
-                      Vazio
-                    </p>
-                  )}
+                      {itens.length}
+                    </span>
+                  </div>
+                  <div style={{ padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {itens.map((c) => {
+                      const idx = COLUNAS.indexOf(c.etapa);
+                      return (
+                        <div key={c.id} style={{ ...card, padding: 12 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "flex-start",
+                              gap: 6,
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>
+                                {c.nome}
+                              </p>
+                              <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 8px" }}>
+                                {c.vaga || "—"}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => reprovar(c)}
+                              title="Reprovar nesta fase"
+                              style={{
+                                background: "#fef2f2",
+                                color: "#dc2626",
+                                border: "1px solid #fecaca",
+                                borderRadius: 7,
+                                padding: "2px 8px",
+                                fontSize: 12,
+                                cursor: "pointer",
+                                fontWeight: 700,
+                                flexShrink: 0,
+                              }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <button
+                              onClick={() => mover(c, -1)}
+                              disabled={idx === 0}
+                              style={{
+                                background: idx === 0 ? "#f3f4f6" : "#eef2ff",
+                                color: idx === 0 ? "#cbd5e1" : "#4338ca",
+                                border: "none",
+                                borderRadius: 7,
+                                padding: "3px 10px",
+                                fontSize: 13,
+                                cursor: idx === 0 ? "default" : "pointer",
+                                fontWeight: 700,
+                              }}
+                            >
+                              ‹
+                            </button>
+                            <button
+                              onClick={() => mover(c, 1)}
+                              disabled={idx === COLUNAS.length - 1}
+                              style={{
+                                background: idx === COLUNAS.length - 1 ? "#f3f4f6" : "#eef2ff",
+                                color: idx === COLUNAS.length - 1 ? "#cbd5e1" : "#4338ca",
+                                border: "none",
+                                borderRadius: 7,
+                                padding: "3px 10px",
+                                fontSize: 13,
+                                cursor: idx === COLUNAS.length - 1 ? "default" : "pointer",
+                                fontWeight: 700,
+                              }}
+                            >
+                              ›
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {itens.length === 0 && (
+                      <p
+                        style={{
+                          color: "#cbd5e1",
+                          fontSize: 11,
+                          textAlign: "center",
+                          padding: 12,
+                          margin: 0,
+                        }}
+                      >
+                        Vazio
+                      </p>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+
+          {/* REPROVADOS */}
+          {reprovados.length > 0 && (
+            <div style={{ ...card, padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 16 }}>🚫</span>
+                <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 800, margin: 0 }}>Reprovados</h3>
+                <span
+                  style={{
+                    background: "#fef2f2",
+                    color: "#dc2626",
+                    fontSize: 11,
+                    padding: "2px 8px",
+                    borderRadius: 8,
+                    fontWeight: 700,
+                  }}
+                >
+                  {reprovados.length}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {reprovados.map((c) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      border: "1px solid #fecaca",
+                      background: "#fff7f7",
+                      borderRadius: 10,
+                      padding: 12,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>{c.nome}</p>
+                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{c.vaga || "—"}</p>
+                      <p style={{ color: "#dc2626", fontSize: 11, margin: "4px 0 0", fontWeight: 700 }}>
+                        Parou em: {c.etapa}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => reativar(c)}
+                      title="Voltar ao funil"
+                      style={{
+                        background: "#eef2ff",
+                        color: "#4338ca",
+                        border: "1px solid #c7d2fe",
+                        borderRadius: 8,
+                        padding: "5px 10px",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ↺ Reativar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

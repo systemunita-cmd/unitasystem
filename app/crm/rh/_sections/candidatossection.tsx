@@ -56,6 +56,7 @@ export function CandidatosSection() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Candidato>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [vagas, setVagas] = useState<{ titulo: string; status: string }[]>([]);
   const carregar = async () => {
     setCarregando(true);
     const { data, error } = await supabase
@@ -81,6 +82,17 @@ export function CandidatosSection() {
   };
   useEffect(() => {
     carregar();
+  }, []);
+
+  // carrega as vagas cadastradas pro select (abertas primeiro)
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("vagas")
+        .select("titulo, status")
+        .order("created_at", { ascending: false });
+      if (data) setVagas(data as { titulo: string; status: string }[]);
+    })();
   }, []);
   const filtrados = useMemo(() => {
     let l = lista;
@@ -360,12 +372,15 @@ export function CandidatosSection() {
               </Campo>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <Campo label="Vaga">
-                  <input
-                    value={form.vaga}
-                    onChange={(e) => set("vaga", e.target.value)}
-                    style={inputStyle}
-                    placeholder="Título da vaga"
-                  />
+                  <select value={form.vaga} onChange={(e) => set("vaga", e.target.value)} style={inputStyle}>
+                    <option value="">— Selecione a vaga —</option>
+                    {vagas.map((v) => (
+                      <option key={v.titulo} value={v.titulo}>
+                        {v.titulo}
+                        {v.status && v.status !== "aberta" ? ` (${v.status})` : ""}
+                      </option>
+                    ))}
+                  </select>
                 </Campo>
                 <Campo label="Origem">
                   <input
