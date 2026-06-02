@@ -2780,20 +2780,21 @@ export default function FinanceiroLayolt() {
           style={{
             position: "fixed",
             top: 8,
-            left: 8,
-            zIndex: 50,
+            right: 8,
+            zIndex: 1095,
             background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            color: "#1f2937",
+            border: "1px solid #fde68a",
+            color: "#b45309",
             borderRadius: 10,
             padding: "6px 12px",
-            fontSize: 18,
+            fontSize: 14,
+            fontWeight: 700,
             cursor: "pointer",
             lineHeight: 1,
             boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
           }}
         >
-          ☰
+          ☰ Seções
         </button>
       )}
       {isMobile && menuMobileAberto && (
@@ -2804,7 +2805,7 @@ export default function FinanceiroLayolt() {
             inset: 0,
             background: "rgba(15,23,42,0.4)",
             backdropFilter: "blur(2px)",
-            zIndex: 50,
+            zIndex: 1090,
           }}
         />
       )}
@@ -2821,13 +2822,13 @@ export default function FinanceiroLayolt() {
           flexShrink: 0,
           position: isMobile ? "fixed" : "relative",
           top: isMobile ? 0 : "auto",
-          left: isMobile ? 0 : "auto",
+          right: isMobile ? 0 : "auto",
           bottom: isMobile ? 0 : "auto",
           height: isMobile ? "100vh" : "auto",
-          zIndex: isMobile ? 60 : "auto",
-          transform: isMobile && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
+          zIndex: isMobile ? 1100 : "auto",
+          transform: isMobile && !menuMobileAberto ? "translateX(100%)" : "translateX(0)",
           transition: "transform 0.25s ease",
-          boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.1)" : "none",
+          boxShadow: isMobile ? "-4px 0 16px rgba(0,0,0,0.1)" : "none",
         }}
       >
         {/* Header do módulo */}
