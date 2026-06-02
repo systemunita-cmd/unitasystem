@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 import { DashboardSection } from "./_sections/dashboardsection";
-import { ContasReceberSection } from "./_sections/contasreceberSection";
 import { FolhaSection } from "./_sections/folhaSection";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -323,8 +322,6 @@ export default function FinanceiroLayolt() {
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
         {aba === "resumo" ? (
           <DashboardSection />
-        ) : aba === "receber" ? (
-          <ContasReceberSection />
         ) : aba === "folha" ? (
           <FolhaSection />
         ) : (
