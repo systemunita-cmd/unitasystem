@@ -42,8 +42,13 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   // Carrega dados do usuário (com fallback se tabela 'usuarios' não existir)
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push("/login"); return; }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
       setUserEmail(user.email || "");
 
       try {
@@ -111,30 +116,27 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   // 🛡️ Label/ícone: prioriza o NOME DO GRUPO. Fallback pro role legado.
   const roleLabel =
     perm.grupoNome ||
-    (role === "admin" ? "Administrador" :
-     role === "supervisor" ? "Supervisor" : "Atendente");
+    (role === "admin" ? "Administrador" : role === "supervisor" ? "Supervisor" : "Atendente");
 
-  const roleIcon =
-    grupoIcone ||
-    (role === "admin" ? "👑" :
-     role === "supervisor" ? "🔍" : "👤");
+  const roleIcon = grupoIcone || (role === "admin" ? "👑" : role === "supervisor" ? "🔍" : "👤");
 
   // Avatar = inicial do email
   const inicial = (userNome || userEmail || "?").charAt(0).toUpperCase();
 
   return (
     <AuthGuard>
-      <div style={{
-        display: "flex",
-        // 🔧 App-shell travado na viewport: fixed + inset 0 → a JANELA nunca rola.
-        // (antes era height: 100vh dentro do body flex-col, o que gerava scroll duplo/gigante.)
-        // O scroll fica 100% interno na área de conteúdo (overflowY: auto), como deve ser num dashboard.
-        position: "fixed",
-        inset: 0,
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        background: "#f8fafc",
-      }}>
-
+      <div
+        style={{
+          display: "flex",
+          // 🔧 App-shell travado na viewport: fixed + inset 0 → a JANELA nunca rola.
+          // (antes era height: 100vh dentro do body flex-col, o que gerava scroll duplo/gigante.)
+          // O scroll fica 100% interno na área de conteúdo (overflowY: auto), como deve ser num dashboard.
+          position: "fixed",
+          inset: 0,
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+          background: "#f8fafc",
+        }}
+      >
         {/* Estilos globais para hover/transições */}
         <style>{`
           @keyframes glow {
@@ -187,6 +189,20 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             width: 100%;
             transition: all 0.15s ease;
             font-family: inherit;
+          }
+          .shortcut-ponto {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #1d4ed8;
+          }
+          .shortcut-ponto:hover {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.15);
+          }
+          .shortcut-ponto.active {
+            background: #dbeafe;
+            border-color: #2563eb;
           }
           .shortcut-chatbot {
             background: #eff6ff;
@@ -284,16 +300,24 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             onClick={() => setMenuMobileAberto(true)}
             title="Abrir menu"
             style={{
-              position: "fixed", top: 8, left: 8, zIndex: 999,
+              position: "fixed",
+              top: 8,
+              left: 8,
+              zIndex: 999,
               background: "#ffffff",
               border: "1px solid #e2e8f0",
               color: "#0f172a",
-              borderRadius: 10, padding: "8px 14px",
-              fontSize: 18, cursor: "pointer", lineHeight: 1,
+              borderRadius: 10,
+              padding: "8px 14px",
+              fontSize: 18,
+              cursor: "pointer",
+              lineHeight: 1,
               boxShadow: "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)",
               fontWeight: 700,
             }}
-          >☰</button>
+          >
+            ☰
+          </button>
         )}
 
         {/* ═══ OVERLAY (mobile) ═══ */}
@@ -301,7 +325,8 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           <div
             onClick={() => setMenuMobileAberto(false)}
             style={{
-              position: "fixed", inset: 0,
+              position: "fixed",
+              inset: 0,
               background: "rgba(15,23,42,0.5)",
               backdropFilter: "blur(4px)",
               zIndex: 999,
@@ -310,70 +335,85 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ═══ SIDEBAR ═══ */}
-        <div style={{
-          width: isMobile ? 280 : 240,
-          background: "#ffffff",
-          borderRight: "1px solid #e2e8f0",
-          display: "flex",
-          flexDirection: "column",
-          padding: 16,
-          gap: 6,
-          flexShrink: 0,
-          overflowY: "auto",
-          position: isMobile ? "fixed" : "relative",
-          top: isMobile ? 0 : "auto",
-          left: isMobile ? 0 : "auto",
-          bottom: isMobile ? 0 : "auto",
-          height: isMobile ? "100vh" : "auto",
-          zIndex: isMobile ? 1000 : "auto",
-          transform: isMobile && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
-          transition: "transform 0.25s ease",
-          boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.08)" : "none",
-        }}>
-
-          {/* Logo + nome */}
-          <div style={{
+        <div
+          style={{
+            width: isMobile ? 280 : 240,
+            background: "#ffffff",
+            borderRight: "1px solid #e2e8f0",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-            marginBottom: 14,
-          }}>
+            flexDirection: "column",
+            padding: 16,
+            gap: 6,
+            flexShrink: 0,
+            overflowY: "auto",
+            position: isMobile ? "fixed" : "relative",
+            top: isMobile ? 0 : "auto",
+            left: isMobile ? 0 : "auto",
+            bottom: isMobile ? 0 : "auto",
+            height: isMobile ? "100vh" : "auto",
+            zIndex: isMobile ? 1000 : "auto",
+            transform: isMobile && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
+            transition: "transform 0.25s ease",
+            boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.08)" : "none",
+          }}
+        >
+          {/* Logo + nome */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              marginBottom: 14,
+            }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
               {/* Logo "U" em gradiente azul */}
-              <div style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                background: "linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#ffffff",
-                fontWeight: 800,
-                fontSize: 17,
-                letterSpacing: -0.5,
-                flexShrink: 0,
-                animation: "glow 3s ease-in-out infinite",
-              }}>U</div>
-              <div style={{ minWidth: 0 }}>
-                <span style={{
-                  color: "#0f172a",
+              <div
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  background: "linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #3b82f6 100%)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ffffff",
                   fontWeight: 800,
-                  fontSize: 14,
-                  display: "block",
-                  letterSpacing: -0.3,
-                  lineHeight: 1.2,
-                }}>Grupo Unita</span>
-                <span style={{
-                  color: "#64748b",
-                  fontSize: 10,
-                  display: "block",
-                  fontWeight: 600,
-                  letterSpacing: 1.5,
-                  textTransform: "uppercase",
-                  marginTop: 2,
-                }}>Sistema Interno</span>
+                  fontSize: 17,
+                  letterSpacing: -0.5,
+                  flexShrink: 0,
+                  animation: "glow 3s ease-in-out infinite",
+                }}
+              >
+                U
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <span
+                  style={{
+                    color: "#0f172a",
+                    fontWeight: 800,
+                    fontSize: 14,
+                    display: "block",
+                    letterSpacing: -0.3,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  Grupo Unita
+                </span>
+                <span
+                  style={{
+                    color: "#64748b",
+                    fontSize: 10,
+                    display: "block",
+                    fontWeight: 600,
+                    letterSpacing: 1.5,
+                    textTransform: "uppercase",
+                    marginTop: 2,
+                  }}
+                >
+                  Sistema Interno
+                </span>
               </div>
             </div>
             {isMobile && (
@@ -386,75 +426,96 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
                   color: "#64748b",
                   fontSize: 16,
                   cursor: "pointer",
-                  width: 30, height: 30,
+                  width: 30,
+                  height: 30,
                   borderRadius: 8,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
                 }}
-              >✕</button>
+              >
+                ✕
+              </button>
             )}
           </div>
 
           {/* Card de usuário */}
-          <div style={{
-            background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
-            border: "1px solid #e0e7ff",
-            borderRadius: 12,
-            padding: "10px 12px",
-            marginBottom: 14,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}>
-            {/* Avatar com inicial */}
-            <div style={{
-              width: 36, height: 36, borderRadius: "50%",
-              background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+          <div
+            style={{
+              background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
+              border: "1px solid #e0e7ff",
+              borderRadius: 12,
+              padding: "10px 12px",
+              marginBottom: 14,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              color: "#ffffff",
-              fontWeight: 700,
-              fontSize: 15,
-              boxShadow: "0 4px 10px rgba(37, 99, 235, 0.3)",
-              flexShrink: 0,
-            }}>
+              gap: 10,
+            }}
+          >
+            {/* Avatar com inicial */}
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#ffffff",
+                fontWeight: 700,
+                fontSize: 15,
+                boxShadow: "0 4px 10px rgba(37, 99, 235, 0.3)",
+                flexShrink: 0,
+              }}
+            >
               {inicial}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{
-                color: "#0f172a",
-                fontSize: 12,
-                margin: 0,
-                fontWeight: 700,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}>{userNome || userEmail.split("@")[0]}</p>
-              <p style={{
-                color: "#1d4ed8",
-                fontSize: 10.5,
-                margin: "2px 0 0",
-                fontWeight: 600,
-                letterSpacing: 0.2,
-              }}>{roleIcon} {roleLabel}</p>
+              <p
+                style={{
+                  color: "#0f172a",
+                  fontSize: 12,
+                  margin: 0,
+                  fontWeight: 700,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {userNome || userEmail.split("@")[0]}
+              </p>
+              <p
+                style={{
+                  color: "#1d4ed8",
+                  fontSize: 10.5,
+                  margin: "2px 0 0",
+                  fontWeight: 600,
+                  letterSpacing: 0.2,
+                }}
+              >
+                {roleIcon} {roleLabel}
+              </p>
             </div>
           </div>
 
           {/* Label do grupo de menu */}
-          <p style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#94a3b8",
-            margin: "4px 4px 6px",
-            letterSpacing: 1.2,
-            textTransform: "uppercase",
-          }}>Navegação</p>
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#94a3b8",
+              margin: "4px 4px 6px",
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+            }}
+          >
+            Navegação
+          </p>
 
           {/* Itens do menu */}
-          {menuItems.map(item => (
+          {menuItems.map((item) => (
             <button
               key={item.path}
               onClick={() => navegarPara(item.path)}
@@ -466,19 +527,28 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           ))}
 
           {/* Separador + Atalhos */}
-          <p style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#94a3b8",
-            margin: "16px 4px 6px",
-            letterSpacing: 1.2,
-            textTransform: "uppercase",
-          }}>Atalhos</p>
-
-          <button
-            onClick={() => navegarPara("/chatbot")}
-            className="shortcut-btn shortcut-chatbot"
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#94a3b8",
+              margin: "16px 4px 6px",
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+            }}
           >
+            Atalhos
+          </p>
+
+          {/* 🕐 Bater Ponto — lateral, pra todos os funcionários (cada um bate o seu) */}
+          <button
+            onClick={() => navegarPara("/crm/ponto")}
+            className={`shortcut-btn shortcut-ponto ${isActive("/crm/ponto") ? "active" : ""}`}
+          >
+            <span>🕐</span> Bater Ponto
+          </button>
+
+          <button onClick={() => navegarPara("/chatbot")} className="shortcut-btn shortcut-chatbot">
             <span>💬</span> Chatbot
           </button>
 
@@ -511,11 +581,13 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           </button>
 
           {/* Botão Sair (fundo) */}
-          <div style={{
-            marginTop: "auto",
-            borderTop: "1px solid #e2e8f0",
-            paddingTop: 12,
-          }}>
+          <div
+            style={{
+              marginTop: "auto",
+              borderTop: "1px solid #e2e8f0",
+              paddingTop: 12,
+            }}
+          >
             <button onClick={signOut} className="logout-btn">
               <span>🚪</span> Sair
             </button>
@@ -523,13 +595,15 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* ═══ CONTEÚDO ═══ */}
-        <div style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: isMobile ? "56px 12px 16px" : 32,
-          width: isMobile ? "100%" : "auto",
-          minWidth: 0,
-        }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: isMobile ? "56px 12px 16px" : 32,
+            width: isMobile ? "100%" : "auto",
+            minWidth: 0,
+          }}
+        >
           {children}
         </div>
       </div>
