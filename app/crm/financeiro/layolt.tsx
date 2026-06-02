@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { DashboardSection } from "./_sections/dashboardsection";
 import { ContasReceberSection } from "./_sections/contasreceberSection";
+import { FolhaSection } from "./_sections/folhaSection";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 💵 FINANCEIRO — Shell do módulo (UnitaSystem)
@@ -25,64 +26,21 @@ type Grupo = { key: string; icon: string; label: string; itens: SubItem[] };
 
 const GRUPOS: Grupo[] = [
   {
-    key: "visao",
+    key: "geral",
     icon: "📊",
-    label: "Visão Geral",
-    itens: [
-      { key: "dashboard", label: "Dashboard" },
-      { key: "indicadores", label: "Indicadores" },
-    ],
+    label: "Visão",
+    itens: [{ key: "resumo", label: "Resumo" }],
   },
   {
-    key: "receber",
-    icon: "📥",
-    label: "Contas a Receber",
+    key: "mov",
+    icon: "💸",
+    label: "Movimento do Mês",
     itens: [
-      { key: "receber", label: "Títulos a Receber" },
-      { key: "recebimentos", label: "Recebimentos" },
-      { key: "clientes", label: "Clientes" },
+      { key: "receber", label: "Receber (Operadoras)" },
+      { key: "pagar", label: "Pagar (Despesas)" },
+      { key: "folha", label: "Folha do Mês" },
     ],
   },
-  {
-    key: "pagar",
-    icon: "📤",
-    label: "Contas a Pagar",
-    itens: [
-      { key: "pagar", label: "Títulos a Pagar" },
-      { key: "pagamentos", label: "Pagamentos" },
-      { key: "fornecedores", label: "Fornecedores" },
-    ],
-  },
-  {
-    key: "caixa",
-    icon: "💵",
-    label: "Caixa & Bancos",
-    itens: [
-      { key: "fluxo", label: "Fluxo de Caixa" },
-      { key: "contas_bancarias", label: "Contas Bancárias" },
-      { key: "conciliacao", label: "Conciliação Bancária" },
-    ],
-  },
-  {
-    key: "relatorios",
-    icon: "📈",
-    label: "Relatórios",
-    itens: [
-      { key: "dre", label: "DRE" },
-      { key: "fluxo_projetado", label: "Fluxo Projetado" },
-      { key: "relatorios", label: "Relatórios Gerais" },
-    ],
-  },
-  {
-    key: "cadastros",
-    icon: "🏷️",
-    label: "Cadastros",
-    itens: [
-      { key: "categorias", label: "Categorias" },
-      { key: "centros_custo", label: "Centros de Custo" },
-    ],
-  },
-  { key: "config", icon: "⚙️", label: "Configurações", itens: [{ key: "config", label: "Geral" }] },
 ];
 
 const LABELS: Record<string, string> = Object.fromEntries(
@@ -90,8 +48,8 @@ const LABELS: Record<string, string> = Object.fromEntries(
 );
 
 export default function FinanceiroLayolt() {
-  const [aba, setAba] = useState("dashboard");
-  const [grupoAberto, setGrupoAberto] = useState<string | null>("visao");
+  const [aba, setAba] = useState("resumo");
+  const [grupoAberto, setGrupoAberto] = useState<string | null>("mov");
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
@@ -363,10 +321,12 @@ export default function FinanceiroLayolt() {
 
       {/* CONTEÚDO */}
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
-        {aba === "dashboard" ? (
+        {aba === "resumo" ? (
           <DashboardSection />
         ) : aba === "receber" ? (
           <ContasReceberSection />
+        ) : aba === "folha" ? (
+          <FolhaSection />
         ) : (
           <EmConstrucao titulo={LABELS[aba] || "Seção"} />
         )}
