@@ -11,6 +11,27 @@ const card = {
   boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
 };
 const real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// competência interna "AAAA-MM" → exibição "Mês/AAAA"
+const MESES = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
+function fmtComp(c: string) {
+  const [ano, mes] = (c || "").split("-");
+  const i = Number(mes) - 1;
+  if (!ano || isNaN(i) || !MESES[i]) return c;
+  return `${MESES[i]}/${ano}`;
+}
 type Linha = { rotulo: string; valor: number };
 type Holerite = {
   id: string;
@@ -28,6 +49,10 @@ export function HoleritesSection() {
   const [carregando, setCarregando] = useState(true);
   const [comp, setComp] = useState("");
   const [ver, setVer] = useState<Holerite | null>(null);
+  // gerar holerites a partir da folha (folha_itens)
+  const [compsFolha, setCompsFolha] = useState<string[]>([]);
+  const [compGerar, setCompGerar] = useState("");
+  const [gerando, setGerando] = useState(false);
   const carregar = async () => {
     setCarregando(true);
     const { data, error } = await supabase.from("holerites").select("*").order("nome", { ascending: true });
@@ -57,6 +82,82 @@ export function HoleritesSection() {
   useEffect(() => {
     carregar();
   }, []);
+
+  // competências que têm folha gerada (origem dos holerites)
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from("folha_itens").select("competencia");
+      const comps = Array.from(new Set((data || []).map((r: any) => r.competencia).filter(Boolean)))
+        .sort()
+        .reverse() as string[];
+      setCompsFolha(comps);
+      setCompGerar((atual) => atual || (comps.length ? comps[0] : ""));
+    })();
+  }, []);
+
+  // 🧾 Gera os holerites a partir dos itens da folha da competência escolhida
+  const gerarHolerites = async () => {
+    if (!compGerar) {
+      alert("Selecione a competência da folha.");
+      return;
+    }
+    setGerando(true);
+    const { data: folha, error } = await supabase
+      .from("folha_itens")
+      .select("*")
+      .eq("competencia", compGerar);
+    if (error) {
+      setGerando(false);
+      alert("Erro ao ler a folha: " + error.message);
+      return;
+    }
+    if (!folha || folha.length === 0) {
+      setGerando(false);
+      alert("Não há folha gerada nessa competência.");
+      return;
+    }
+    // não duplica quem já tem holerite nessa competência
+    const { data: jaTem } = await supabase.from("holerites").select("nome").eq("competencia", compGerar);
+    const existentes = new Set((jaTem || []).map((h: any) => (h.nome || "").toLowerCase()));
+    const novos = folha
+      .filter((f: any) => !existentes.has((f.nome || "").toLowerCase()))
+      .map((f: any) => {
+        const base = Number(f.base) || 0;
+        const comissao = Number(f.comissao) || 0;
+        const inss = Number(f.inss) || 0;
+        const irrf = Number(f.irrf) || 0;
+        const outros = Number(f.outros) || 0;
+        const proventos: Linha[] = [{ rotulo: "Salário base", valor: base }];
+        if (comissao > 0) proventos.push({ rotulo: "Comissão", valor: comissao });
+        const descontos: Linha[] = [];
+        if (inss > 0) descontos.push({ rotulo: "INSS", valor: inss });
+        if (irrf > 0) descontos.push({ rotulo: "IRRF", valor: irrf });
+        if (outros > 0) descontos.push({ rotulo: "Outros descontos", valor: outros });
+        return {
+          nome: f.nome,
+          cargo: f.cargo || "",
+          competencia: compGerar,
+          emitido: true,
+          pago: f.status === "pago",
+          proventos,
+          descontos,
+        };
+      });
+    if (novos.length === 0) {
+      setGerando(false);
+      alert("Todos os holerites dessa competência já foram gerados.");
+      return;
+    }
+    const { error: insErr } = await supabase.from("holerites").insert(novos);
+    setGerando(false);
+    if (insErr) {
+      alert("Erro ao gerar: " + insErr.message);
+      return;
+    }
+    setComp(compGerar);
+    await carregar();
+    alert(`✅ ${novos.length} holerite(s) gerado(s) para ${fmtComp(compGerar)}!`);
+  };
   const competencias = useMemo(
     () =>
       Array.from(new Set(todos.map((i) => i.competencia)))
@@ -101,28 +202,84 @@ export function HoleritesSection() {
             </p>
           </div>
         </div>
-        {competencias.length > 0 && (
-          <select
-            value={comp}
-            onChange={(e) => setComp(e.target.value)}
-            style={{
-              background: "#ffffff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 10,
-              padding: "9px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#1f2937",
-              outline: "none",
-            }}
-          >
-            {competencias.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        )}
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {competencias.length > 0 && (
+            <select
+              value={comp}
+              onChange={(e) => setComp(e.target.value)}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                padding: "9px 14px",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#1f2937",
+                outline: "none",
+              }}
+            >
+              {competencias.map((c) => (
+                <option key={c} value={c}>
+                  {fmtComp(c)}
+                </option>
+              ))}
+            </select>
+          )}
+          {compsFolha.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+                background: "#ffffff",
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                padding: "5px 6px 5px 12px",
+              }}
+            >
+              <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                Gerar da folha:
+              </span>
+              <select
+                value={compGerar}
+                onChange={(e) => setCompGerar(e.target.value)}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  padding: "6px 8px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "#1f2937",
+                  outline: "none",
+                }}
+              >
+                {compsFolha.map((c) => (
+                  <option key={c} value={c}>
+                    {fmtComp(c)}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={gerarHolerites}
+                disabled={gerando}
+                style={{
+                  background: `linear-gradient(135deg, ${COR} 0%, #6366f1 100%)`,
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontSize: 12,
+                  cursor: gerando ? "wait" : "pointer",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  opacity: gerando ? 0.7 : 1,
+                }}
+              >
+                {gerando ? "Gerando..." : "⚙️ Gerar"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
@@ -134,6 +291,13 @@ export function HoleritesSection() {
           <p style={{ color: "#6b7280", fontSize: 13 }}>
             {todos.length === 0 ? "Nenhum holerite gerado ainda." : "Sem holerites nesta competência."}
           </p>
+          {todos.length === 0 && (
+            <p style={{ color: "#9ca3af", fontSize: 12, margin: "6px 0 0", lineHeight: 1.5 }}>
+              {compsFolha.length > 0
+                ? 'Use o botão "⚙️ Gerar" lá em cima pra criar os contracheques a partir da folha do mês.'
+                : "Gere uma folha primeiro no módulo Folha de Pagamento — depois volte aqui pra emitir os holerites."}
+            </p>
+          )}
         </div>
       ) : (
         <div style={{ ...card, overflow: "hidden" }}>
