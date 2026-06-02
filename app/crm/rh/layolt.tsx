@@ -191,28 +191,32 @@ export default function RHLayolt() {
         position: "relative",
       }}
     >
-      {/* HAMBÚRGUER (mobile) */}
+      {/* BOTÃO SEÇÕES DO MÓDULO (mobile) — canto DIREITO p/ não bater no menu do CRM (esquerdo) */}
       {isMobile && !menuMobileAberto && (
         <button
           onClick={() => setMenuMobileAberto(true)}
-          title="Abrir menu do módulo"
+          title="Abrir seções do RH"
           style={{
             position: "fixed",
             top: 8,
-            left: 8,
-            zIndex: 50,
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-            color: "#1f2937",
+            right: 8,
+            zIndex: 65,
+            background: "#eef2ff",
+            border: "1px solid #c7d2fe",
+            color: "#4338ca",
             borderRadius: 10,
-            padding: "6px 12px",
-            fontSize: 18,
+            padding: "7px 14px",
+            fontSize: 13,
+            fontWeight: 700,
             cursor: "pointer",
             lineHeight: 1,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            boxShadow: "0 4px 12px rgba(67,56,202,0.18)",
           }}
         >
-          ☰
+          ☰ Seções
         </button>
       )}
       {isMobile && menuMobileAberto && (
@@ -223,7 +227,7 @@ export default function RHLayolt() {
             inset: 0,
             background: "rgba(15,23,42,0.4)",
             backdropFilter: "blur(2px)",
-            zIndex: 50,
+            zIndex: 1090,
           }}
         />
       )}
@@ -243,7 +247,7 @@ export default function RHLayolt() {
           left: isMobile ? 0 : "auto",
           bottom: isMobile ? 0 : "auto",
           height: isMobile ? "100vh" : "auto",
-          zIndex: isMobile ? 60 : "auto",
+          zIndex: isMobile ? 1100 : "auto",
           transform: isMobile && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
           transition: "transform 0.25s ease",
           boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.1)" : "none",
