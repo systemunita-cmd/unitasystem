@@ -110,7 +110,6 @@ const GRUPOS: Grupo[] = [
     icon: "⏰",
     label: "Jornada & Tempo",
     itens: [
-      { key: "bater_ponto", label: "Bater Ponto" },
       { key: "ponto", label: "Ponto / Frequência" },
       { key: "ferias", label: "Férias" },
       { key: "afastamentos", label: "Afastamentos" },
