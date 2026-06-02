@@ -66,6 +66,7 @@ export default function BaterPontoPage() {
   const [relogio, setRelogio] = useState(new Date());
   const [registrando, setRegistrando] = useState(false);
   const [ultima, setUltima] = useState<{ tipo: string; hora: string; comGps: boolean } | null>(null);
+  const [emailLogado, setEmailLogado] = useState("");
 
   // relógio ao vivo
   useEffect(() => {
@@ -78,38 +79,31 @@ export default function BaterPontoPage() {
     (async () => {
       setCarregando(true);
       const { data: auth } = await supabase.auth.getUser();
-      const email = auth?.user?.email;
+      const email = auth?.user?.email || "";
+      setEmailLogado(email);
       if (!email) {
         setCarregando(false);
         setSemVinculo(true);
         return;
       }
       const alvo = email.toLowerCase().trim();
-      // 1) tenta pelo vínculo explícito (campo "Usuário do sistema" = user_email)
-      let { data } = await supabase
+      // Busca todos e casa no navegador, normalizando maiúsculas/espaços —
+      // à prova de qualquer diferença. Casa por user_email OU pelo e-mail do cadastro.
+      const { data: todos, error } = await supabase
         .from("funcionarios")
-        .select("nome, cargo")
-        .ilike("user_email", alvo)
-        .limit(1)
-        .maybeSingle();
-      // 2) fallback: alguns logins (ex.: super admin) não ficam na tabela usuarios
-      //    e não aparecem no select de vínculo — então casa pelo e-mail do cadastro
-      if (!data) {
-        const r2 = await supabase
-          .from("funcionarios")
-          .select("nome, cargo")
-          .ilike("email", alvo)
-          .limit(1)
-          .maybeSingle();
-        data = r2.data;
-      }
-      if (!data) {
+        .select("nome, cargo, email, user_email");
+      if (error) console.error("[ponto] erro ao buscar funcionários:", error);
+      const f = (todos || []).find(
+        (x: any) =>
+          (x.user_email || "").toLowerCase().trim() === alvo || (x.email || "").toLowerCase().trim() === alvo
+      );
+      if (!f) {
         setSemVinculo(true);
         setCarregando(false);
         return;
       }
-      setFunc({ nome: data.nome, cargo: data.cargo || "" });
-      await carregarBatidasHoje(data.nome);
+      setFunc({ nome: f.nome, cargo: f.cargo || "" });
+      await carregarBatidasHoje(f.nome);
       setCarregando(false);
     })();
   }, []);
@@ -205,6 +199,20 @@ export default function BaterPontoPage() {
             Peça ao RH para abrir o seu cadastro de funcionário e selecionar o seu usuário no campo
             <b> "Usuário do sistema"</b>. Depois disso, o ponto fica liberado aqui.
           </p>
+          <div
+            style={{
+              marginTop: 18,
+              padding: "10px 14px",
+              background: "#f8fafc",
+              border: "1px dashed #cbd5e1",
+              borderRadius: 10,
+              display: "inline-block",
+            }}
+          >
+            <p style={{ color: "#94a3b8", fontSize: 11, margin: 0, letterSpacing: 0.3 }}>
+              Login detectado: <b style={{ color: "#475569" }}>{emailLogado || "(não identificado)"}</b>
+            </p>
+          </div>
         </div>
       ) : (
         <>
