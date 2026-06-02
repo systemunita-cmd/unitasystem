@@ -84,12 +84,26 @@ export default function BaterPontoPage() {
         setSemVinculo(true);
         return;
       }
-      const { data, error } = await supabase
+      const alvo = email.toLowerCase().trim();
+      // 1) tenta pelo vínculo explícito (campo "Usuário do sistema" = user_email)
+      let { data } = await supabase
         .from("funcionarios")
         .select("nome, cargo")
-        .eq("user_email", email)
+        .ilike("user_email", alvo)
+        .limit(1)
         .maybeSingle();
-      if (error || !data) {
+      // 2) fallback: alguns logins (ex.: super admin) não ficam na tabela usuarios
+      //    e não aparecem no select de vínculo — então casa pelo e-mail do cadastro
+      if (!data) {
+        const r2 = await supabase
+          .from("funcionarios")
+          .select("nome, cargo")
+          .ilike("email", alvo)
+          .limit(1)
+          .maybeSingle();
+        data = r2.data;
+      }
+      if (!data) {
         setSemVinculo(true);
         setCarregando(false);
         return;
