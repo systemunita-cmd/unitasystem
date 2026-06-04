@@ -200,27 +200,19 @@ export function usePermissao() {
             setIsSuperAdmin(true);
             setPermissoes(PERMISSOES_ADMIN);
           } else {
-            // Outro grupo → deriva do mapa de permissões
-            const { data: vinculos } = await supabase.from("grupo_permissoes")
-              .select("permissao_slug, valor").eq("grupo_id", usr.grupo_id);
-            const mapa: Record<string, string> = {};
-            for (const v of (vinculos || [])) mapa[v.permissao_slug] = v.valor;
-
-            // 🔗 Mescla: o editor de checkbox grava o mapa booleano em
-            //    grupos_permissao.permissoes; o editor de slug grava em
-            //    grupo_permissoes. Lemos OS DOIS e damos OR — assim o acesso
-            //    vale independente de qual editor o admin usou.
-            const derivado = derivarPermissoesDoGrupo(mapa);
+            // Outro grupo → vale EXATAMENTE o que está marcado no checkbox
+            // (grupos_permissao.permissoes). Sem slug, sem derivação, sem default
+            // permissivo: o que não foi marcado fica fechado.
             const boolMap = (grupo?.permissoes || {}) as Record<string, boolean>;
-            const merged = { ...derivado } as any;
-            for (const k of Object.keys(merged)) {
-              if (boolMap[k] === true) merged[k] = true;
+            const final = { ...PERMISSOES_ZERO } as any;
+            for (const k of Object.keys(final)) {
+              if (boolMap[k] === true) final[k] = true;
             }
 
             setPerfil("Atendente");      // 🔑 força perfil baixo
             setIsDono(false);             // 🔑 desativa checks de "isDono"
             setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"
-            setPermissoes(merged as Permissoes);
+            setPermissoes(final as Permissoes);
           }
           setLoading(false);
           return;

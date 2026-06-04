@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import { useTemPermissao } from "../../hooks/useTemPermissao";
+import { usePermissao } from "../../hooks/usePermissao";
 import { DashboardSection } from "./_sections/dashboardsection";
 import { IndicadoresSection } from "./_sections/indicadoressection";
 import { FuncionariosSection } from "./_sections/funcionariossection";
@@ -172,7 +173,8 @@ export default function RHLayolt() {
   // 🛡️ Gate por tela: super admin e "Administração Geral" veem tudo;
   // demais grupos só veem a tela se tiverem rh_<chave>.acessar ligado.
   const { tem, superAdmin, grupoNome } = useTemPermissao();
-  const veTudoRH = superAdmin || grupoNome === "Administração Geral";
+  const { permissoes } = usePermissao();
+  const veTudoRH = superAdmin || grupoNome === "Administração Geral" || !!permissoes.rh;
   const podeItem = (key: string) => veTudoRH || tem(("rh_" + key + ".acessar") as any);
   const gruposVisiveis = GRUPOS
     .map((g) => ({ ...g, itens: g.itens.filter((i) => podeItem(i.key)) }))
