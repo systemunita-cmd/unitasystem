@@ -63,61 +63,58 @@ type GrupoPermissao = {
 type Aba = "usuarios" | "equipes" | "filas" | "permissoes" | "geral";
 
 const CATEGORIAS_PERMISSAO = [
-  { nome: "🧩 Módulos do Sistema", cor: "#7c3aed", permissoes: [
+  { nome: "🎯 CRM", cor: "#16a34a", permissoes: [
     { key: "crm_acessar", label: "Acessar o CRM" },
-    { key: "chatbot_acessar", label: "Acessar o Chatbot" },
-    { key: "telefonia_acessar", label: "Acessar a Telefonia" },
-    { key: "cobranca", label: "Acessar a Cobrança" },
-    { key: "rh", label: "Acessar o RH" },
-    { key: "financeiro_acessar", label: "Acessar o Financeiro" },
-    { key: "bater_ponto", label: "Acessar o Bater Ponto" },
+    { key: "dashboard", label: "Dashboard de vendas" },
+    { key: "funil", label: "Ver funil de vendas" },
+    { key: "vendas_proprio", label: "Ver próprias vendas" },
+    { key: "vendas_equipe", label: "Ver vendas da equipe" },
+    { key: "proposta_criar", label: "Criar propostas" },
+    { key: "contatos_ver", label: "Ver contatos" },
+    { key: "contatos_editar", label: "Editar cadastro de contatos" },
+    { key: "etiquetas", label: "Gerenciar etiquetas" },
   ]},
-  { nome: "💬 Atendimento", cor: "#3b82f6", permissoes: [
+  { nome: "💬 Chatbot", cor: "#3b82f6", permissoes: [
+    { key: "chatbot_acessar", label: "Acessar o Chatbot" },
     { key: "chat_proprio", label: "Ver próprios atendimentos" },
     { key: "chat_todos", label: "Ver todos atendimentos" },
     { key: "chat_interno", label: "Chat interno (conversar c/ equipe)" },
     { key: "respostas_rapidas", label: "Usar respostas rápidas" },
     { key: "transferir_chat", label: "Transferir conversas" },
     { key: "finalizar_chat", label: "Finalizar atendimentos" },
-  ]},
-  { nome: "🏷️ Contatos & Etiquetas", cor: "#06b6d4", permissoes: [
-    { key: "contatos_ver", label: "Ver contatos" },
-    { key: "contatos_editar", label: "Editar cadastro de contatos" },
-    { key: "etiquetas", label: "Gerenciar etiquetas" },
-  ]},
-  { nome: "💰 Vendas & CRM", cor: "#f59e0b", permissoes: [
-    { key: "dashboard", label: "Dashboard de atendimentos" },
-    { key: "vendas_proprio", label: "Ver próprias vendas" },
-    { key: "vendas_equipe", label: "Ver vendas da equipe" },
-    { key: "funil", label: "Ver funil de vendas" },
-    { key: "proposta_criar", label: "Criar propostas" },
-    { key: "editor_proposta", label: "Editar campos da proposta" },
-  ]},
-  { nome: "📤 Marketing & Disparos", cor: "#ec4899", permissoes: [
     { key: "disparo_enviar", label: "Enviar disparos em massa" },
     { key: "templates_waba", label: "Gerenciar templates WABA" },
   ]},
-  { nome: "📞 Telefonia VOIP", cor: "#16a34a", permissoes: [
-    { key: "voip_usar", label: "Usar softphone (fazer ligações)" },
+  { nome: "📞 Telefonia", cor: "#0d9488", permissoes: [
+    { key: "telefonia_acessar", label: "Acessar a Telefonia" },
+    { key: "voip_usar", label: "Fazer ligações (softphone)" },
     { key: "voip_conexoes", label: "Gerenciar conexões VOIP" },
     { key: "voip_campanhas", label: "Criar campanhas VOIP" },
+    { key: "relatorios_voip", label: "Relatórios de telefonia" },
   ]},
-  { nome: "⚙️ Administração", cor: "#dc2626", permissoes: [
+  { nome: "💰 Cobrança", cor: "#dc2626", permissoes: [
+    { key: "cobranca", label: "Acessar a Cobrança" },
+  ]},
+  { nome: "🧑‍💼 RH", cor: "#4f46e5", permissoes: [
+    { key: "rh", label: "Acessar o RH" },
+  ]},
+  { nome: "💵 Financeiro", cor: "#d97706", permissoes: [
+    { key: "financeiro_acessar", label: "Acessar o Financeiro" },
+  ]},
+  { nome: "🕐 Bater Ponto", cor: "#db2777", permissoes: [
+    { key: "bater_ponto", label: "Acessar o Bater Ponto" },
+  ]},
+  { nome: "⚙️ Administração", cor: "#64748b", permissoes: [
     { key: "conexoes", label: "Gerenciar conexões WhatsApp" },
     { key: "filas", label: "Gerenciar filas" },
     { key: "usuarios_gerenciar", label: "Gerenciar usuários" },
     { key: "grupos_permissao", label: "Gerenciar grupos de permissão" },
-    { key: "configuracoes_sistema", label: "Configurações do sistema" },
-  ]},
-  { nome: "📊 Relatórios", cor: "#8b5cf6", permissoes: [
+    { key: "configuracoes_workspace", label: "Configurações do sistema" },
     { key: "relatorios", label: "Relatórios de atendimento" },
-    { key: "relatorios_voip", label: "Relatórios de telefonia" },
-  ]},
-  { nome: "👤 Pessoal", cor: "#6b7280", permissoes: [
+    { key: "roleta_gerenciar", label: "Gerenciar roleta" },
     { key: "config_proprio", label: "Editar próprio perfil" },
   ]},
 ];
-
 const TODAS_PERMISSOES = CATEGORIAS_PERMISSAO.flatMap(c => c.permissoes);
 const PERMISSOES_PADRAO: Record<string, boolean> = TODAS_PERMISSOES.reduce((acc, p) => { acc[p.key] = false; return acc; }, {} as Record<string, boolean>);
 const LABELS_MAP: Record<string, string> = TODAS_PERMISSOES.reduce((acc, p) => { acc[p.key] = p.label; return acc; }, {} as Record<string, string>);

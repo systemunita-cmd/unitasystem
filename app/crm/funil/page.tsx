@@ -11,6 +11,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import {
   montarCamposUnificados,
   type CampoUnificado,
@@ -372,6 +373,12 @@ export default function Funil() {
   // 👥 Filtro de equipe
   const { equipeId, EquipeSelector } = useEquipeFiltro();
 
+  // 🔒 Escopo de dados por usuário (Próprios/Equipe/Todos)
+  const tperm = useTemPermissao();
+  const veTudoCRM = tperm.superAdmin || tperm.grupoNome === "Administração Geral";
+  const escVendas = tperm.escopo("vendas.ver");          // 'none' | 'own' | 'team' | 'all'
+  const meuEmail = (tperm.userEmail || "").toLowerCase();
+
   // ─── CONFIG SEMÂNTICA DO FUNIL ────────────────────────────────────────────
   const [config, setConfig] = useState<FunilConfig | null>(null);
   const [showConfig, setShowConfig] = useState(false);
@@ -584,6 +591,10 @@ export default function Funil() {
   // ─── FILTRO MESTRE ──────────────────────────────────────────────────────────
   const passaFiltrosBase = useCallback((p: Proposta): boolean => {
     if (equipeId && p.equipe_id !== equipeId) return false;
+    // 🔒 Usuário restrito vê só o que é dele (a menos que tenha escopo Equipe/Todos)
+    if (!veTudoCRM && escVendas !== "all" && escVendas !== "team") {
+      if ((p.vendedor || "").toLowerCase() !== meuEmail) return false;
+    }
     if (filtroVendedor !== "todos" && p.vendedor !== filtroVendedor) return false;
     for (const [slug, val] of Object.entries(filtrosDim)) {
       if (!val) continue;
@@ -599,7 +610,7 @@ export default function Funil() {
       if (!txtNome.includes(b) && !txtVend.includes(b) && !txtStatus.includes(b)) return false;
     }
     return true;
-  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe]);
+  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe, veTudoCRM, escVendas, meuEmail]);
 
   const janela = useMemo(() => {
     const agora = new Date();
