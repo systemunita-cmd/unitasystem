@@ -190,7 +190,7 @@ export function usePermissao() {
         if (usr.grupo_id) {
           // Pega nome do grupo
           const { data: grupo } = await supabase.from("grupos_permissao")
-            .select("nome").eq("id", usr.grupo_id).maybeSingle();
+            .select("nome, permissoes").eq("id", usr.grupo_id).maybeSingle();
           const nomeGrupo = grupo?.nome || "";
 
           // "Administração Geral" = equivalente a admin total
@@ -206,10 +206,21 @@ export function usePermissao() {
             const mapa: Record<string, string> = {};
             for (const v of (vinculos || [])) mapa[v.permissao_slug] = v.valor;
 
-            setPerfil("Atendente");      // 🔑 força perfil baixo — desativa checks de "perfil === Administrador"
+            // 🔗 Mescla: o editor de checkbox grava o mapa booleano em
+            //    grupos_permissao.permissoes; o editor de slug grava em
+            //    grupo_permissoes. Lemos OS DOIS e damos OR — assim o acesso
+            //    vale independente de qual editor o admin usou.
+            const derivado = derivarPermissoesDoGrupo(mapa);
+            const boolMap = (grupo?.permissoes || {}) as Record<string, boolean>;
+            const merged = { ...derivado } as any;
+            for (const k of Object.keys(merged)) {
+              if (boolMap[k] === true) merged[k] = true;
+            }
+
+            setPerfil("Atendente");      // 🔑 força perfil baixo
             setIsDono(false);             // 🔑 desativa checks de "isDono"
             setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"
-            setPermissoes(derivarPermissoesDoGrupo(mapa));
+            setPermissoes(merged as Permissoes);
           }
           setLoading(false);
           return;
