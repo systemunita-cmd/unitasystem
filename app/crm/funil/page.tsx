@@ -11,7 +11,6 @@ import {
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
-import { useTemPermissao } from "../../hooks/useTemPermissao";
 import {
   montarCamposUnificados,
   type CampoUnificado,
@@ -358,6 +357,7 @@ export default function Funil() {
 
   // ─── DADOS BRUTOS ─────────────────────────────────────────────────────────
   const [propostas, setPropostas] = useState<Proposta[]>([]);
+  const [meuEmail, setMeuEmail] = useState("");
   const [campos, setCampos] = useState<CampoUni[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
@@ -373,11 +373,10 @@ export default function Funil() {
   // 👥 Filtro de equipe
   const { equipeId, EquipeSelector } = useEquipeFiltro();
 
-  // 🔒 Escopo de dados por usuário (Próprios/Equipe/Todos)
-  const tperm = useTemPermissao();
-  const veTudoCRM = tperm.superAdmin || tperm.grupoNome === "Administração Geral";
-  const escVendas = tperm.escopo("vendas.ver");          // 'none' | 'own' | 'team' | 'all'
-  const meuEmail = (tperm.userEmail || "").toLowerCase();
+  // 🔒 Escopo de dados (booleano do checkbox):
+  //    sem "Ver vendas da equipe" e sem ser admin → vê SÓ as próprias.
+  const veTudoCRM = isSuperAdmin || isDono;
+  const soMinhasVendas = !veTudoCRM && !permissoes.vendas_equipe;
 
   // ─── CONFIG SEMÂNTICA DO FUNIL ────────────────────────────────────────────
   const [config, setConfig] = useState<FunilConfig | null>(null);
@@ -419,6 +418,7 @@ export default function Funil() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
+      setMeuEmail((user.email || "").toLowerCase());
 
       // 1) Carrega config de campos (Editor de Proposta)
       let camposUnificados: CampoUni[] = [];
@@ -592,9 +592,7 @@ export default function Funil() {
   const passaFiltrosBase = useCallback((p: Proposta): boolean => {
     if (equipeId && p.equipe_id !== equipeId) return false;
     // 🔒 Usuário restrito vê só o que é dele (a menos que tenha escopo Equipe/Todos)
-    if (!veTudoCRM && escVendas !== "all" && escVendas !== "team") {
-      if ((p.vendedor || "").toLowerCase() !== meuEmail) return false;
-    }
+    if (soMinhasVendas && (p.vendedor || "").toLowerCase() !== meuEmail) return false;
     if (filtroVendedor !== "todos" && p.vendedor !== filtroVendedor) return false;
     for (const [slug, val] of Object.entries(filtrosDim)) {
       if (!val) continue;
@@ -610,7 +608,7 @@ export default function Funil() {
       if (!txtNome.includes(b) && !txtVend.includes(b) && !txtStatus.includes(b)) return false;
     }
     return true;
-  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe, veTudoCRM, escVendas, meuEmail]);
+  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe, soMinhasVendas, meuEmail]);
 
   const janela = useMemo(() => {
     const agora = new Date();
