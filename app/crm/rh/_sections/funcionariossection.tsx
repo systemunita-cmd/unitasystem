@@ -29,8 +29,6 @@ const inputStyle = {
   outline: "none",
 };
 
-const DEPARTAMENTOS = ["Comercial", "Atendimento", "Financeiro", "TI", "Administrativo"];
-
 type Status = "ativo" | "ferias" | "afastado" | "desligado";
 type Funcionario = {
   id: string;
@@ -40,6 +38,7 @@ type Funcionario = {
   telefone: string;
   cargo: string;
   departamento: string;
+  equipe_id: string;
   admissao: string;
   salario: number;
   status: Status;
@@ -70,7 +69,8 @@ const FORM_VAZIO: Funcionario = {
   email: "",
   telefone: "",
   cargo: "",
-  departamento: DEPARTAMENTOS[0],
+  departamento: "",
+  equipe_id: "",
   admissao: "",
   salario: 0,
   status: "ativo",
@@ -82,6 +82,7 @@ export function FuncionariosSection() {
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState("");
   const [filtroDepto, setFiltroDepto] = useState("todos");
+  const [filtroEquipe, setFiltroEquipe] = useState("todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
 
   const [modalAberto, setModalAberto] = useState(false);
@@ -91,6 +92,8 @@ export function FuncionariosSection() {
 
   // logins do sistema (tabela usuarios) — pro select de vínculo do funcionário
   const [usuariosSistema, setUsuariosSistema] = useState<{ email: string; nome: string }[]>([]);
+  const [departamentos, setDepartamentos] = useState<{ id: string; nome: string }[]>([]);
+  const [equipes, setEquipes] = useState<{ id: string; nome: string }[]>([]);
 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -128,6 +131,20 @@ export function FuncionariosSection() {
     })();
   }, []);
 
+  // 🔌 departamentos e equipes (pros selects do cadastro de funcionário)
+  useEffect(() => {
+    (async () => {
+      const [dep, eq] = await Promise.all([
+        supabase.from("departamentos").select("id, nome").order("nome", { ascending: true }),
+        supabase.from("equipes").select("id, nome").eq("ativo", true).order("nome", { ascending: true }),
+      ]);
+      if (dep.data) setDepartamentos(dep.data as { id: string; nome: string }[]);
+      if (eq.data) setEquipes(eq.data as { id: string; nome: string }[]);
+    })();
+  }, []);
+
+  const equipeNome = (id?: string) => equipes.find((e) => String(e.id) === String(id))?.nome || "";
+
   const filtrados = useMemo(() => {
     let l = lista;
     if (busca) {
@@ -141,9 +158,10 @@ export function FuncionariosSection() {
       );
     }
     if (filtroDepto !== "todos") l = l.filter((f) => f.departamento === filtroDepto);
+    if (filtroEquipe !== "todos") l = l.filter((f) => String(f.equipe_id) === filtroEquipe);
     if (filtroStatus !== "todos") l = l.filter((f) => f.status === filtroStatus);
     return l;
-  }, [lista, busca, filtroDepto, filtroStatus]);
+  }, [lista, busca, filtroDepto, filtroEquipe, filtroStatus]);
 
   const stats = useMemo(
     () => ({
@@ -182,6 +200,7 @@ export function FuncionariosSection() {
       telefone: form.telefone,
       cargo: form.cargo,
       departamento: form.departamento,
+      equipe_id: form.equipe_id || null,
       admissao: form.admissao || null,
       salario: form.salario || 0,
       status: form.status,
@@ -325,12 +344,26 @@ export function FuncionariosSection() {
           style={{ ...inputStyle, maxWidth: 200 }}
         >
           <option value="todos">Departamento: Todos</option>
-          {DEPARTAMENTOS.map((d) => (
-            <option key={d} value={d}>
-              {d}
+          {departamentos.map((d) => (
+            <option key={d.id} value={d.nome}>
+              {d.nome}
             </option>
           ))}
         </select>
+        {equipes.length > 0 && (
+          <select
+            value={filtroEquipe}
+            onChange={(e) => setFiltroEquipe(e.target.value)}
+            style={{ ...inputStyle, maxWidth: 200 }}
+          >
+            <option value="todos">Equipe: Todas</option>
+            {equipes.map((eq) => (
+              <option key={eq.id} value={eq.id}>
+                {eq.nome}
+              </option>
+            ))}
+          </select>
+        )}
         <select
           value={filtroStatus}
           onChange={(e) => setFiltroStatus(e.target.value)}
@@ -412,7 +445,7 @@ export function FuncionariosSection() {
                 <div
                   style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#6b7280" }}
                 >
-                  <span>{f.departamento}</span>
+                  <span>{f.departamento}{f.equipe_id && equipeNome(f.equipe_id) ? " · " + equipeNome(f.equipe_id) : ""}</span>
                   <span>{real(f.salario)}</span>
                 </div>
               </div>
@@ -475,7 +508,10 @@ export function FuncionariosSection() {
                       </td>
                       <td style={{ padding: "12px 16px", color: "#4b5563", fontSize: 12 }}>{f.cargo}</td>
                       <td style={{ padding: "12px 16px", color: "#4b5563", fontSize: 12 }}>
-                        {f.departamento}
+                        {f.departamento || "—"}
+                        {f.equipe_id && equipeNome(f.equipe_id) ? (
+                          <span style={{ display: "block", color: "#2563eb", fontSize: 11, fontWeight: 600 }}>👥 {equipeNome(f.equipe_id)}</span>
+                        ) : null}
                       </td>
                       <td
                         style={{ padding: "12px 16px", color: "#6b7280", fontSize: 12, whiteSpace: "nowrap" }}
@@ -649,12 +685,37 @@ export function FuncionariosSection() {
                   onChange={(e) => set("departamento", e.target.value)}
                   style={inputStyle}
                 >
-                  {DEPARTAMENTOS.map((d) => (
-                    <option key={d} value={d}>
-                      {d}
+                  <option value="">— Selecione —</option>
+                  {departamentos.map((d) => (
+                    <option key={d.id} value={d.nome}>
+                      {d.nome}
                     </option>
                   ))}
                 </select>
+                {departamentos.length === 0 && (
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
+                    Nenhum departamento cadastrado. Crie na aba <b>Departamentos</b>.
+                  </p>
+                )}
+              </Campo>
+              <Campo label="Equipe / Empresa">
+                <select
+                  value={form.equipe_id}
+                  onChange={(e) => set("equipe_id", e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">— Sem equipe —</option>
+                  {equipes.map((eq) => (
+                    <option key={eq.id} value={eq.id}>
+                      {eq.nome}
+                    </option>
+                  ))}
+                </select>
+                {equipes.length === 0 && (
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
+                    Nenhuma equipe ativa. Crie em <b>Configurações → Equipes</b>.
+                  </p>
+                )}
               </Campo>
               <Campo label="Data de admissão">
                 <input
