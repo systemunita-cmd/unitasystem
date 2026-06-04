@@ -114,15 +114,14 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const podeVerFinanceiro = veTudo || permissoes.financeiro_acessar;
   const podeVerRH = veTudo || permissoes.rh;
 
-  // Itens de CRM — lista única estilo Wolf (botões coloridos); Configurações vai pro fim
-  const menuItems = podeVerCRM
-    ? [
-        { path: "/crm/dashboard", icon: "📊", label: "Visão Geral", cls: "shortcut-crm" },
-        { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas", cls: "shortcut-crm" },
-        { path: "/crm/vendas", icon: "💰", label: "Vendas", cls: "shortcut-crm" },
-        { path: "/crm/contatos", icon: "👥", label: "Contatos", cls: "shortcut-crm" },
-      ]
-    : [];
+  // Topo: só a Visão Geral fica solta (igual Wolf). As telas de CRM vão pra sub-barra.
+  const menuItems = podeVerCRM ? [{ path: "/crm/dashboard", icon: "📊", label: "Visão Geral" }] : [];
+  const crmSubItens = [
+    { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas" },
+    { path: "/crm/vendas", icon: "💰", label: "Vendas" },
+    { path: "/crm/contatos", icon: "👥", label: "Contatos" },
+  ];
+  const naCRM = crmSubItens.some((i) => pathname?.startsWith(i.path));
 
   const isActive = (path: string) => pathname === path || pathname?.startsWith(path + "/");
 
@@ -541,77 +540,42 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Lista única de módulos — estilo Wolf */}
-          {menuItems.map((item) => (
-            <button
-              key={item.path}
-              onClick={() => navegarPara(item.path)}
-              className={`shortcut-btn ${item.cls} ${isActive(item.path) ? "active" : ""}`}
-            >
-              <span>{item.icon}</span> {item.label}
-            </button>
-          ))}
+          {/* Topo: Visão Geral (item com destaque, igual Wolf) */}
+          {menuItems.map((item) => {
+            const ativo = isActive(item.path);
+            return (
+              <button key={item.path} onClick={() => navegarPara(item.path)}
+                onMouseEnter={(e) => { if (!ativo) e.currentTarget.style.background = "#f3f4f6"; }}
+                onMouseLeave={(e) => { if (!ativo) e.currentTarget.style.background = "transparent"; }}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
+                <span>{item.icon}</span> {item.label}
+              </button>
+            );
+          })}
 
-          {/* 🕐 Bater Ponto — lateral, pra todos os funcionários (cada um bate o seu) */}
-          {podeBaterPonto && (
-<button
-            onClick={() => navegarPara("/crm/ponto")}
-            className={`shortcut-btn shortcut-ponto ${isActive("/crm/ponto") ? "active" : ""}`}
-          >
-            <span>🕐</span> Bater Ponto
-          </button>
-          )}
-
-          {podeVerChatbot && (
-<button onClick={() => navegarPara("/chatbot")} className="shortcut-btn shortcut-chatbot">
-            <span>💬</span> Chatbot
-          </button>
-          )}
-
-          {podeVerTelefonia && (
-<button
-            onClick={() => navegarPara("/crm/telefonia")}
-            className={`shortcut-btn shortcut-telefonia ${isActive("/crm/telefonia") ? "active" : ""}`}
-          >
-            <span>📞</span> Telefonia
-          </button>
-          )}
-
-          {podeVerCobranca && (
-<button
-            onClick={() => navegarPara("/crm/cobranca")}
-            className={`shortcut-btn shortcut-cobranca ${isActive("/crm/cobranca") ? "active" : ""}`}
-          >
-            <span>🧾</span> Cobrança
-          </button>
-          )}
-
-          {podeVerFinanceiro && (
-<button
-            onClick={() => navegarPara("/crm/financeiro")}
-            className={`shortcut-btn shortcut-financeiro ${isActive("/crm/financeiro") ? "active" : ""}`}
-          >
-            <span>💵</span> Financeiro
-          </button>
-          )}
-
-          {podeVerRH && (
-<button
-            onClick={() => navegarPara("/crm/rh")}
-            className={`shortcut-btn shortcut-rh ${isActive("/crm/rh") ? "active" : ""}`}
-          >
-            <span>🧑‍💼</span> RH
-          </button>
-          )}
-
-          {podeVerConfiguracoes && (
-            <button
-              onClick={() => navegarPara("/crm/configuracoes")}
-              className={`shortcut-btn shortcut-config ${isActive("/crm/configuracoes") ? "active" : ""}`}
-            >
-              <span>⚙️</span> Configurações
-            </button>
-          )}
+          {/* Separador + módulos (botões coloridos, igual Wolf) */}
+          <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 10, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+            {[
+              { cond: podeVerCRM, path: "/crm/funil", crm: true, icon: "\uD83C\uDFAF", label: "CRM", bg: "#f0fdf4", bgA: "#dcfce7", bd: "#bbf7d0", bdA: "#16a34a", color: "#16a34a" },
+              { cond: podeVerChatbot, path: "/chatbot", icon: "\uD83D\uDCAC", label: "Chatbot", bg: "#eff6ff", bgA: "#dbeafe", bd: "#bfdbfe", bdA: "#3b82f6", color: "#3b82f6" },
+              { cond: podeVerTelefonia, path: "/crm/telefonia", icon: "\uD83D\uDCDE", label: "Telefonia", bg: "#f0fdfa", bgA: "#ccfbf1", bd: "#99f6e4", bdA: "#0d9488", color: "#0d9488" },
+              { cond: podeVerCobranca, path: "/crm/cobranca", icon: "\uD83D\uDCB0", label: "Cobrança", bg: "#fef2f2", bgA: "#fee2e2", bd: "#fecaca", bdA: "#dc2626", color: "#dc2626" },
+              { cond: podeVerRH, path: "/crm/rh", icon: "\uD83E\uDDD1\u200D\uD83D\uDCBC", label: "RH", bg: "#eef2ff", bgA: "#e0e7ff", bd: "#c7d2fe", bdA: "#4f46e5", color: "#4f46e5" },
+              { cond: podeBaterPonto, path: "/crm/ponto", icon: "\uD83D\uDD50", label: "Bater Ponto", bg: "#fdf2f8", bgA: "#fce7f3", bd: "#f9a8d4", bdA: "#db2777", color: "#db2777" },
+              { cond: podeVerFinanceiro, path: "/crm/financeiro", icon: "\uD83D\uDCB5", label: "Financeiro", bg: "#fffbeb", bgA: "#fef3c7", bd: "#fcd34d", bdA: "#d97706", color: "#d97706" },
+              { cond: podeVerConfiguracoes, path: "/crm/configuracoes", icon: "\u2699\uFE0F", label: "Configurações", bg: "#f8fafc", bgA: "#f1f5f9", bd: "#e2e8f0", bdA: "#64748b", color: "#475569" },
+            ].filter((m) => m.cond).map((m) => {
+              const ativo = m.crm ? naCRM : isActive(m.path);
+              return (
+                <button key={m.path} onClick={() => navegarPara(m.path)}
+                  onMouseEnter={(e) => { if (!ativo) { e.currentTarget.style.background = m.bgA; e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.08)"; } }}
+                  onMouseLeave={(e) => { if (!ativo) { e.currentTarget.style.background = m.bg; e.currentTarget.style.boxShadow = "none"; } }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? m.bgA : m.bg, border: `1px solid ${ativo ? m.bdA : m.bd}`, borderRadius: 10, cursor: "pointer", color: m.color, fontSize: 13, fontWeight: 700, textAlign: "left", width: "100%", fontFamily: "inherit", transition: "all 0.15s" }}>
+                  <span>{m.icon}</span> {m.label}
+                </button>
+              );
+            })}
+          </div>
 
           {/* Botão Sair (fundo) */}
           <div
@@ -626,6 +590,30 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </div>
+
+        {/* ═══ SUB-BARRA CRM (igual Wolf) ═══ */}
+        {podeVerCRM && naCRM && !isMobile && (
+          <div style={{ width: 230, background: "#ffffff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", padding: 16, gap: 4, flexShrink: 0, overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 6px 14px" }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#fff", boxShadow: "0 4px 10px rgba(22,163,74,0.3)" }}>{"\uD83C\uDFAF"}</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: "#111827" }}>CRM</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.8, textTransform: "uppercase" }}>Comercial & Vendas</div>
+              </div>
+            </div>
+            {crmSubItens.map((item) => {
+              const ativo = isActive(item.path);
+              return (
+                <button key={item.path} onClick={() => navegarPara(item.path)}
+                  onMouseEnter={(e) => { if (!ativo) e.currentTarget.style.background = "#f3f4f6"; }}
+                  onMouseLeave={(e) => { if (!ativo) e.currentTarget.style.background = "transparent"; }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
+                  <span>{item.icon}</span> {item.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* ═══ CONTEÚDO ═══ */}
         <div
