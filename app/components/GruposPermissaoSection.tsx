@@ -521,7 +521,6 @@ export default function GruposPermissaoSection() {
                                 {p.nome}
                                 {mudou && <span style={{ marginLeft: 6, color: "#f59e0b", fontSize: 10, fontWeight: 700 }}>● alterado</span>}
                               </p>
-                              <p style={{ color: "#9ca3af", fontSize: 10, margin: "2px 0 0", fontFamily: "monospace" }}>{p.slug}</p>
                             </div>
                             {p.tipo === "toggle" ? (
                               <ToggleBotoes valor={valor as any} onChange={v => alterarValor(p.slug, v)} disabled={!podeEditar} />
