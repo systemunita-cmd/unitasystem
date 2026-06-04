@@ -114,16 +114,15 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const podeVerFinanceiro = veTudo || permissoes.financeiro_acessar;
   const podeVerRH = veTudo || permissoes.rh;
 
-  // Menu items — CRM gateado por módulo; Configurações condicional ao grupo
-  const menuItems = [
-    ...(podeVerCRM ? [
-      { path: "/crm/dashboard", icon: "📊", label: "Dashboard" },
-      { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas" },
-      { path: "/crm/vendas", icon: "💰", label: "Vendas" },
-      { path: "/crm/contatos", icon: "👥", label: "Contatos" },
-    ] : []),
-    ...(podeVerConfiguracoes ? [{ path: "/crm/configuracoes", icon: "⚙️", label: "Configurações" }] : []),
-  ];
+  // Itens de CRM — lista única estilo Wolf (botões coloridos); Configurações vai pro fim
+  const menuItems = podeVerCRM
+    ? [
+        { path: "/crm/dashboard", icon: "📊", label: "Visão Geral", cls: "shortcut-crm" },
+        { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas", cls: "shortcut-crm" },
+        { path: "/crm/vendas", icon: "💰", label: "Vendas", cls: "shortcut-crm" },
+        { path: "/crm/contatos", icon: "👥", label: "Contatos", cls: "shortcut-crm" },
+      ]
+    : [];
 
   const isActive = (path: string) => pathname === path || pathname?.startsWith(path + "/");
 
@@ -283,6 +282,34 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           .shortcut-rh.active {
             background: #e0e7ff;
             border-color: #6366f1;
+          }
+          .shortcut-crm {
+            background: #ecfeff;
+            border: 1px solid #a5f3fc;
+            color: #0e7490;
+          }
+          .shortcut-crm:hover {
+            background: #cffafe;
+            border-color: #67e8f9;
+            box-shadow: 0 2px 6px rgba(14, 116, 144, 0.15);
+          }
+          .shortcut-crm.active {
+            background: #cffafe;
+            border-color: #06b6d4;
+          }
+          .shortcut-config {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #475569;
+          }
+          .shortcut-config:hover {
+            background: #f1f5f9;
+            border-color: #cbd5e1;
+            box-shadow: 0 2px 6px rgba(71, 85, 105, 0.12);
+          }
+          .shortcut-config.active {
+            background: #f1f5f9;
+            border-color: #94a3b8;
           }
           .logout-btn {
             display: flex;
@@ -514,45 +541,16 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Label do grupo de menu */}
-          <p
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#94a3b8",
-              margin: "4px 4px 6px",
-              letterSpacing: 1.2,
-              textTransform: "uppercase",
-            }}
-          >
-            Navegação
-          </p>
-
-          {/* Itens do menu */}
+          {/* Lista única de módulos — estilo Wolf */}
           {menuItems.map((item) => (
             <button
               key={item.path}
               onClick={() => navegarPara(item.path)}
-              className={`menu-item ${isActive(item.path) ? "active" : ""}`}
+              className={`shortcut-btn ${item.cls} ${isActive(item.path) ? "active" : ""}`}
             >
-              <span style={{ fontSize: 15 }}>{item.icon}</span>
-              {item.label}
+              <span>{item.icon}</span> {item.label}
             </button>
           ))}
-
-          {/* Separador + Atalhos */}
-          <p
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: "#94a3b8",
-              margin: "16px 4px 6px",
-              letterSpacing: 1.2,
-              textTransform: "uppercase",
-            }}
-          >
-            Atalhos
-          </p>
 
           {/* 🕐 Bater Ponto — lateral, pra todos os funcionários (cada um bate o seu) */}
           {podeBaterPonto && (
@@ -604,6 +602,15 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           >
             <span>🧑‍💼</span> RH
           </button>
+          )}
+
+          {podeVerConfiguracoes && (
+            <button
+              onClick={() => navegarPara("/crm/configuracoes")}
+              className={`shortcut-btn shortcut-config ${isActive("/crm/configuracoes") ? "active" : ""}`}
+            >
+              <span>⚙️</span> Configurações
+            </button>
           )}
 
           {/* Botão Sair (fundo) */}
