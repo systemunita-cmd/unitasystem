@@ -63,6 +63,15 @@ type GrupoPermissao = {
 type Aba = "usuarios" | "equipes" | "filas" | "permissoes" | "geral";
 
 const CATEGORIAS_PERMISSAO = [
+  { nome: "🧩 Módulos do Sistema", cor: "#7c3aed", permissoes: [
+    { key: "crm_acessar", label: "Acessar o CRM" },
+    { key: "chatbot_acessar", label: "Acessar o Chatbot" },
+    { key: "telefonia_acessar", label: "Acessar a Telefonia" },
+    { key: "cobranca", label: "Acessar a Cobrança" },
+    { key: "rh", label: "Acessar o RH" },
+    { key: "financeiro_acessar", label: "Acessar o Financeiro" },
+    { key: "bater_ponto", label: "Acessar o Bater Ponto" },
+  ]},
   { nome: "💬 Atendimento", cor: "#3b82f6", permissoes: [
     { key: "chat_proprio", label: "Ver próprios atendimentos" },
     { key: "chat_todos", label: "Ver todos atendimentos" },
@@ -481,7 +490,13 @@ export default function Configuracoes() {
             />
           )}
           {abaAtiva === "permissoes" && (
-            <GruposPermissaoSection />
+            <AbaPermissoes
+              gruposPermissao={gruposPermissao}
+              podeEditar={podeGerenciarGrupos}
+              onRefetch={fetchGrupos}
+              isMobile={isMobile}
+              cardStyle={cardStyle}
+            />
           )}
           {abaAtiva === "geral" && (
             <AbaGeral
@@ -1579,6 +1594,158 @@ function BloqueioPosFinalizacao({ podeGerenciar, IS, cardStyle, labelStyle }: an
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 🔐 AbaPermissoes — editor de grupos no estilo Wolf (categorias + checkboxes)
+// Grava o mapa booleano em grupos_permissao.permissoes
+// ═══════════════════════════════════════════════════════════════════════
+function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardStyle }: any) {
+  const [selId, setSelId] = useState<number | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [nome, setNome] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [perms, setPerms] = useState<Record<string, boolean>>({ ...PERMISSOES_PADRAO });
+  const [orig, setOrig] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);
+
+  function selecionar(g: any) {
+    setCriando(false);
+    setSelId(g.id);
+    setNome(g.nome || "");
+    setDescricao(g.descricao || "");
+    const pp = { ...PERMISSOES_PADRAO, ...(g.permissoes || {}) };
+    setPerms(pp);
+    setOrig(JSON.stringify({ nome: g.nome || "", descricao: g.descricao || "", perms: pp }));
+    setMsg(null);
+  }
+  function novo() {
+    setCriando(true);
+    setSelId(null);
+    setNome("");
+    setDescricao("");
+    const pp = { ...PERMISSOES_PADRAO };
+    setPerms(pp);
+    setOrig(JSON.stringify({ nome: "", descricao: "", perms: pp }));
+    setMsg(null);
+  }
+
+  useEffect(() => {
+    if (gruposPermissao.length && selId === null && !criando) selecionar(gruposPermissao[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gruposPermissao.length]);
+
+  const dirty = JSON.stringify({ nome, descricao, perms }) !== orig;
+  const toggle = (key: string) => { if (podeEditar) setPerms((p) => ({ ...p, [key]: !p[key] })); };
+  const marcarCat = (cat: any, val: boolean) => {
+    if (!podeEditar) return;
+    setPerms((p) => { const n = { ...p }; cat.permissoes.forEach((x: any) => { n[x.key] = val; }); return n; });
+  };
+
+  async function salvar() {
+    if (!podeEditar || !nome.trim()) { setMsg({ ok: false, txt: "Informe um nome." }); return; }
+    setSalvando(true);
+    try {
+      if (criando) {
+        const { error } = await supabase.from("grupos_permissao").insert([{ nome: nome.trim(), descricao, permissoes: perms }]);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("grupos_permissao").update({ nome: nome.trim(), descricao, permissoes: perms }).eq("id", selId);
+        if (error) throw error;
+      }
+      setMsg({ ok: true, txt: "Salvo com sucesso." });
+      setCriando(false);
+      await onRefetch();
+    } catch (e: any) {
+      setMsg({ ok: false, txt: "Erro: " + (e?.message || "desconhecido") });
+    } finally { setSalvando(false); }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ ...cardStyle, padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.6 }}>Selecione um grupo pra editar</span>
+          {podeEditar && (
+            <button onClick={novo} style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Novo Grupo</button>
+          )}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {gruposPermissao.map((g: any) => {
+            const ativo = !criando && g.id === selId;
+            return (
+              <button key={g.id} onClick={() => selecionar(g)}
+                style={{ padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, border: "1px solid " + (ativo ? "#7c3aed" : "#e5e7eb"), background: ativo ? "#f5f3ff" : "#fff", color: ativo ? "#6d28d9" : "#374151" }}>
+                {g.nome}
+              </button>
+            );
+          })}
+          {criando && (
+            <span style={{ padding: "8px 14px", borderRadius: 10, fontSize: 13, fontWeight: 700, border: "1px dashed #a855f7", background: "#f5f3ff", color: "#6d28d9" }}>Novo grupo</span>
+          )}
+        </div>
+      </div>
+
+      {(selId !== null || criando) ? (
+        <div style={{ ...cardStyle, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>NOME *</label>
+              <input value={nome} onChange={(e) => setNome(e.target.value)} disabled={!podeEditar} placeholder="Ex: Atendente Vendas"
+                style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 13, marginTop: 4 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>DESCRIÇÃO</label>
+              <input value={descricao} onChange={(e) => setDescricao(e.target.value)} disabled={!podeEditar} placeholder="Ex: Acesso a vendas e chat"
+                style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 13, marginTop: 4 }} />
+            </div>
+          </div>
+
+          {CATEGORIAS_PERMISSAO.map((cat) => {
+            const marcadas = cat.permissoes.filter((x) => perms[x.key]).length;
+            return (
+              <div key={cat.nome} style={{ border: "1px solid " + cat.cor + "33", borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: cat.cor + "0d" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: cat.cor }}>{cat.nome} <span style={{ fontSize: 11, color: "#9ca3af" }}>{marcadas}/{cat.permissoes.length}</span></span>
+                  {podeEditar && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => marcarCat(cat, true)} style={{ fontSize: 11, fontWeight: 700, color: cat.cor, background: "#fff", border: "1px solid " + cat.cor + "55", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>+ Todos</button>
+                      <button onClick={() => marcarCat(cat, false)} style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>Limpar</button>
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
+                  {cat.permissoes.map((x) => {
+                    const on = !!perms[x.key];
+                    return (
+                      <button key={x.key} onClick={() => toggle(x.key)} disabled={!podeEditar}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: "none", borderTop: "1px solid #f3f4f6", background: on ? "#f0fdf4" : "#fff", cursor: podeEditar ? "pointer" : "default", textAlign: "left", width: "100%" }}>
+                        <span style={{ width: 18, height: 18, borderRadius: 5, border: "2px solid " + (on ? "#16a34a" : "#d1d5db"), background: on ? "#16a34a" : "#fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, flexShrink: 0, fontWeight: 700 }}>{on ? "✓" : ""}</span>
+                        <span style={{ fontSize: 12.5, fontWeight: 600, color: on ? "#15803d" : "#374151" }}>{x.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          {podeEditar && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, borderTop: "1px solid #e5e7eb", paddingTop: 14 }}>
+              {msg && <span style={{ marginRight: "auto", fontSize: 12, fontWeight: 700, color: msg.ok ? "#16a34a" : "#dc2626" }}>{msg.txt}</span>}
+              <button onClick={salvar} disabled={!dirty || salvando || !nome.trim()}
+                style={{ background: (!dirty || salvando || !nome.trim()) ? "#c4b5fd" : "linear-gradient(135deg,#7c3aed,#a855f7)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13, fontWeight: 700, cursor: (!dirty || salvando || !nome.trim()) ? "not-allowed" : "pointer" }}>
+                {salvando ? "Salvando..." : criando ? "Criar Grupo" : "Salvar Alterações"}
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ ...cardStyle, padding: 40, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>Selecione um grupo acima pra editar as permissões.</div>
+      )}
     </div>
   );
 }
