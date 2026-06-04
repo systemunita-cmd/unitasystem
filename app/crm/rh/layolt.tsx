@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
+import { useTemPermissao } from "../../hooks/useTemPermissao";
 import { DashboardSection } from "./_sections/dashboardsection";
 import { IndicadoresSection } from "./_sections/indicadoressection";
 import { FuncionariosSection } from "./_sections/funcionariossection";
@@ -168,12 +169,31 @@ export default function RHLayolt() {
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
+  // 🛡️ Gate por tela: super admin e "Administração Geral" veem tudo;
+  // demais grupos só veem a tela se tiverem rh_<chave>.acessar ligado.
+  const { tem, superAdmin, grupoNome } = useTemPermissao();
+  const veTudoRH = superAdmin || grupoNome === "Administração Geral";
+  const podeItem = (key: string) => veTudoRH || tem(("rh_" + key + ".acessar") as any);
+  const gruposVisiveis = GRUPOS
+    .map((g) => ({ ...g, itens: g.itens.filter((i) => podeItem(i.key)) }))
+    .filter((g) => g.itens.length > 0);
+  const primeiraVisivel = gruposVisiveis[0]?.itens[0]?.key;
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // Quando as permissões carregam, garante aba/grupo ativos visíveis
+  useEffect(() => {
+    if (!primeiraVisivel) return;
+    const visiveis = gruposVisiveis.flatMap((g) => g.itens.map((i) => i.key));
+    if (!visiveis.includes(aba)) setAba(primeiraVisivel);
+    if (!gruposVisiveis.some((g) => g.key === grupoAberto)) setGrupoAberto(gruposVisiveis[0].key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primeiraVisivel]);
 
   const selecionar = (key: string) => {
     setAba(key);
@@ -307,7 +327,7 @@ export default function RHLayolt() {
 
         {/* Menus agrupados */}
         <div style={{ padding: 10, flex: 1 }}>
-          {GRUPOS.map((g) => {
+          {gruposVisiveis.map((g) => {
             const aberto = grupoAberto === g.key;
             const temAtivo = g.itens.some((i) => i.key === aba);
             return (
@@ -441,10 +461,21 @@ export default function RHLayolt() {
       {/* CONTEÚDO */}
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
         {(() => {
+          if (!podeItem(aba)) return <SemAcesso />;
           const Comp = SECTIONS[aba];
           return Comp ? <Comp /> : <EmConstrucao titulo={LABELS[aba] || "Seção"} />;
         })()}
       </div>
+    </div>
+  );
+}
+
+function SemAcesso() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, minHeight: 360, textAlign: "center" }}>
+      <div style={{ fontSize: 48 }}>🔒</div>
+      <p style={{ color: "#374151", fontSize: 16, fontWeight: 700, margin: 0 }}>Sem acesso a esta área</p>
+      <p style={{ color: "#9ca3af", fontSize: 13, margin: 0 }}>Peça a um administrador para liberar esta tela do RH.</p>
     </div>
   );
 }
