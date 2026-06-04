@@ -31,6 +31,9 @@ export type Permissoes = {
   configuracoes_workspace: boolean;
   relatorios: boolean; relatorios_voip: boolean;
   config_proprio: boolean; administrador: boolean;
+  // 🧩 Módulos do sistema (gate de acesso por usuário)
+  crm_acessar: boolean; telefonia_acessar: boolean; chatbot_acessar: boolean;
+  cobranca: boolean; rh: boolean; financeiro_acessar: boolean; bater_ponto: boolean;
 };
 
 const PERMISSOES_ADMIN: Permissoes = {
@@ -44,6 +47,8 @@ const PERMISSOES_ADMIN: Permissoes = {
   roleta_gerenciar: true, configuracoes_workspace: true,
   relatorios: true, relatorios_voip: true,
   config_proprio: true, administrador: true,
+  crm_acessar: true, telefonia_acessar: true, chatbot_acessar: true,
+  cobranca: true, rh: true, financeiro_acessar: true, bater_ponto: true,
 };
 
 const PERMISSOES_SUPERVISOR: Permissoes = {
@@ -63,6 +68,8 @@ const PERMISSOES_ATENDENTE: Permissoes = {
   roleta_gerenciar: false, configuracoes_workspace: false,
   relatorios: false, relatorios_voip: false,
   config_proprio: true, administrador: false,
+  crm_acessar: true, telefonia_acessar: true, chatbot_acessar: false,
+  cobranca: false, rh: false, financeiro_acessar: false, bater_ponto: true,
 };
 
 export const PERMISSOES_ZERO: Permissoes = Object.keys(PERMISSOES_ADMIN).reduce((acc, k) => {
@@ -123,6 +130,15 @@ function derivarPermissoesDoGrupo(mapa: Record<string, string>): Permissoes {
 
     // 🛡️ Admin geral (só se grupo tem TUDO de configurações)
     administrador: tem("cfg_geral.acessar") && (tem("cfg_grupos.crud") || tem("cfg_grupos.ver")),
+
+    // 🧩 MÓDULOS DO SISTEMA (gate por grupo — padrão fechado)
+    crm_acessar: escopoVivo("mod_crm.acessar"),
+    telefonia_acessar: escopoVivo("mod_telefonia.acessar"),
+    chatbot_acessar: escopoVivo("mod_chatbot.acessar"),
+    cobranca: escopoVivo("mod_cobranca.acessar"),
+    rh: escopoVivo("mod_rh.acessar"),
+    financeiro_acessar: escopoVivo("mod_financeiro.acessar"),
+    bater_ponto: escopoVivo("mod_bater_ponto.acessar"),
   };
 }
 

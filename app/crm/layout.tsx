@@ -4,6 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import AuthGuard from "../components/AuthGuard";
 import { useTemPermissao } from "../hooks/useTemPermissao";
+import { usePermissao } from "../hooks/usePermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CRM LAYOUT — Grupo Unita (single-tenant)
@@ -28,6 +29,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
 
   // 🛡️ Sistema novo de permissões
   const perm = useTemPermissao();
+  const { permissoes, isDono, isSuperAdmin } = usePermissao();
 
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
@@ -102,12 +104,24 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     perm.tem("cfg_geral.acessar") ||
     (role === "admin" && !grupoId); // admin antigo sem grupo
 
-  // Menu items — Configurações condicional ao grupo
+  // 🧩 Gate de módulos por usuário (super admin/dono veem tudo; senão depende do grupo)
+  const veTudo = isSuperAdmin || isDono;
+  const podeVerCRM = veTudo || permissoes.crm_acessar;
+  const podeBaterPonto = veTudo || permissoes.bater_ponto;
+  const podeVerChatbot = veTudo || permissoes.chatbot_acessar;
+  const podeVerTelefonia = veTudo || permissoes.telefonia_acessar;
+  const podeVerCobranca = veTudo || permissoes.cobranca;
+  const podeVerFinanceiro = veTudo || permissoes.financeiro_acessar;
+  const podeVerRH = veTudo || permissoes.rh;
+
+  // Menu items — CRM gateado por módulo; Configurações condicional ao grupo
   const menuItems = [
-    { path: "/crm/dashboard", icon: "📊", label: "Dashboard" },
-    { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas" },
-    { path: "/crm/vendas", icon: "💰", label: "Vendas" },
-    { path: "/crm/contatos", icon: "👥", label: "Contatos" },
+    ...(podeVerCRM ? [
+      { path: "/crm/dashboard", icon: "📊", label: "Dashboard" },
+      { path: "/crm/funil", icon: "🎯", label: "Funil de Vendas" },
+      { path: "/crm/vendas", icon: "💰", label: "Vendas" },
+      { path: "/crm/contatos", icon: "👥", label: "Contatos" },
+    ] : []),
     ...(podeVerConfiguracoes ? [{ path: "/crm/configuracoes", icon: "⚙️", label: "Configurações" }] : []),
   ];
 
@@ -541,44 +555,56 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           </p>
 
           {/* 🕐 Bater Ponto — lateral, pra todos os funcionários (cada um bate o seu) */}
-          <button
+          {podeBaterPonto && (
+<button
             onClick={() => navegarPara("/crm/ponto")}
             className={`shortcut-btn shortcut-ponto ${isActive("/crm/ponto") ? "active" : ""}`}
           >
             <span>🕐</span> Bater Ponto
           </button>
+          )}
 
-          <button onClick={() => navegarPara("/chatbot")} className="shortcut-btn shortcut-chatbot">
+          {podeVerChatbot && (
+<button onClick={() => navegarPara("/chatbot")} className="shortcut-btn shortcut-chatbot">
             <span>💬</span> Chatbot
           </button>
+          )}
 
-          <button
+          {podeVerTelefonia && (
+<button
             onClick={() => navegarPara("/crm/telefonia")}
             className={`shortcut-btn shortcut-telefonia ${isActive("/crm/telefonia") ? "active" : ""}`}
           >
             <span>📞</span> Telefonia
           </button>
+          )}
 
-          <button
+          {podeVerCobranca && (
+<button
             onClick={() => navegarPara("/crm/cobranca")}
             className={`shortcut-btn shortcut-cobranca ${isActive("/crm/cobranca") ? "active" : ""}`}
           >
             <span>🧾</span> Cobrança
           </button>
+          )}
 
-          <button
+          {podeVerFinanceiro && (
+<button
             onClick={() => navegarPara("/crm/financeiro")}
             className={`shortcut-btn shortcut-financeiro ${isActive("/crm/financeiro") ? "active" : ""}`}
           >
             <span>💵</span> Financeiro
           </button>
+          )}
 
-          <button
+          {podeVerRH && (
+<button
             onClick={() => navegarPara("/crm/rh")}
             className={`shortcut-btn shortcut-rh ${isActive("/crm/rh") ? "active" : ""}`}
           >
             <span>🧑‍💼</span> RH
           </button>
+          )}
 
           {/* Botão Sair (fundo) */}
           <div
