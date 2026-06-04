@@ -16,8 +16,8 @@ const inputStyle = { width: "100%", background: "#ffffff", border: "1px solid #e
 
 const PALETA = ["#6366f1", "#0ea5e9", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#ef4444", "#14b8a6"];
 
-type Departamento = { id: string; nome: string; gestor: string; centroCusto: string; descricao: string; qtdFuncionarios: number };
-const FORM_VAZIO: Departamento = { id: "", nome: "", gestor: "", centroCusto: "", descricao: "", qtdFuncionarios: 0 };
+type Departamento = { id: string; nome: string; gestor: string; centroCusto: string; descricao: string; equipeId: string; filaId: string; qtdFuncionarios: number };
+const FORM_VAZIO: Departamento = { id: "", nome: "", gestor: "", centroCusto: "", descricao: "", equipeId: "", filaId: "", qtdFuncionarios: 0 };
 
 export function DepartamentosSection() {
   const [lista, setLista] = useState<Departamento[]>([]);
@@ -27,6 +27,8 @@ export function DepartamentosSection() {
   const [form, setForm] = useState<Departamento>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
   const editando = !!form.id;
+  const [equipes, setEquipes] = useState<{ id: any; nome: string }[]>([]);
+  const [filas, setFilas] = useState<{ id: any; nome: string; equipe_id: any }[]>([]);
 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -47,12 +49,31 @@ export function DepartamentosSection() {
     (funcsResp.data || []).forEach((f: any) => { if (f.departamento) contagem[f.departamento] = (contagem[f.departamento] || 0) + 1; });
     const mapeada: Departamento[] = (depsResp.data || []).map((d: any) => ({
       id: d.id, nome: d.nome, gestor: d.gestor || "", centroCusto: d.centro_custo || "", descricao: d.descricao || "",
+      equipeId: d.equipe_id != null ? String(d.equipe_id) : "", filaId: d.fila_id != null ? String(d.fila_id) : "",
       qtdFuncionarios: contagem[d.nome] || 0,
     }));
     setLista(mapeada);
     setCarregando(false);
   };
   useEffect(() => { carregar(); }, []);
+
+  // 🔌 equipes e filas cadastradas no sistema (pros selects do departamento)
+  useEffect(() => {
+    (async () => {
+      const [eq, fl] = await Promise.all([
+        supabase.from("equipes").select("id, nome").eq("ativo", true).order("nome", { ascending: true }),
+        supabase.from("filas").select("id, nome, equipe_id").eq("ativo", true).order("nome", { ascending: true }),
+      ]);
+      if (eq.data) setEquipes(eq.data as { id: any; nome: string }[]);
+      if (fl.data) setFilas(fl.data as { id: any; nome: string; equipe_id: any }[]);
+    })();
+  }, []);
+
+  const equipeNome = (id: string) => equipes.find((e) => String(e.id) === String(id))?.nome || "";
+  const filaNome = (id: string) => filas.find((f) => String(f.id) === String(id))?.nome || "";
+  const filasDisponiveis = form.equipeId
+    ? filas.filter((f) => f.equipe_id == null || String(f.equipe_id) === String(form.equipeId))
+    : filas;
 
   const filtrados = useMemo(() => {
     if (!busca) return lista;
@@ -71,7 +92,7 @@ export function DepartamentosSection() {
   const salvar = async () => {
     if (!form.nome.trim()) { alert("Informe o nome do departamento."); return; }
     setSalvando(true);
-    const payload = { nome: form.nome, gestor: form.gestor, centro_custo: form.centroCusto, descricao: form.descricao };
+    const payload = { nome: form.nome, gestor: form.gestor, centro_custo: form.centroCusto, descricao: form.descricao, equipe_id: form.equipeId || null, fila_id: form.filaId || null };
     const resp = editando
       ? await supabase.from("departamentos").update(payload).eq("id", form.id)
       : await supabase.from("departamentos").insert(payload);
@@ -167,6 +188,13 @@ export function DepartamentosSection() {
                   <span style={{ color: "#9ca3af", fontSize: 11 }}>· gestor</span>
                 </div>
 
+                {(d.equipeId || d.filaId) && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {d.equipeId && equipeNome(d.equipeId) && <span style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>👥 {equipeNome(d.equipeId)}</span>}
+                    {d.filaId && filaNome(d.filaId) && <span style={{ background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>📋 {filaNome(d.filaId)}</span>}
+                  </div>
+                )}
+
                 <div style={{ borderTop: "1px solid #f3f4f6", paddingTop: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                     <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 600 }}>{d.qtdFuncionarios} pessoas</span>
@@ -195,6 +223,23 @@ export function DepartamentosSection() {
                 <Campo label="Gestor responsável"><input value={form.gestor} onChange={e => set("gestor", e.target.value)} style={inputStyle} placeholder="Nome do gestor" /></Campo>
                 <Campo label="Centro de custo"><input value={form.centroCusto} onChange={e => set("centroCusto", e.target.value)} style={inputStyle} placeholder="CC-000" /></Campo>
               </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <Campo label="Equipe / Empresa">
+                  <select value={form.equipeId} onChange={e => { set("equipeId", e.target.value); set("filaId", ""); }} style={inputStyle}>
+                    <option value="">— Sem equipe —</option>
+                    {equipes.map(eq => <option key={eq.id} value={String(eq.id)}>{eq.nome}</option>)}
+                  </select>
+                </Campo>
+                <Campo label="Fila">
+                  <select value={form.filaId} onChange={e => set("filaId", e.target.value)} style={inputStyle}>
+                    <option value="">— Sem fila —</option>
+                    {filasDisponiveis.map(f => <option key={f.id} value={String(f.id)}>{f.nome}</option>)}
+                  </select>
+                </Campo>
+              </div>
+              {equipes.length === 0 && filas.length === 0 && (
+                <p style={{ color: "#9ca3af", fontSize: 11, margin: "-4px 0 0" }}>Nenhuma equipe/fila cadastrada no sistema ainda. Crie em <b>Configurações</b>.</p>
+              )}
               <Campo label="Descrição">
                 <textarea value={form.descricao} onChange={e => set("descricao", e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="O que esse departamento faz..." />
               </Campo>
