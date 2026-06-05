@@ -1,13 +1,17 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabase";
+import { useWorkspace } from "../../hooks/useWorkspace";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🕐 Bater Ponto — página lateral do CRM (por login)
+// 🕐 Bater Ponto — página lateral do CRM (WolfSystem — multi-tenant · por login)
 // ───────────────────────────────────────────────────────────────────────
-// Identifica o funcionário pelo USUÁRIO LOGADO (não tem dropdown):
-//   login (auth) → email → funcionarios.user_email → funcionário
-// Cada um bate e vê só o próprio ponto. Grava hora + GPS em ponto_registros.
+// PORTADO DO UNITA → WOLF. Identifica o funcionário pelo USUÁRIO LOGADO,
+// SEMPRE dentro do workspace atual (filtra por workspace_id):
+//   login (auth) → email → funcionarios.user_email (no ws) → funcionário
+// Cada um bate e vê só o próprio ponto. Grava hora + GPS + selfie em
+// ponto_registros, tudo carimbado com workspace_id. A selfie vai pro bucket
+// 'ponto-selfies' numa pasta por workspace (wsId/...).
 // ═══════════════════════════════════════════════════════════════════════
 
 const COR = "#2563eb";
@@ -59,6 +63,9 @@ function pegarLocalizacao(): Promise<{ lat: number; lng: number; acc: number } |
 }
 
 export default function BaterPontoPage() {
+  // 🏢 Workspace ativo (multi-tenant Wolf)
+  const { wsId } = useWorkspace();
+
   const [func, setFunc] = useState<Func | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [semVinculo, setSemVinculo] = useState(false);
@@ -66,6 +73,7 @@ export default function BaterPontoPage() {
   const [relogio, setRelogio] = useState(new Date());
   const [ultima, setUltima] = useState<{ tipo: string; hora: string; comGps: boolean } | null>(null);
   const [emailLogado, setEmailLogado] = useState("");
+  const [dbg, setDbg] = useState("");
   const [modalSelfie, setModalSelfie] = useState(false);
   const [foto, setFoto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -80,8 +88,9 @@ export default function BaterPontoPage() {
     return () => clearInterval(t);
   }, []);
 
-  // identifica o funcionário pelo login
+  // identifica o funcionário pelo login — dentro do workspace atual
   useEffect(() => {
+    if (!wsId) return;
     (async () => {
       setCarregando(true);
       const { data: auth } = await supabase.auth.getUser();
@@ -93,12 +102,15 @@ export default function BaterPontoPage() {
         return;
       }
       const alvo = email.toLowerCase().trim();
-      // Busca todos e casa no navegador, normalizando maiúsculas/espaços —
-      // à prova de qualquer diferença. Casa por user_email OU pelo e-mail do cadastro.
+      // Busca os funcionários DO WORKSPACE e casa no navegador, normalizando
+      // maiúsculas/espaços — à prova de qualquer diferença. Casa por user_email
+      // OU pelo e-mail do cadastro.
       const { data: todos, error } = await supabase
         .from("funcionarios")
-        .select("nome, cargo, email, user_email");
+        .select("nome, cargo, email, user_email")
+        .eq("workspace_id", wsId);
       if (error) console.error("[ponto] erro ao buscar funcionários:", error);
+      setDbg(`ws="${wsId}" · funcs=${(todos || []).length}${error ? " · ERRO: " + error.message : ""}`);
       const f = (todos || []).find(
         (x: any) =>
           (x.user_email || "").toLowerCase().trim() === alvo || (x.email || "").toLowerCase().trim() === alvo
@@ -108,18 +120,22 @@ export default function BaterPontoPage() {
         setCarregando(false);
         return;
       }
+      setSemVinculo(false);
       setFunc({ nome: f.nome, cargo: f.cargo || "" });
       await carregarBatidasHoje(f.nome);
       setCarregando(false);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsId]);
 
   const carregarBatidasHoje = async (nome: string) => {
+    if (!wsId) return;
     const inicioDia = new Date();
     inicioDia.setHours(0, 0, 0, 0);
     const { data } = await supabase
       .from("ponto_registros")
       .select("id, tipo, data_hora, latitude, longitude")
+      .eq("workspace_id", wsId)
       .eq("funcionario", nome)
       .gte("data_hora", inicioDia.toISOString())
       .order("data_hora", { ascending: true });
@@ -197,12 +213,16 @@ export default function BaterPontoPage() {
   // Confirma: faz upload da selfie e registra o ponto (com GPS se disponível)
   const confirmar = async () => {
     if (!func || !foto) return;
+    if (!wsId) {
+      setErroCam("Workspace não identificado. Recarregue a página.");
+      return;
+    }
     setEnviando(true);
     const loc = await pegarLocalizacao();
     let selfieUrl = "";
     try {
       const blob = await (await fetch(foto)).blob();
-      const path = `${func.nome.replace(/[^a-zA-Z0-9]/g, "_")}/${Date.now()}.jpg`;
+      const path = `${wsId}/${func.nome.replace(/[^a-zA-Z0-9]/g, "_")}/${Date.now()}.jpg`;
       const { error: upErr } = await supabase.storage
         .from("ponto-selfies")
         .upload(path, blob, { contentType: "image/jpeg", upsert: false });
@@ -218,6 +238,7 @@ export default function BaterPontoPage() {
     const tipo = TIPOS[batidasHoje.length] || "Marcação";
     const agora = new Date();
     const { error } = await supabase.from("ponto_registros").insert({
+      workspace_id: wsId,
       funcionario: func.nome,
       cargo: func.cargo,
       tipo,
@@ -298,6 +319,9 @@ export default function BaterPontoPage() {
           >
             <p style={{ color: "#94a3b8", fontSize: 11, margin: 0, letterSpacing: 0.3 }}>
               Login detectado: <b style={{ color: "#475569" }}>{emailLogado || "(não identificado)"}</b>
+            </p>
+            <p style={{ color: "#dc2626", fontSize: 11, margin: "6px 0 0", fontFamily: "monospace" }}>
+              🐞 {dbg || "(carregando...)"}
             </p>
           </div>
         </div>
