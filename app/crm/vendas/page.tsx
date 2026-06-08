@@ -638,7 +638,10 @@ export default function Vendas() {
 
   const propostasFiltradas = useMemo(() => propostas
     .filter(p => podeVerTudo || (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase()))
-    .filter(p => !equipeId || p.equipe_id === equipeId)
+    // 🔒 O seletor de equipe (que vem do localStorage) só pode filtrar quem vê tudo.
+    // O vendedor comum já está limitado às próprias vendas pelo filtro acima e NUNCA
+    // pode ser escondido por uma equipe selecionada por outra pessoa no mesmo navegador.
+    .filter(p => !podeVerTudo || !equipeId || p.equipe_id === equipeId)
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => !busca || p.nome?.toLowerCase().includes(busca.toLowerCase()) || p.cpf?.includes(busca) || nomeVendedor(p.vendedor).toLowerCase().includes(busca.toLowerCase()))
     .filter(p => {
