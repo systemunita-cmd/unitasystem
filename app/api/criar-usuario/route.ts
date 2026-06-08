@@ -53,11 +53,32 @@ export async function POST(req: NextRequest) {
     }
 
     // ═══ 2. Verifica permissão do chamador ═══
+    // Reconhece como admin total: o super admin (email) OU quem está no
+    // grupo "Administração Geral" — além do role legado admin/supervisor.
+    const SUPER_ADMIN_EMAIL = "admin@grupounita.net.br";
+    const ehSuperAdmin = (authUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+
     const { data: chamador } = await supabase
       .from("usuarios")
-      .select("role")
+      .select("role, grupo_id")
       .eq("auth_user_id", authUser.id)
       .maybeSingle();
+
+    // Nome do grupo do chamador (normalizado: ignora acento/caixa/espaço)
+    let grupoNorm = "";
+    if (chamador?.grupo_id) {
+      const { data: grupoChamador } = await supabase
+        .from("grupos_permissao")
+        .select("nome")
+        .eq("id", chamador.grupo_id)
+        .maybeSingle();
+      grupoNorm = (grupoChamador?.nome || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+        .toLowerCase();
+    }
+    const ehAdminGeral = grupoNorm === "administracao geral" || grupoNorm === "administrador geral";
 
     // Fallback: se a tabela usuarios estiver vazia, libera (primeira instalação)
     let podeCre: boolean;
@@ -67,8 +88,11 @@ export async function POST(req: NextRequest) {
       podeCre = (count || 0) === 0; // primeiro user libera
       if (podeCre) roleChamador = "admin";
     } else {
-      podeCre = roleChamador === "admin" || roleChamador === "supervisor";
+      podeCre = ehSuperAdmin || ehAdminGeral || roleChamador === "admin" || roleChamador === "supervisor";
     }
+
+    // Super admin e Administração Geral = admin total (podem criar qualquer cargo)
+    if (ehSuperAdmin || ehAdminGeral) roleChamador = "admin";
 
     if (!podeCre) {
       return NextResponse.json({
