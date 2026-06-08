@@ -577,6 +577,22 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             })}
           </div>
 
+          {/* Sub-seções do CRM no drawer (MOBILE) — no desktop usam a 2ª coluna */}
+          {podeVerCRM && naCRM && isMobile && (
+            <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 10, paddingTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+              <p style={{ color: "#9ca3af", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", margin: "0 0 4px 6px" }}>CRM · Comercial & Vendas</p>
+              {crmSubItens.map((item) => {
+                const ativo = isActive(item.path);
+                return (
+                  <button key={item.path} onClick={() => navegarPara(item.path)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
+                    <span>{item.icon}</span> {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Botão Sair (fundo) */}
           <div
             style={{
