@@ -36,6 +36,8 @@ type Proposta = {
   data_instalacao?: string; data_cancelamento?: string;
   dados_customizados?: Record<string, any>;
   equipe_id?: string | null;
+  criado_por?: string | null;
+  equipe_id_criador?: number | string | null;
 };
 type Usuario = { email: string; nome: string; equipe_id?: string | null; };
 
@@ -637,11 +639,13 @@ export default function Vendas() {
   };
 
   const propostasFiltradas = useMemo(() => propostas
-    .filter(p => podeVerTudo || (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase()))
-    // 🔒 O seletor de equipe (que vem do localStorage) só pode filtrar quem vê tudo.
-    // O vendedor comum já está limitado às próprias vendas pelo filtro acima e NUNCA
-    // pode ser escondido por uma equipe selecionada por outra pessoa no mesmo navegador.
-    .filter(p => !podeVerTudo || !equipeId || p.equipe_id === equipeId)
+    // 👤 Própria venda = sou o vendedor OU fui eu que criei (criado_por, mesma coluna que o RLS usa).
+    .filter(p => podeVerTudo
+      || (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
+      || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase()))
+    // 🔒 O seletor de equipe (que vem do localStorage) só filtra quem vê tudo.
+    // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
+    .filter(p => !podeVerTudo || !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => !busca || p.nome?.toLowerCase().includes(busca.toLowerCase()) || p.cpf?.includes(busca) || nomeVendedor(p.vendedor).toLowerCase().includes(busca.toLowerCase()))
     .filter(p => {
