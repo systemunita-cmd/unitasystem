@@ -40,6 +40,7 @@ type Funcionario = {
   departamento: string;
   equipe_id: string;
   admissao: string;
+  data_nascimento: string;
   salario: number;
   status: Status;
   user_email: string; // login do sistema vinculado (tabela usuarios.email) — usado no ponto
@@ -72,6 +73,7 @@ const FORM_VAZIO: Funcionario = {
   departamento: "",
   equipe_id: "",
   admissao: "",
+  data_nascimento: "",
   salario: 0,
   status: "ativo",
   user_email: "",
@@ -178,7 +180,7 @@ export function FuncionariosSection() {
     setModalAberto(true);
   };
   const abrirEditar = (f: Funcionario) => {
-    setForm({ ...f, admissao: f.admissao || "" });
+    setForm({ ...f, admissao: f.admissao || "", data_nascimento: f.data_nascimento || "" });
     setModalAberto(true);
   };
   const fechar = () => {
@@ -202,6 +204,7 @@ export function FuncionariosSection() {
       departamento: form.departamento,
       equipe_id: form.equipe_id || null,
       admissao: form.admissao || null,
+      data_nascimento: form.data_nascimento || null,
       salario: form.salario || 0,
       status: form.status,
       user_email: form.user_email || null,
@@ -722,6 +725,14 @@ export function FuncionariosSection() {
                   type="date"
                   value={form.admissao}
                   onChange={(e) => set("admissao", e.target.value)}
+                  style={inputStyle}
+                />
+              </Campo>
+              <Campo label="Data de nascimento">
+                <input
+                  type="date"
+                  value={form.data_nascimento}
+                  onChange={(e) => set("data_nascimento", e.target.value)}
                   style={inputStyle}
                 />
               </Campo>
