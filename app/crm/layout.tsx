@@ -33,6 +33,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
 
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  const [secoesAberto, setSecoesAberto] = useState(false);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -83,7 +84,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
 
   const navegarPara = (path: string) => {
     router.push(path);
-    if (isMobile) setMenuMobileAberto(false);
+    if (isMobile) { setMenuMobileAberto(false); setSecoesAberto(false); }
   };
 
   const signOut = async () => {
@@ -577,22 +578,6 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             })}
           </div>
 
-          {/* Sub-seções do CRM no drawer (MOBILE) — no desktop usam a 2ª coluna */}
-          {podeVerCRM && naCRM && isMobile && (
-            <div style={{ borderTop: "1px solid #e5e7eb", marginTop: 10, paddingTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
-              <p style={{ color: "#9ca3af", fontSize: 10, fontWeight: 700, letterSpacing: 0.8, textTransform: "uppercase", margin: "0 0 4px 6px" }}>CRM · Comercial & Vendas</p>
-              {crmSubItens.map((item) => {
-                const ativo = isActive(item.path);
-                return (
-                  <button key={item.path} onClick={() => navegarPara(item.path)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
-                    <span>{item.icon}</span> {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           {/* Botão Sair (fundo) */}
           <div
             style={{
@@ -623,6 +608,47 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
                 <button key={item.path} onClick={() => navegarPara(item.path)}
                   onMouseEnter={(e) => { if (!ativo) e.currentTarget.style.background = "#f3f4f6"; }}
                   onMouseLeave={(e) => { if (!ativo) e.currentTarget.style.background = "transparent"; }}
+                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
+                  <span>{item.icon}</span> {item.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ═══ "☰ Seções" — sub-barra CRM no MOBILE (igual Wolf (crm)/layout) ═══ */}
+        {podeVerCRM && naCRM && isMobile && !secoesAberto && (
+          <button onClick={() => setSecoesAberto(true)} title="Abrir seções"
+            style={{ position: "fixed", top: 8, right: 8, zIndex: 65, background: "#ffffff", border: "1px solid #e5e7eb", color: "#15803d", borderRadius: 10, padding: "8px 14px", fontSize: 14, cursor: "pointer", lineHeight: 1, boxShadow: "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)", fontWeight: 700, fontFamily: "inherit" }}>
+            ☰ Seções
+          </button>
+        )}
+
+        {podeVerCRM && naCRM && isMobile && secoesAberto && (
+          <div onClick={() => setSecoesAberto(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", backdropFilter: "blur(2px)", zIndex: 1090 }}
+          />
+        )}
+
+        {podeVerCRM && naCRM && isMobile && (
+          <div style={{ width: 260, background: "#ffffff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", padding: 16, gap: 4, position: "fixed", top: 0, left: 0, bottom: 0, height: "100vh", zIndex: 1100, transform: secoesAberto ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.25s ease", boxShadow: "4px 0 16px rgba(0,0,0,0.1)", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "4px 6px 14px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#fff", boxShadow: "0 4px 10px rgba(22,163,74,0.3)" }}>{"\uD83C\uDFAF"}</div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "#111827" }}>CRM</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.8, textTransform: "uppercase" }}>Comercial & Vendas</div>
+                </div>
+              </div>
+              <button onClick={() => setSecoesAberto(false)} title="Fechar"
+                style={{ background: "#f3f4f6", border: "none", color: "#6b7280", fontSize: 16, cursor: "pointer", width: 30, height: 30, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontFamily: "inherit" }}>
+                ✕
+              </button>
+            </div>
+            {crmSubItens.map((item) => {
+              const ativo = isActive(item.path);
+              return (
+                <button key={item.path} onClick={() => navegarPara(item.path)}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: ativo ? "#f0fdf4" : "transparent", border: "none", borderLeft: ativo ? "3px solid #16a34a" : "3px solid transparent", borderRadius: ativo ? "0 8px 8px 0" : 8, cursor: "pointer", color: ativo ? "#16a34a" : "#4b5563", fontSize: 13, fontWeight: ativo ? 700 : 500, textAlign: "left", width: "100%", marginLeft: ativo ? -3 : 0, fontFamily: "inherit", transition: "background 0.1s" }}>
                   <span>{item.icon}</span> {item.label}
                 </button>
