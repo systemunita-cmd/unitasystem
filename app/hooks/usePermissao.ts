@@ -193,8 +193,16 @@ export function usePermissao() {
             .select("nome, permissoes").eq("id", usr.grupo_id).maybeSingle();
           const nomeGrupo = grupo?.nome || "";
 
-          // "Administração Geral" = equivalente a admin total
-          if (nomeGrupo === "Administração Geral") {
+          // Normaliza pra não falhar por acento/maiúscula/espaço.
+          // ("Administração Geral", "Administracao Geral", " administração geral ", etc.)
+          const nomeNorm = nomeGrupo
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .trim()
+            .toLowerCase();
+
+          // "Administração Geral" (e variações de grafia) = admin total
+          if (nomeNorm === "administracao geral" || nomeNorm === "administrador geral") {
             setPerfil("Administrador");
             setIsDono(true);
             setIsSuperAdmin(true);
