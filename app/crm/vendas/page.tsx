@@ -39,7 +39,7 @@ type Proposta = {
   criado_por?: string | null;
   equipe_id_criador?: number | string | null;
 };
-type Usuario = { email: string; nome: string; equipe_id?: string | null; };
+type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; };
 
 // Cores semânticas dos status — mantêm padrão CRM (INSTALADA = verde, CANCELADA = vermelho)
 const statusColor: Record<string, string> = {
@@ -189,6 +189,19 @@ export default function Vendas() {
   const podeExcluir = isDono || perfil === "Administrador";
   const podeEditarCamposCustom = isDono || perfil === "Administrador";
   const podeVerTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_equipe;
+
+  // 🔑 Recorte de visibilidade por FILA:
+  //   • veTudo (super/admin/dono) → vê todas as propostas.
+  //   • veEquipe ("ver vendas da equipe") → vê só os vendedores da PRÓPRIA FILA
+  //     (cai pra própria EQUIPE/PDV se o usuário não tiver fila definida).
+  //   • Sem nada disso → vê só as próprias.
+  const veTudo = isDono || perfil === "Administrador";
+  const veEquipe = !!permissoes?.vendas_equipe;
+  const meuRegistro = usuarios.find(u => u.email?.toLowerCase() === userEmail.toLowerCase());
+  const minhaFila = meuRegistro?.fila_id ?? null;
+  const minhaEquipe = meuRegistro?.equipe_id ?? null;
+  const regDoVendedor = (emailVend: string) =>
+    usuarios.find(u => u.email?.toLowerCase() === (emailVend || "").toLowerCase());
 
   // 🎨 ESTILOS
   const inputStyle = {
@@ -401,7 +414,7 @@ export default function Vendas() {
   const fetchUsuarios = async (usouMock: boolean) => {
     let lista: Usuario[] = [];
     try {
-      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id");
+      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id, fila_id");
       lista = (us || []) as Usuario[];
     } catch {
       // tabela não existe
@@ -639,13 +652,22 @@ export default function Vendas() {
   };
 
   const propostasFiltradas = useMemo(() => propostas
-    // 👤 Própria venda = sou o vendedor OU fui eu que criei (criado_por, mesma coluna que o RLS usa).
-    .filter(p => podeVerTudo
-      || (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
-      || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase()))
+    // 👁️ Recorte de visibilidade (vendedor vê só a própria fila):
+    .filter(p => {
+      if (veTudo) return true; // super/admin/dono vê tudo
+      const minha = (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
+        || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase());
+      if (minha) return true; // sempre vê as próprias
+      if (veEquipe) {
+        const rv = regDoVendedor(p.vendedor);
+        if (minhaFila != null) return !!rv && String(rv.fila_id ?? "") === String(minhaFila);     // mesma FILA
+        if (minhaEquipe != null) return !!rv && String(rv.equipe_id ?? "") === String(minhaEquipe); // mesma EQUIPE/PDV
+      }
+      return false;
+    })
     // 🔒 O seletor de equipe (que vem do localStorage) só filtra quem vê tudo.
     // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
-    .filter(p => !podeVerTudo || !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
+    .filter(p => !veTudo || !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => !busca || p.nome?.toLowerCase().includes(busca.toLowerCase()) || p.cpf?.includes(busca) || nomeVendedor(p.vendedor).toLowerCase().includes(busca.toLowerCase()))
     .filter(p => {
@@ -657,7 +679,7 @@ export default function Vendas() {
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, userEmail, equipeId, filtroStatus, busca, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, userEmail, equipeId, filtroStatus, busca, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
