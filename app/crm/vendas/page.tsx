@@ -115,6 +115,22 @@ function camposMockTelecom(): CampoUnificado[] {
   ];
 }
 
+type AnexoMeta = { url: string; nome: string; tipo: string; tamanho: number; enviado_em: string };
+
+const formatarTamanhoArquivo = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+};
+
+const iconeArquivo = (tipo: string): string => {
+  if (tipo?.startsWith("image/")) return "🖼️";
+  if (tipo?.includes("pdf")) return "📄";
+  if (tipo?.includes("word") || tipo?.includes("document")) return "📝";
+  if (tipo?.includes("sheet") || tipo?.includes("excel")) return "📊";
+  return "📎";
+};
+
 export default function Vendas() {
   const router = useRouter();
   const { isDono, perfil, permissoes } = usePermissao();
@@ -186,6 +202,7 @@ export default function Vendas() {
   const [propostaEditando, setPropostaEditando] = useState<Proposta | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
   const [dadosCustomizadosEdit, setDadosCustomizadosEdit] = useState<Record<string, any>>({});
+  const [uploadandoEdit, setUploadandoEdit] = useState<Record<string, boolean>>({});
   const [salvando, setSalvando] = useState(false);
 
   const podeExcluir = isDono || perfil === "Administrador";
@@ -289,6 +306,10 @@ export default function Vendas() {
     }
 
     // 🔤 Campos de seleção mostram o NOME, não o id cru (ex.: PDV/equipe = "UNITA GYN")
+    if ((c.tipo as string) === "arquivo") {
+      const n = Array.isArray(raw) ? raw.length : 0;
+      return <span style={{ color: n ? "#2563eb" : "#d1d5db", fontSize: 12, fontWeight: 600 }}>{n ? `📎 ${n}` : "—"}</span>;
+    }
     if (c.tipo === "equipe") {
       return <span style={{ color: "#4b5563", fontSize: 12 }}>{nomePorId(equipes as any, raw)}</span>;
     }
@@ -598,6 +619,41 @@ export default function Vendas() {
   };
 
   // ═══ Renderização dinâmica de campos no modal ═══
+  // ── Upload / remoção de anexos no modal de edição (bucket propostas-anexos) ──
+  const uploadArquivoEdit = async (slug: string, files: FileList) => {
+    setUploadandoEdit(prev => ({ ...prev, [slug]: true }));
+    const novos: AnexoMeta[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.size > 20 * 1024 * 1024) { alert(`"${file.name}" excede 20 MB e foi pulado.`); continue; }
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `vendas/${Date.now()}-${safeName}`;
+        const { error } = await supabase.storage.from("propostas-anexos").upload(path, file, { cacheControl: "3600", upsert: false });
+        if (error) { alert(`Erro ao enviar "${file.name}": ${error.message}`); continue; }
+        const { data: urlData } = supabase.storage.from("propostas-anexos").getPublicUrl(path);
+        novos.push({ url: urlData.publicUrl, nome: file.name, tipo: file.type || "application/octet-stream", tamanho: file.size, enviado_em: new Date().toISOString() });
+      } catch (e: any) {
+        console.error("Falha no upload:", e);
+        alert(`Erro inesperado em "${file.name}".`);
+      }
+    }
+    if (novos.length > 0) {
+      setDadosCustomizadosEdit(prev => {
+        const atuais = Array.isArray(prev[slug]) ? prev[slug] : [];
+        return { ...prev, [slug]: [...atuais, ...novos] };
+      });
+    }
+    setUploadandoEdit(prev => ({ ...prev, [slug]: false }));
+  };
+
+  const removerAnexoEdit = (slug: string, idx: number) => {
+    setDadosCustomizadosEdit(prev => {
+      const atuais = Array.isArray(prev[slug]) ? prev[slug] : [];
+      return { ...prev, [slug]: atuais.filter((_: any, i: number) => i !== idx) };
+    });
+  };
+
   const renderCampoModal = (c: CampoUnificado) => {
     const labelComObr = (
       <>
@@ -655,6 +711,42 @@ export default function Vendas() {
     // CUSTOM
     const val = dadosCustomizadosEdit[c.slug];
     const set = (v: any) => setDadosCustomizadosEdit(prev => ({ ...prev, [c.slug]: v }));
+
+    if (c.tipo === "arquivo") {
+      const arquivos: AnexoMeta[] = Array.isArray(val) ? val : [];
+      const carregando = !!uploadandoEdit[c.slug];
+      return (
+        <div style={{ gridColumn: "1 / -1" }}>{lab}
+          <label style={{
+            display: "block", padding: "12px 14px", background: "#fafbfc",
+            border: "2px dashed #93c5fd", borderRadius: 10,
+            cursor: carregando ? "wait" : "pointer", textAlign: "center" as const,
+          }}>
+            <input type="file" multiple disabled={carregando} style={{ display: "none" }}
+              onChange={(e) => { if (e.target.files && e.target.files.length > 0) { uploadArquivoEdit(c.slug, e.target.files); e.target.value = ""; } }} />
+            <p style={{ color: carregando ? "#9ca3af" : "#2563eb", fontSize: 13, margin: 0, fontWeight: 700 }}>
+              {carregando ? "Enviando..." : "Clique para anexar arquivos"}
+            </p>
+            <p style={{ color: "#9ca3af", fontSize: 11, margin: "4px 0 0" }}>Vários arquivos · até 20 MB cada</p>
+          </label>
+          {arquivos.length > 0 && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column" as const, gap: 6 }}>
+              {arquivos.map((a, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  <span style={{ fontSize: 20 }}>{iconeArquivo(a.tipo)}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: "#1f2937", fontSize: 12, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{a.nome}</p>
+                    <p style={{ color: "#9ca3af", fontSize: 10, margin: "1px 0 0" }}>{formatarTamanhoArquivo(a.tamanho)}</p>
+                  </div>
+                  <a href={a.url} target="_blank" rel="noopener noreferrer" download style={{ color: "#2563eb", fontSize: 11, fontWeight: 600, textDecoration: "none", padding: "4px 10px", border: "1px solid #bfdbfe", borderRadius: 6 }}>Baixar</a>
+                  <button type="button" onClick={() => removerAnexoEdit(c.slug, i)} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "4px 10px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>Remover</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
 
     if (c.tipo === "textarea") return <div>{lab}<textarea placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical" as const, fontFamily: "inherit" }} /></div>;
     if (c.tipo === "numero") return <div>{lab}<input type="number" placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
@@ -1100,7 +1192,7 @@ export default function Vendas() {
               <ViewSection
                 titulo="📋 Informações"
                 campos={camposUnificados
-                  .filter(c => c.slug !== "status_venda" && c.slug !== "valor_plano" && c.slug !== "vendedor")
+                  .filter(c => c.slug !== "status_venda" && c.slug !== "valor_plano" && c.slug !== "vendedor" && (c.tipo as string) !== "arquivo")
                   .map(c => {
                     let v = c.origem === "fixo" ? (propostaVisualizando as any)[c.slug] : propostaVisualizando.dados_customizados?.[c.slug];
                     if (c.tipo === "checkbox") v = v === true ? "Sim" : v === false ? "Não" : "";
@@ -1110,6 +1202,33 @@ export default function Vendas() {
                     return [c.label, v] as [string, any];
                   })}
               />
+
+              {camposUnificados.filter(c => (c.tipo as string) === "arquivo").map(c => {
+                const arquivos: AnexoMeta[] = Array.isArray(propostaVisualizando.dados_customizados?.[c.slug])
+                  ? propostaVisualizando.dados_customizados[c.slug] : [];
+                return (
+                  <div key={c.slug} style={{ marginTop: 18 }}>
+                    <h3 style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, margin: "0 0 10px", textTransform: "uppercase" as const, letterSpacing: 0.5 }}>{c.label}</h3>
+                    {arquivos.length === 0 ? (
+                      <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, fontStyle: "italic" as const }}>Nenhum arquivo anexado</p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                        {arquivos.map((a, i) => (
+                          <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" download
+                            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 8, textDecoration: "none" }}>
+                            <span style={{ fontSize: 20 }}>{iconeArquivo(a.tipo)}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ color: "#1f2937", fontSize: 12, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{a.nome}</p>
+                              <p style={{ color: "#9ca3af", fontSize: 10, margin: "1px 0 0" }}>{formatarTamanhoArquivo(a.tamanho)}</p>
+                            </div>
+                            <span style={{ color: "#2563eb", fontSize: 11, fontWeight: 700 }}>Baixar</span>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
