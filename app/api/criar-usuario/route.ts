@@ -106,9 +106,12 @@ export async function POST(req: NextRequest) {
     if (ehSuperAdmin || ehAdminGeral) roleChamador = "admin";
 
     if (!podeCre) {
+      // 🔎 DIAGNÓSTICO embutido: a própria mensagem revela por que bloqueou.
+      // Se você ainda vir a mensagem ANTIGA ("precisa ser admin ou supervisor"),
+      // é porque este deploy NÃO chegou na rota (Vercel não rebuildou / caminho errado).
       return NextResponse.json({
         success: false,
-        error: "Você não tem permissão para criar usuários (precisa ser admin ou supervisor)"
+        error: `Sem permissao [diag v3] email=${authUser.email || "?"} | achou_registro=${chamador ? "sim" : "NAO"} | grupo_id=${chamador?.grupo_id ?? "null"} | grupo_norm="${grupoNorm}" | role=${roleChamador ?? "null"} | superadmin=${ehSuperAdmin} | admingeral=${ehAdminGeral}`
       }, { status: 403 });
     }
 
