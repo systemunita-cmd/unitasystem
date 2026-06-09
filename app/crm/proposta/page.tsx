@@ -128,6 +128,7 @@ function PropostaForm() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [ehAdmin, setEhAdmin] = useState<boolean>(false);
+  const [minhaFilaId, setMinhaFilaId] = useState<number | string | null>(null);
 
   const [equipesAuto, setEquipesAuto] = useState<EquipeOpt[]>([]);
   const [filasAuto, setFilasAuto] = useState<FilaOpt[]>([]);
@@ -186,7 +187,7 @@ function PropostaForm() {
 
         // ── Carrega lista de usuários (e detecta admin) ──
         const respUsuarios = await supabase.from("usuarios")
-          .select("id, email, nome, role")
+          .select("id, email, nome, role, fila_id")
           .order("nome");
 
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");
@@ -203,6 +204,8 @@ function PropostaForm() {
           setEhAdmin(me?.role === "admin" || me?.role === "supervisor");
         }
         setUsuarios(lista);
+        const meuRaw = (respUsuarios.data || []).find((u: any) => u.email?.toLowerCase() === user.email?.toLowerCase());
+        setMinhaFilaId(meuRaw?.fila_id ?? null);
 
         setForm(p => ({ ...p, vendedor: user.email || "" }));
         setCarregandoUsuarios(false);
@@ -611,6 +614,10 @@ function PropostaForm() {
     ? filasAuto.filter(f => String(f.equipe_id ?? "") === equipeForcadaProp)
     : filasAuto;
 
+  // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila não escolhe — fica fixa.
+  const filaForcada = (!ehAdminGeralProp && minhaFilaId != null) ? String(minhaFilaId) : null;
+  const travadoFila = filaForcada !== null;
+
   // 🔒 Pré-seleciona a equipe do usuário restrito nos campos do tipo "equipe"
   useEffect(() => {
     if (!travadoEquipe || !equipeForcadaProp || camposUnificados.length === 0) return;
@@ -627,6 +634,23 @@ function PropostaForm() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [travadoEquipe, equipeForcadaProp, camposUnificados]);
+
+  // 🔒 Pré-preenche a FILA do usuário nos campos do tipo "fila"
+  useEffect(() => {
+    if (!travadoFila || !filaForcada || camposUnificados.length === 0) return;
+    setDadosCustomizados(prev => {
+      const novo = { ...prev };
+      let mudou = false;
+      for (const c of camposUnificados) {
+        if (c.origem === "custom" && (c.tipo as string) === "fila" && novo[c.slug] !== filaForcada) {
+          novo[c.slug] = filaForcada;
+          mudou = true;
+        }
+      }
+      return mudou ? novo : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travadoFila, filaForcada, camposUnificados]);
 
   // ═══ RENDER CAMPOS ═══
   const renderCampoVendedor = () => {
@@ -824,6 +848,20 @@ function PropostaForm() {
       );
     }
     if (tipo === "fila") {
+      // Usuário com fila no cadastro: mostra fixa (read-only), sem caixa de seleção.
+      if (travadoFila) {
+        const fSel = filasAuto.find(f => String(f.id) === filaForcada);
+        return (
+          <div style={{ display: "flex", flexDirection: "column" as const }}>
+            <label style={labelStyle}>{labelComObr}</label>
+            <div style={{ ...inputStyleBase, background: "#f3f4f6", color: "#1f2937", cursor: "not-allowed", display: "flex", alignItems: "center", gap: 8 }}
+              title="Sua fila é definida pelo seu cadastro">
+              <span>{fSel?.icone || "\uD83C\uDFAF"}</span>
+              <span style={{ fontWeight: 600 }}>{fSel?.nome || "Minha fila"}</span>
+            </div>
+          </div>
+        );
+      }
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
