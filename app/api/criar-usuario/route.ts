@@ -58,11 +58,22 @@ export async function POST(req: NextRequest) {
     const SUPER_ADMIN_EMAIL = "admin@grupounita.net.br";
     const ehSuperAdmin = (authUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
 
-    const { data: chamador } = await supabase
+    let { data: chamador } = await supabase
       .from("usuarios")
       .select("role, grupo_id")
       .eq("auth_user_id", authUser.id)
       .maybeSingle();
+
+    // 🔑 Fallback: muitas linhas antigas não têm auth_user_id preenchido.
+    // Se não achou por auth_user_id, tenta pelo EMAIL do token (o front usa email).
+    if (!chamador && authUser.email) {
+      const porEmail = await supabase
+        .from("usuarios")
+        .select("role, grupo_id")
+        .ilike("email", authUser.email)
+        .maybeSingle();
+      chamador = porEmail.data || null;
+    }
 
     // Nome do grupo do chamador (normalizado: ignora acento/caixa/espaço)
     let grupoNorm = "";
