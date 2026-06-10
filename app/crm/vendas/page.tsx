@@ -156,6 +156,7 @@ export default function Vendas() {
 
   // 🔎 Filtros dinâmicos por coluna (slug → valor)
   const [filtrosColuna, setFiltrosColuna] = useState<Record<string, string>>({});
+  const [pagina, setPagina] = useState(1);
 
   // 📏 Refs pro scrollbar superior sincronizado com o de baixo
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -352,28 +353,8 @@ export default function Vendas() {
   const renderFiltroColuna = (c: CampoUnificado): ReactNode => {
     const val = filtrosColuna[c.slug] ?? "";
 
-    if (c.slug === "vendedor" || c.tipo === "vendedor") {
-      const vendedoresVisiveis = equipeId
-        ? usuarios.filter(u => u.equipe_id === equipeId)
-        : usuarios;
-      return (
-        <select value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle}>
-          <option value="">Todos</option>
-          {vendedoresVisiveis.map(u => <option key={u.email} value={u.email}>{u.nome}</option>)}
-        </select>
-      );
-    }
-
-    if (c.tipo === "dropdown") {
-      const prefixoVenc = c.slug === "vencimento";
-      return (
-        <select value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle}>
-          <option value="">Todos</option>
-          {(c.opcoes || []).map(op => (
-            <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : op}</option>
-          ))}
-        </select>
-      );
+    if (c.tipo === "data") {
+      return <input type="date" value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle} />;
     }
 
     if (c.tipo === "checkbox") {
@@ -386,10 +367,26 @@ export default function Vendas() {
       );
     }
 
-    if (c.tipo === "data") {
-      return <input type="date" value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle} />;
+    // 🔄 Opções DINÂMICAS: vêm dos valores que existem de fato nas propostas (custom ou fixo).
+    const distintos = opcoesPorColuna[c.slug] || [];
+    if (distintos.length > 0 && distintos.length <= 150) {
+      const rotulo = (op: string): string => {
+        if (c.slug === "vendedor" || c.tipo === "vendedor" || (c.tipo as string) === "usuario") return nomeVendedor(op);
+        if ((c.tipo as string) === "equipe") return nomePorId(equipes as any, op);
+        if ((c.tipo as string) === "fila") return nomePorId(filas, op);
+        if ((c.tipo as string) === "etiqueta") return nomePorId(etiquetas, op);
+        if (c.slug === "vencimento") return `Dia ${op}`;
+        return op;
+      };
+      return (
+        <select value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle}>
+          <option value="">Todos</option>
+          {distintos.map(op => <option key={op} value={op}>{rotulo(op)}</option>)}
+        </select>
+      );
     }
 
+    // muitos valores distintos (nome, cpf, etc.) → busca por texto
     return <input placeholder="filtrar..." value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle} />;
   };
 
@@ -817,6 +814,38 @@ export default function Vendas() {
     ? camposUnificados.filter(c => slugsNaLista.has(c.slug))
     : camposUnificados.filter(c => COLUNAS_LEGADO.includes(c.slug));
 
+  // Opções de filtro por coluna = valores distintos presentes nas propostas
+  const opcoesPorColuna = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const c of camposUnificados) {
+      if (c.tipo === "data" || c.tipo === "checkbox") continue;
+      const set = new Set<string>();
+      for (const p of propostas) {
+        const raw = c.origem === "fixo" ? (p as any)[c.slug] : p.dados_customizados?.[c.slug];
+        if (raw === null || raw === undefined || raw === "") continue;
+        set.add(String(raw));
+      }
+      map[c.slug] = Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propostas, camposUnificados]);
+
+  // Paginação: 50 por página
+  const POR_PAGINA = 50;
+  const totalPaginas = Math.max(1, Math.ceil(propostasFiltradas.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const propostasPagina = propostasFiltradas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+  const btnPag = (off: boolean) => ({
+    background: off ? "#f3f4f6" : "#ffffff", color: off ? "#9ca3af" : "#2563eb",
+    border: "1px solid " + (off ? "#e5e7eb" : "#bfdbfe"),
+    borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600,
+    cursor: off ? "default" : "pointer",
+  } as const);
+
+  // Volta pra página 1 quando qualquer filtro muda
+  useEffect(() => { setPagina(1); }, [busca, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, equipeId]);
+
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
 
@@ -1084,7 +1113,7 @@ export default function Vendas() {
                     {busca || filtroStatus !== "todos" ? "Nenhum resultado pros filtros" : podeVerTudo ? "Nenhuma proposta cadastrada ainda" : "Você ainda não cadastrou nenhuma proposta"}
                   </p>
                 </td></tr>
-              ) : propostasFiltradas.map((v, i) => {
+              ) : propostasPagina.map((v, i) => {
                 return (
                   <tr key={v.id}
                     style={{
@@ -1119,6 +1148,21 @@ export default function Vendas() {
           </table>
         </div>
       </div>
+
+      {propostasFiltradas.length > POR_PAGINA && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 12, flexWrap: "wrap" as const }}>
+          <span style={{ color: "#6b7280", fontSize: 12 }}>
+            Mostrando {(paginaAtual - 1) * POR_PAGINA + 1}–{Math.min(paginaAtual * POR_PAGINA, propostasFiltradas.length)} de {propostasFiltradas.length.toLocaleString("pt-BR")}
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button onClick={() => setPagina(1)} disabled={paginaAtual === 1} style={btnPag(paginaAtual === 1)}>« Primeira</button>
+            <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={paginaAtual === 1} style={btnPag(paginaAtual === 1)}>‹ Anterior</button>
+            <span style={{ color: "#1f2937", fontSize: 12, fontWeight: 700, padding: "0 8px" }}>Página {paginaAtual} de {totalPaginas}</span>
+            <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={paginaAtual === totalPaginas} style={btnPag(paginaAtual === totalPaginas)}>Próxima ›</button>
+            <button onClick={() => setPagina(totalPaginas)} disabled={paginaAtual === totalPaginas} style={btnPag(paginaAtual === totalPaginas)}>Última »</button>
+          </div>
+        </div>
+      )}
 
       {/* Avisos rodapé */}
       {!podeExcluir && propostas.length > 0 && (
