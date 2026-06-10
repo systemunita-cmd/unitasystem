@@ -166,10 +166,20 @@ export default function Vendas() {
   const [topInnerWidth, setTopInnerWidth] = useState(0);
   const sincronizando = useRef(false);
 
-  // ⬆️⬇️ Botões flutuantes — mostra "topo" só quando rolou um pouco
+  // ⬆️⬇️ Botões flutuantes — mostra "topo" só quando rolou um pouco.
+  // rAF + dedupe no limiar de 200px: evita re-render da tela a cada pixel rolado.
   const [scrollY, setScrollY] = useState(0);
   useEffect(() => {
-    const onScroll = () => setScrollY(window.scrollY);
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        setScrollY(prev => ((prev > 200) === (y > 200) ? prev : y));
+        ticking = false;
+      });
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -197,7 +207,9 @@ export default function Vendas() {
     const t = setTimeout(medir, 50);
     window.addEventListener("resize", medir);
     return () => { clearTimeout(t); window.removeEventListener("resize", medir); };
-  });
+    // só re-mede quando o que muda a largura da tabela muda — não em todo render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, isMobile, camposUnificados, slugsNaLista]);
 
   // Modal edição
   const [showModal, setShowModal] = useState(false);
@@ -836,18 +848,22 @@ export default function Vendas() {
     ? camposUnificados.filter(c => slugsNaLista.has(c.slug))
     : camposUnificados.filter(c => COLUNAS_LEGADO.includes(c.slug));
 
-  // Opções de filtro por coluna = valores distintos presentes nas propostas
+  // Opções de filtro por coluna = valores distintos presentes nas propostas.
+  // Colunas com mais de 150 distintos viram busca por texto, então paramos de
+  // coletar nelas (evita varrer 7,5k linhas montando listas que seriam descartadas).
   const opcoesPorColuna = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const c of camposUnificados) {
       if (c.tipo === "data" || c.tipo === "checkbox") continue;
       const set = new Set<string>();
+      let estourou = false;
       for (const p of propostas) {
         const raw = c.origem === "fixo" ? (p as any)[c.slug] : p.dados_customizados?.[c.slug];
         if (raw === null || raw === undefined || raw === "") continue;
         set.add(String(raw));
+        if (set.size > 150) { estourou = true; break; }
       }
-      map[c.slug] = Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+      map[c.slug] = estourou ? [] : Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
