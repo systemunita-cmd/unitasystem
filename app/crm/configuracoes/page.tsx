@@ -11,7 +11,9 @@ import { useTemPermissao } from "../../hooks/useTemPermissao";
 // ⚙️ CONFIGURAÇÕES — UnitaSystem (single-tenant, premium)
 // ───────────────────────────────────────────────────────────────────────
 // 5 abas em tabs visuais: Usuários · Equipes · Filas · Permissões · Geral
-// 🆕 v3: Dropdown de FILA dependente da equipe (fila_id FK)
+// 🆕 v4: Equipes em BOTÕES (multi) liberam as filas dessas equipes em BOTÕES
+//        — dropdown de equipe e de fila removidos. fila_id continua única;
+//        equipe_id é derivado da fila escolhida (ou da 1ª equipe marcada).
 // Estado da aba persistido em ?tab=... pra navegação direta
 // Real-time em tudo, busca por aba, modo demo robusto
 // ═══════════════════════════════════════════════════════════════════════
@@ -23,8 +25,8 @@ type Usuario = {
   nome: string;
   role: "admin" | "supervisor" | "atendente";
   equipe_id?: number | null;
-  fila_id?: number | null; // 🆕 v3 — fila de atendimento (1 por usuário, depende da equipe)
-  equipes_acesso?: number[] | null; // 🆕 equipes que o usuário pode VER (BKO/gerente)
+  fila_id?: number | null; // fila de atendimento (1 por usuário, depende da equipe)
+  equipes_acesso?: number[] | null; // equipes que o usuário pode VER (BKO/gerente) + libera as filas
   ativo?: boolean;
   primeiro_acesso?: boolean;
   ramal?: string | null;
@@ -70,6 +72,7 @@ const CATEGORIAS_PERMISSAO = [
     { key: "funil", label: "Ver funil de vendas" },
     { key: "vendas_proprio", label: "Ver próprias vendas" },
     { key: "vendas_equipe", label: "Ver vendas da equipe" },
+    { key: "vendas_todas", label: "Ver todas as vendas" },
     { key: "proposta_criar", label: "Criar propostas" },
     { key: "contatos_ver", label: "Ver contatos" },
     { key: "contatos_editar", label: "Editar cadastro de contatos" },
@@ -281,7 +284,7 @@ export default function Configuracoes() {
 
   // 🛡️ Filtro por escopo: usuário com escopo "team" vê só a equipe dele
   const minhaEquipe = perm.equipeId;
-  
+
   // Lista de equipes que o user pode ver
   const equipesVisiveis: any[] = (() => {
     if (perm.superAdmin || isDono || isSuperAdmin || escopoVerEquipes === "all") return equipes;
@@ -290,7 +293,7 @@ export default function Configuracoes() {
     }
     return equipes;
   })();
-  
+
   // Lista de usuários que o user pode ver
   const usuariosVisiveis: any[] = (() => {
     if (perm.superAdmin || isDono || isSuperAdmin || escopoVerUsuarios === "all") return usuarios;
@@ -302,7 +305,7 @@ export default function Configuracoes() {
     }
     return usuarios;
   })();
-  
+
   // Filas: só das equipes visíveis
   const idsEquipesVisiveis = new Set(equipesVisiveis.map((eq: any) => eq.id));
   const filasVisiveis: any[] = filas.filter((f: any) => !f.equipe_id || idsEquipesVisiveis.has(f.equipe_id));
@@ -512,7 +515,7 @@ export default function Configuracoes() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 👥 ABA USUÁRIOS — 🆕 v3 com fila dependente de equipe
+// 👥 ABA USUÁRIOS — 🆕 v4: equipes (multi, botões) liberam as filas (botões)
 // ═══════════════════════════════════════════════════════════════════════
 // Mapa: nome do grupo → role legado equivalente
 function deriveRoleFromGrupo(nomeGrupo: string): "admin" | "supervisor" | "atendente" {
@@ -529,11 +532,11 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
   const [showForm, setShowForm] = useState(false);
   const [editandoUsuario, setEditandoUsuario] = useState<Usuario | null>(null);
-  // 🆕 v3: fila_id (single) que depende da equipe
+  // 🆕 v4: equipes_acesso (multi) libera as filas; fila_id (single) escolhida nos botões
   const [formUsuario, setFormUsuario] = useState({
     nome: "", email: "", senha: "",
     role: "atendente" as "admin" | "supervisor" | "atendente",
-    equipe_id: "", grupo_id: "", ramal: "", telefone: "",
+    grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
     equipes_acesso: [] as number[],
   });
@@ -564,17 +567,26 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     return l;
   }, [usuarios, busca, filtroRole, filtroEquipe]);
 
-  // 🆕 v3: filtra filas pela equipe (se sem equipe, retorna vazio pra forçar escolha)
+  // 🆕 v4: filas das equipes marcadas (união). Sem equipe marcada → vazio.
   const filasDisponiveis = useMemo(() => {
-    if (!formUsuario.equipe_id) return [];
-    const eqId = parseInt(formUsuario.equipe_id);
-    return filas.filter((f: Fila) => f.equipe_id === eqId);
-  }, [filas, formUsuario.equipe_id]);
+    if (!formUsuario.equipes_acesso.length) return [] as Fila[];
+    const set = new Set(formUsuario.equipes_acesso);
+    return filas.filter((f: Fila) => f.equipe_id != null && set.has(f.equipe_id));
+  }, [filas, formUsuario.equipes_acesso]);
+
+  // Deriva equipe_id pra gravar: equipe da fila escolhida, senão a 1ª equipe marcada
+  const derivarEquipeId = (): number | null => {
+    if (formUsuario.fila_id) {
+      const f = filas.find((x: Fila) => String(x.id) === formUsuario.fila_id);
+      if (f && f.equipe_id != null) return f.equipe_id;
+    }
+    return formUsuario.equipes_acesso.length ? formUsuario.equipes_acesso[0] : null;
+  };
 
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", equipe_id: "", grupo_id: "", ramal: "", telefone: "", fila_id: "", equipes_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", equipes_acesso: [] });
     setShowForm(true);
   };
 
@@ -586,13 +598,17 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     }
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(u);
+    // Equipes marcadas: usa equipes_acesso; se vazio mas tem equipe_id legado, semeia com ela
+    const equipesIniciais = Array.isArray(u.equipes_acesso) && u.equipes_acesso.length
+      ? u.equipes_acesso
+      : (u.equipe_id ? [u.equipe_id] : []);
     setFormUsuario({
       nome: u.nome, email: u.email, senha: "",
-      role: u.role, equipe_id: u.equipe_id?.toString() || "",
+      role: u.role,
       grupo_id: u.grupo_id?.toString() || "",
       ramal: u.ramal || "", telefone: u.telefone || "",
-      fila_id: u.fila_id?.toString() || "", // 🆕 v3
-      equipes_acesso: Array.isArray(u.equipes_acesso) ? u.equipes_acesso : [],
+      fila_id: u.fila_id?.toString() || "",
+      equipes_acesso: equipesIniciais,
     });
     setShowForm(true);
   };
@@ -604,16 +620,18 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     }
     setSalvando(true);
 
+    const equipeIdDerivada = derivarEquipeId();
+
     if (editandoUsuario) {
       // ── EDIT ── atualiza só dados não-auth
       const { error } = await supabase.from("usuarios").update({
         nome: formUsuario.nome.trim(),
         role: formUsuario.role,
-        equipe_id: formUsuario.equipe_id ? parseInt(formUsuario.equipe_id) : null,
+        equipe_id: equipeIdDerivada,
         grupo_id: formUsuario.grupo_id ? parseInt(formUsuario.grupo_id) : null,
         ramal: formUsuario.ramal.trim() || null,
         telefone: formUsuario.telefone.trim() || null,
-        fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null, // 🆕 v3
+        fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null,
         equipes_acesso: formUsuario.equipes_acesso,
       }).eq("id", editandoUsuario.id);
       setSalvando(false);
@@ -644,11 +662,11 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
           senha: formUsuario.senha,
           nome: formUsuario.nome.trim(),
           role: formUsuario.role,
-          equipe_id: formUsuario.equipe_id ? parseInt(formUsuario.equipe_id) : null,
+          equipe_id: equipeIdDerivada,
           grupo_id: formUsuario.grupo_id ? parseInt(formUsuario.grupo_id) : null,
           ramal: formUsuario.ramal.trim() || null,
           telefone: formUsuario.telefone.trim() || null,
-          fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null, // 🆕 v3
+          fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null,
           equipes_acesso: formUsuario.equipes_acesso,
         }),
       });
@@ -745,7 +763,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 disabled={!!editandoUsuario}
                 style={{ ...IS, background: editandoUsuario ? "#f3f4f6" : "#ffffff", opacity: editandoUsuario ? 0.6 : 1 }} />
             </div>
-            {/* 🆕 GRUPO DE PERMISSÃO — Campo principal (cargo do usuário) */}
+            {/* 🛡️ GRUPO DE PERMISSÃO — Campo principal (cargo do usuário) */}
             <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
               <label style={{ ...labelStyle, color: "#7c3aed", fontSize: 12 }}>
                 🛡️ CARGO / GRUPO DE PERMISSÃO *
@@ -765,34 +783,34 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
               </p>
             </div>
 
-            <div>
-              <label style={labelStyle}>🏢 Equipe</label>
-              <select value={formUsuario.equipe_id} onChange={e => setFormUsuario({ ...formUsuario, equipe_id: e.target.value, fila_id: "" })} style={IS}>
-                <option value="">Sem equipe</option>
-                {equipes.map((eq: Equipe) => (
-                  <option key={eq.id} value={eq.id.toString()}>{eq.icone} {eq.nome}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
-              <label style={labelStyle}>🔓 Equipes com acesso (vê as vendas dessas equipes)</label>
+            {/* 🆕 v4 — EQUIPES (multi, botões). Marcar libera as filas abaixo */}
+            <div style={{ gridColumn: isMobile ? "1" : "span 3" }}>
+              <label style={labelStyle}>🏢 Equipes (clique pra selecionar — libera as filas abaixo)</label>
               <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
                 {equipes.map((eq: Equipe) => {
                   const marcada = formUsuario.equipes_acesso.includes(eq.id);
                   return (
                     <button key={eq.id} type="button"
-                      onClick={() => setFormUsuario(f => ({
-                        ...f,
-                        equipes_acesso: marcada
+                      onClick={() => setFormUsuario(f => {
+                        const estava = f.equipes_acesso.includes(eq.id);
+                        const novas = estava
                           ? f.equipes_acesso.filter(x => x !== eq.id)
-                          : [...f.equipes_acesso, eq.id],
-                      }))}
+                          : [...f.equipes_acesso, eq.id];
+                        // Se desmarcou a equipe e a fila escolhida era dessa equipe, limpa a fila
+                        let novaFila = f.fila_id;
+                        if (estava && f.fila_id) {
+                          const fSel = filas.find((x: Fila) => String(x.id) === f.fila_id);
+                          if (fSel && fSel.equipe_id === eq.id) novaFila = "";
+                        }
+                        return { ...f, equipes_acesso: novas, fila_id: novaFila };
+                      })}
                       style={{
-                        padding: "7px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                        border: "1px solid " + (marcada ? "#2563eb" : "#e5e7eb"),
-                        background: marcada ? "#eff6ff" : "#ffffff",
-                        color: marcada ? "#2563eb" : "#6b7280",
+                        padding: "8px 16px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                        border: "1px solid " + (marcada ? eq.cor : "#e5e7eb"),
+                        background: marcada ? `${eq.cor}15` : "#ffffff",
+                        color: marcada ? eq.cor : "#6b7280",
+                        boxShadow: marcada ? `0 2px 8px ${eq.cor}25` : "none",
+                        transition: "all 0.12s",
                       }}>
                       {marcada ? "\u2713 " : ""}{eq.icone} {eq.nome}
                     </button>
@@ -801,10 +819,79 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 {equipes.length === 0 && <span style={{ color: "#9ca3af", fontSize: 12 }}>Nenhuma equipe cadastrada</span>}
               </div>
               <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0", lineHeight: 1.4 }}>
-                Vazio = comportamento padrão (própria equipe/fila). Marque as equipes que este usuário pode ver nas Vendas — útil pra BKO e gerentes.
+                Marque as equipes deste usuário. As vendas dessas equipes ficam visíveis pra ele (útil pra BKO e gerentes).
               </p>
             </div>
 
+            {/* 🆕 v4 — FILAS (botões), aparecem conforme as equipes marcadas */}
+            <div style={{ gridColumn: isMobile ? "1" : "span 3" }}>
+              <label style={labelStyle}>
+                📋 Fila de atendimento
+                {formUsuario.equipes_acesso.length > 0 && filasDisponiveis.length > 0 && (
+                  <span style={{ color: "#9ca3af", fontWeight: 500, marginLeft: 6, textTransform: "none", letterSpacing: 0, fontSize: 10 }}>
+                    · {filasDisponiveis.length} disponível{filasDisponiveis.length > 1 ? "is" : ""}
+                  </span>
+                )}
+              </label>
+
+              {formUsuario.equipes_acesso.length === 0 ? (
+                <div style={{ background: "#f9fafb", border: "1px dashed #e5e7eb", borderRadius: 10, padding: "12px 14px", color: "#9ca3af", fontSize: 12.5, fontWeight: 600 }}>
+                  ⚠️ Selecione uma equipe acima pra liberar as filas
+                </div>
+              ) : filasDisponiveis.length === 0 ? (
+                <div style={{ background: "#fffbeb", border: "1px dashed #fcd34d", borderRadius: 10, padding: "12px 14px", color: "#92400e", fontSize: 12.5, fontWeight: 600 }}>
+                  ⚠️ As equipes selecionadas não têm filas cadastradas — crie na aba Filas
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
+                  {/* Botão "Todas as filas" = sem fila específica (vê todas das equipes marcadas) */}
+                  <button type="button"
+                    onClick={() => setFormUsuario(f => ({ ...f, fila_id: "" }))}
+                    style={{
+                      padding: "8px 16px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                      border: "1px solid " + (formUsuario.fila_id === "" ? "#10b981" : "#e5e7eb"),
+                      background: formUsuario.fila_id === "" ? "#ecfdf5" : "#ffffff",
+                      color: formUsuario.fila_id === "" ? "#059669" : "#6b7280",
+                      boxShadow: formUsuario.fila_id === "" ? "0 2px 8px rgba(16,185,129,0.20)" : "none",
+                      transition: "all 0.12s",
+                    }}>
+                    {formUsuario.fila_id === "" ? "\u2713 " : ""}👀 Todas as filas
+                  </button>
+
+                  {filasDisponiveis.map((f: Fila) => {
+                    const on = formUsuario.fila_id === String(f.id);
+                    const eq = equipes.find((e: Equipe) => e.id === f.equipe_id);
+                    const multi = formUsuario.equipes_acesso.length > 1;
+                    return (
+                      <button key={f.id} type="button"
+                        onClick={() => setFormUsuario(prev => ({ ...prev, fila_id: String(f.id) }))}
+                        style={{
+                          padding: "8px 16px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                          border: "1px solid " + (on ? f.cor : "#e5e7eb"),
+                          background: on ? `${f.cor}15` : "#ffffff",
+                          color: on ? f.cor : "#6b7280",
+                          boxShadow: on ? `0 2px 8px ${f.cor}25` : "none",
+                          transition: "all 0.12s",
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                        }}>
+                        {on ? "\u2713 " : ""}{f.icone} {f.nome}
+                        {multi && eq && (
+                          <span style={{ fontSize: 10, fontWeight: 600, opacity: 0.7 }}>· {eq.nome}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <p style={{ color: "#9ca3af", fontSize: 10, margin: "6px 0 0", lineHeight: 1.4 }}>
+                {formUsuario.equipes_acesso.length === 0
+                  ? "💡 Marque uma equipe acima pra liberar as filas"
+                  : formUsuario.fila_id
+                    ? "✅ Usuário verá apenas atendimentos desta fila"
+                    : "👀 Usuário verá todas as filas das equipes marcadas"}
+              </p>
+            </div>
 
             <div>
               <label style={labelStyle}>📞 Ramal VOIP</label>
@@ -829,48 +916,6 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 </p>
               </div>
             )}
-
-            {/* 🆕 v3 — DROPDOWN DE FILA (depende da equipe) */}
-            <div>
-              <label style={labelStyle}>
-                📋 Fila de atendimento
-                {formUsuario.equipe_id && filasDisponiveis.length > 0 && (
-                  <span style={{ color: "#9ca3af", fontWeight: 500, marginLeft: 6, textTransform: "none", letterSpacing: 0, fontSize: 10 }}>
-                    · {filasDisponiveis.length} disponível{filasDisponiveis.length > 1 ? "is" : ""}
-                  </span>
-                )}
-              </label>
-              <select
-                value={formUsuario.fila_id}
-                onChange={e => setFormUsuario({ ...formUsuario, fila_id: e.target.value })}
-                disabled={!formUsuario.equipe_id || filasDisponiveis.length === 0}
-                style={{
-                  ...IS,
-                  cursor: (!formUsuario.equipe_id || filasDisponiveis.length === 0) ? "not-allowed" : "pointer",
-                  background: (!formUsuario.equipe_id || filasDisponiveis.length === 0) ? "#f3f4f6" : "#ffffff",
-                  opacity: (!formUsuario.equipe_id || filasDisponiveis.length === 0) ? 0.6 : 1,
-                }}>
-                {!formUsuario.equipe_id ? (
-                  <option value="">⚠️ Selecione uma equipe primeiro</option>
-                ) : filasDisponiveis.length === 0 ? (
-                  <option value="">⚠️ Esta equipe não tem filas — cadastre na aba Filas</option>
-                ) : (
-                  <>
-                    <option value="">Todas as filas da equipe</option>
-                    {filasDisponiveis.map((f: Fila) => (
-                      <option key={f.id} value={f.id.toString()}>{f.icone} {f.nome}</option>
-                    ))}
-                  </>
-                )}
-              </select>
-              <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", lineHeight: 1.4 }}>
-                {!formUsuario.equipe_id
-                  ? "💡 Escolha uma equipe acima pra liberar as filas"
-                  : formUsuario.fila_id
-                    ? "✅ Usuário verá apenas atendimentos desta fila"
-                    : "👀 Usuário verá todas as filas desta equipe"}
-              </p>
-            </div>
           </div>
 
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -903,7 +948,6 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 900 : "auto" }}>
               <thead>
                 <tr style={{ background: "#f9fafb" }}>
-                  {/* 🆕 v2: adicionado "Filas" entre Equipe e Grupo */}
                   {["Nome", "Função", "Equipe", "Filas", "Grupo", "Ramal", "Ações"].map(h => (
                     <th key={h} style={{ padding: "12px 16px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
@@ -966,7 +1010,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                           </span>
                         ) : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
                       </td>
-                      {/* 🆕 v3: Coluna FILA (single) */}
+                      {/* Coluna FILA (single) */}
                       <td style={{ padding: "12px 16px" }}>
                         {u.fila_id ? (() => {
                           const f = filas.find((x: Fila) => x.id === u.fila_id);
@@ -1405,7 +1449,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
               <tbody>
                 {filasFiltradas.map((f: Fila, i: number) => {
                   const equipe = f.equipe_id ? equipeById.get(f.equipe_id) : null;
-                  // 🆕 v3: conta usuários que têm essa fila (fila_id == f.id) OU que estão na equipe sem fila específica
+                  // conta usuários que têm essa fila (fila_id == f.id) OU que estão na equipe sem fila específica
                   const usuariosDaFila = usuarios.filter((u: Usuario) => {
                     const temEspecifica = u.fila_id === f.id;
                     const semFiltro = !u.fila_id && equipe && u.equipe_id === equipe.id;
@@ -1463,7 +1507,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🔐 ABA PERMISSÕES
+// ⚙️ ABA GERAL
 // ═══════════════════════════════════════════════════════════════════════
 function AbaGeral({ isMobile, IS, cardStyle, labelStyle, podeGerenciar }: any) {
   return (
