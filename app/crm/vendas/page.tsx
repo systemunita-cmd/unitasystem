@@ -895,16 +895,22 @@ export default function Vendas() {
 
   // 📊 KPIs rápidos
   const kpis = useMemo(() => {
-    const instaladas = propostasFiltradas.filter(p => p.status_venda === "INSTALADA").length;
-    const pendentes = propostasFiltradas.filter(p => p.status_venda === "PENDENTE" || p.status_venda === "AGUARDANDO AUDITORIA").length;
-    const canceladas = propostasFiltradas.filter(p => p.status_venda === "CANCELADA" || p.status_venda === "REPROVADA").length;
-    const ticketMedio = instaladas > 0
-      ? propostasFiltradas.filter(p => p.status_venda === "INSTALADA").reduce((a, p) => a + (Number(p.valor_plano) || 0), 0) / instaladas
-      : 0;
-    const receita = propostasFiltradas
-      .filter(p => p.status_venda === "INSTALADA")
-      .reduce((a, p) => a + (Number(p.valor_plano) || 0), 0);
-    return { instaladas, pendentes, canceladas, ticketMedio, receita };
+    const norm = (s: any) => String(s ?? "").trim().toUpperCase();
+    // Todos os status que representam cancelamento/perda da venda
+    const STATUS_CANCELAMENTO = [
+      "CANCELADA", "CANCELADA INTERNAMENTE", "CANCELADA EXTERNAMENTE",
+      "REPROVADA", "CHURN", "CHURN VOLUNTÁRIO", "CHURN INVOLUNTÁRIO",
+      "FRAUDE INST", "FR PREVENÇÃO",
+    ];
+    const instaladasArr = propostasFiltradas.filter(p => norm(p.status_venda) === "INSTALADA");
+    const aguardandoArr = propostasFiltradas.filter(p => norm(p.status_venda) === "AGUARDANDO INSTALAÇÃO");
+    const instaladas = instaladasArr.length;
+    const aguardando = aguardandoArr.length;
+    const canceladas = propostasFiltradas.filter(p => STATUS_CANCELAMENTO.includes(norm(p.status_venda))).length;
+    const receita = instaladasArr.reduce((a, p) => a + (Number(p.valor_plano) || 0), 0);
+    const receitaAguardando = aguardandoArr.reduce((a, p) => a + (Number(p.valor_plano) || 0), 0);
+    const ticketMedio = instaladas > 0 ? receita / instaladas : 0;
+    return { instaladas, aguardando, canceladas, ticketMedio, receita, receitaAguardando };
   }, [propostasFiltradas]);
 
   return (
@@ -1041,9 +1047,12 @@ export default function Vendas() {
           <p style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0 }}>✅ Instaladas</p>
           <p style={{ color: "#16a34a", fontSize: 22, fontWeight: 800, margin: "4px 0 0", letterSpacing: -0.5 }}>{kpis.instaladas.toLocaleString("pt-BR")}</p>
         </div>
-        <div style={{ ...cardStyle, padding: 14, borderTop: "3px solid #f59e0b" }}>
-          <p style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0 }}>⏳ Pendentes</p>
-          <p style={{ color: "#f59e0b", fontSize: 22, fontWeight: 800, margin: "4px 0 0", letterSpacing: -0.5 }}>{kpis.pendentes.toLocaleString("pt-BR")}</p>
+        <div style={{ ...cardStyle, padding: 14, borderTop: "3px solid #0ea5e9" }}>
+          <p style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0 }}>🔧 Aguardando Instalação</p>
+          <p style={{ color: "#0ea5e9", fontSize: 22, fontWeight: 800, margin: "4px 0 0", letterSpacing: -0.5 }}>{kpis.aguardando.toLocaleString("pt-BR")}</p>
+          <p style={{ color: "#9ca3af", fontSize: 10, margin: "2px 0 0", fontWeight: 500 }}>
+            receita: R$ {kpis.receitaAguardando.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </p>
         </div>
         <div style={{ ...cardStyle, padding: 14, borderTop: "3px solid #dc2626" }}>
           <p style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: 0 }}>❌ Canceladas</p>
