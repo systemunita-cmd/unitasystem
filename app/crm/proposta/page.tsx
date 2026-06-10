@@ -111,10 +111,9 @@ function PropostaForm() {
   const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
   const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
 
-  // 🔒 Trava por equipe (Diretor/escopo team) — só puxa a equipe de quem cadastra
+  // 🔒 Trava por equipe (Diretor/escopo team) — o conjunto de equipes permitidas
+  // é derivado mais abaixo (idsEquipesPermitidas), honrando equipes_acesso do BKO/gerente.
   const ehAdminGeralProp = perm.superAdmin || perm.grupoNome === "Administração Geral";
-  const equipeForcadaProp = (!perm.carregando && !ehAdminGeralProp && perm.equipeId != null) ? String(perm.equipeId) : null;
-  const travadoEquipe = equipeForcadaProp !== null;
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -129,6 +128,7 @@ function PropostaForm() {
   const [userId, setUserId] = useState<string>("");
   const [ehAdmin, setEhAdmin] = useState<boolean>(false);
   const [minhaFilaId, setMinhaFilaId] = useState<number | string | null>(null);
+  const [minhasEquipesAcesso, setMinhasEquipesAcesso] = useState<number[]>([]);
 
   const [equipesAuto, setEquipesAuto] = useState<EquipeOpt[]>([]);
   const [filasAuto, setFilasAuto] = useState<FilaOpt[]>([]);
@@ -187,7 +187,7 @@ function PropostaForm() {
 
         // ── Carrega lista de usuários (e detecta admin) ──
         const respUsuarios = await supabase.from("usuarios")
-          .select("id, email, nome, role, fila_id")
+          .select("id, email, nome, role, fila_id, equipe_id, equipes_acesso")
           .order("nome");
 
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");
@@ -206,6 +206,7 @@ function PropostaForm() {
         setUsuarios(lista);
         const meuRaw = (respUsuarios.data || []).find((u: any) => u.email?.toLowerCase() === user.email?.toLowerCase());
         setMinhaFilaId(meuRaw?.fila_id ?? null);
+        setMinhasEquipesAcesso(Array.isArray(meuRaw?.equipes_acesso) ? meuRaw.equipes_acesso : []);
 
         setForm(p => ({ ...p, vendedor: user.email || "" }));
         setCarregandoUsuarios(false);
@@ -606,34 +607,49 @@ function PropostaForm() {
     setDirty(true);
   };
 
-  // 🔒 Listas filtradas pra equipe do usuário restrito
-  const equipesVisiveis = travadoEquipe
-    ? equipesAuto.filter(e => String(e.id) === equipeForcadaProp)
+  // 🔓 Conjunto de equipes que o usuário pode escolher no PDV/EQUIPE e cujas filas aparecem.
+  //    null = sem restrição (vê todas). Ordem: admin geral → equipes_acesso (BKO/gerente) →
+  //    própria equipe (atendente travado) → sem restrição.
+  const idsEquipesPermitidas = useMemo<string[] | null>(() => {
+    if (ehAdminGeralProp) return null;
+    if (minhasEquipesAcesso.length > 0) return minhasEquipesAcesso.map(String);
+    if (perm.equipeId != null) return [String(perm.equipeId)];
+    return null;
+  }, [ehAdminGeralProp, minhasEquipesAcesso, perm.equipeId]);
+
+  // Quando só há UMA equipe permitida, pré-seleciona ela (Diretor/atendente travado).
+  // Com várias (BKO/gerente), deixa o usuário escolher.
+  const equipeUnicaForcada = (idsEquipesPermitidas && idsEquipesPermitidas.length === 1) ? idsEquipesPermitidas[0] : null;
+
+  // 🔒 Listas filtradas pras equipes permitidas do usuário
+  const equipesVisiveis = idsEquipesPermitidas
+    ? equipesAuto.filter(e => idsEquipesPermitidas.includes(String(e.id)))
     : equipesAuto;
-  const filasVisiveis = travadoEquipe
-    ? filasAuto.filter(f => String(f.equipe_id ?? "") === equipeForcadaProp)
+  const filasVisiveis = idsEquipesPermitidas
+    ? filasAuto.filter(f => idsEquipesPermitidas.includes(String(f.equipe_id ?? "")))
     : filasAuto;
 
-  // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila não escolhe — fica fixa.
-  const filaForcada = (!ehAdminGeralProp && minhaFilaId != null) ? String(minhaFilaId) : null;
+  // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila e NÃO cobre várias equipes
+  //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
+  const filaForcada = (!ehAdminGeralProp && minhaFilaId != null && minhasEquipesAcesso.length <= 1) ? String(minhaFilaId) : null;
   const travadoFila = filaForcada !== null;
 
-  // 🔒 Pré-seleciona a equipe do usuário restrito nos campos do tipo "equipe"
+  // 🔒 Pré-seleciona a equipe nos campos do tipo "equipe" SÓ quando há uma única permitida
   useEffect(() => {
-    if (!travadoEquipe || !equipeForcadaProp || camposUnificados.length === 0) return;
+    if (!equipeUnicaForcada || camposUnificados.length === 0) return;
     setDadosCustomizados(prev => {
       const novo = { ...prev };
       let mudou = false;
       for (const c of camposUnificados) {
         if (c.origem === "custom" && (c.tipo as string) === "equipe" && !novo[c.slug]) {
-          novo[c.slug] = equipeForcadaProp;
+          novo[c.slug] = equipeUnicaForcada;
           mudou = true;
         }
       }
       return mudou ? novo : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [travadoEquipe, equipeForcadaProp, camposUnificados]);
+  }, [equipeUnicaForcada, camposUnificados]);
 
   // 🔒 Pré-preenche a FILA do usuário nos campos do tipo "fila"
   useEffect(() => {
