@@ -617,16 +617,49 @@ function PropostaForm() {
   };
 
   // 🔄 Troca CPF <-> CNPJ. Ao virar CNPJ limpa campos só de pessoa física;
-  //    ao voltar pra CPF limpa os extras de CNPJ. Documento (cpf) e nome ficam.
+  //    ao voltar pra CPF limpa os extras de CNPJ e do sócio. Documento (cpf) e nome ficam.
   const trocarTipoPessoa = (t: "cpf" | "cnpj") => {
     setCampoCustom("tipo_pessoa", t);
     if (t === "cnpj") {
       ["rg", "data_nascimento", "nome_mae"].forEach(s => setCampoFixo(s, ""));
     } else {
-      setCampoCustom("cnpj_nome_fantasia", "");
-      setCampoCustom("cnpj_inscricao_estadual", "");
+      ["cnpj_nome_fantasia", "cnpj_inscricao_estadual",
+       "socio_nome", "socio_cpf", "socio_rg", "socio_nascimento", "socio_nome_mae"]
+        .forEach(s => setCampoCustom(s, ""));
     }
   };
+
+  // 🏢 Bloco "Dados do Sócio" — aparece só no modo CNPJ. Tudo em dados_customizados.
+  const renderInputSocio = (slug: string, label: string, opts?: { tipo?: "data"; cpf?: boolean; ph?: string }) => {
+    const v = dadosCustomizados[slug] || "";
+    const onCh = (val: string) => setCampoCustom(slug, val);
+    let input;
+    if (opts?.tipo === "data") {
+      input = <input type="date" value={v} onChange={e => onCh(e.target.value)} style={inputStyleBase} />;
+    } else if (opts?.cpf) {
+      input = <input value={v} placeholder="000.000.000-00" onChange={e => onCh(mascaraCPF(e.target.value))} style={inputStyleBase} />;
+    } else {
+      input = <input value={v} placeholder={opts?.ph || ""} onChange={e => onCh(e.target.value)} style={inputStyleBase} />;
+    }
+    return (
+      <div style={{ display: "flex", flexDirection: "column" as const }}>
+        <label style={labelStyle}>{label}</label>
+        {input}
+      </div>
+    );
+  };
+  const renderBlocoSocio = () => (
+    <div style={{ gridColumn: "1 / -1", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 14, background: "#f8faff", marginTop: 4 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>👤 DADOS DO SÓCIO</div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: isMobile ? 12 : 16 }}>
+        {renderInputSocio("socio_nome", "Nome do Sócio", { ph: "Nome completo do sócio" })}
+        {renderInputSocio("socio_cpf", "CPF do Sócio", { cpf: true })}
+        {renderInputSocio("socio_rg", "RG do Sócio", { ph: "00.000.000-0" })}
+        {renderInputSocio("socio_nascimento", "Data de Nascimento", { tipo: "data" })}
+        {renderInputSocio("socio_nome_mae", "Nome da Mãe", { ph: "Nome completo da mãe" })}
+      </div>
+    </div>
+  );
 
   // 🔓 Conjunto de equipes que o usuário pode escolher no PDV/EQUIPE e cujas filas aparecem.
   //    null = sem restrição (vê todas). Ordem: admin geral → equipes_acesso (BKO/gerente) →
@@ -1466,6 +1499,7 @@ function PropostaForm() {
                         {renderCampo(c)}
                       </div>
                     ))}
+                    {ehPessoal && tipoPessoa === "cnpj" && renderBlocoSocio()}
                   </div>
                 </div>
               );
