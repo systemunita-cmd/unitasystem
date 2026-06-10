@@ -36,6 +36,13 @@ const mascaraCPF = (v: string) =>
     .replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2")
     .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
 
+const mascaraCNPJ = (v: string) =>
+  v.replace(/\D/g, "").slice(0, 14)
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2}\.\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{2}\.\d{3}\.\d{3})(\d)/, "$1/$2")
+    .replace(/(\d{4})(\d{1,2})$/, "$1-$2");
+
 const mascaraCEP = (v: string) =>
   v.replace(/\D/g, "").slice(0, 8)
     .replace(/^(\d{5})(\d)/, "$1-$2");
@@ -609,6 +616,18 @@ function PropostaForm() {
     setDirty(true);
   };
 
+  // 🔄 Troca CPF <-> CNPJ. Ao virar CNPJ limpa campos só de pessoa física;
+  //    ao voltar pra CPF limpa os extras de CNPJ. Documento (cpf) e nome ficam.
+  const trocarTipoPessoa = (t: "cpf" | "cnpj") => {
+    setCampoCustom("tipo_pessoa", t);
+    if (t === "cnpj") {
+      ["rg", "data_nascimento", "nome_mae"].forEach(s => setCampoFixo(s, ""));
+    } else {
+      setCampoCustom("cnpj_nome_fantasia", "");
+      setCampoCustom("cnpj_inscricao_estadual", "");
+    }
+  };
+
   // 🔓 Conjunto de equipes que o usuário pode escolher no PDV/EQUIPE e cujas filas aparecem.
   //    null = sem restrição (vê todas). Ordem: admin geral → equipes_acesso (BKO/gerente) →
   //    própria equipe (atendente travado) → sem restrição.
@@ -651,6 +670,15 @@ function PropostaForm() {
   const vendedoresParaEscolher = pdvEquipeSelecionada
     ? usuarios.filter(u => String(u.equipe_id ?? "") === pdvEquipeSelecionada)
     : usuarios;
+
+  // 🧑‍💼/🏢 Tipo de cliente: "cpf" (pessoa física) ou "cnpj" (pessoa jurídica).
+  //    Guardado em dados_customizados.tipo_pessoa. O documento vai sempre na coluna
+  //    `cpf` e o nome/razão social na coluna `nome` (reaproveitadas), os extras de
+  //    CNPJ (nome fantasia, inscrição estadual) ficam em dados_customizados.
+  const tipoPessoa: "cpf" | "cnpj" =
+    dadosCustomizados.tipo_pessoa === "cnpj" ? "cnpj"
+    : dadosCustomizados.tipo_pessoa === "cpf" ? "cpf"
+    : (String(form.cpf || "").replace(/\D/g, "").length > 11 ? "cnpj" : "cpf");
 
   // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila e NÃO cobre várias equipes
   //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
@@ -863,10 +891,16 @@ function PropostaForm() {
 
   const renderCampo = (c: CampoUnificado) => {
     const ok = c.obrigatorio && isCampoPreenchido(c);
+    // 🏢 Quando o cliente é CNPJ, o campo "cpf" vira "CNPJ" e "nome" vira "Razão Social"
+    let labelTxt = c.label;
+    if (c.origem === "fixo" && tipoPessoa === "cnpj") {
+      if (c.slug === "cpf") labelTxt = "CNPJ";
+      else if (c.slug === "nome") labelTxt = "Razão Social";
+    }
     const labelComObr = (
       <>
         {ok && <span style={{ color: "#16a34a", fontSize: 12 }}>✓</span>}
-        <span>{c.label}</span>
+        <span>{labelTxt}</span>
         {c.obrigatorio && <span style={{ color: "#dc2626", marginLeft: 2 }}>*</span>}
       </>
     );
@@ -911,8 +945,11 @@ function PropostaForm() {
           </select>
         );
       } else if (c.slug === "cpf") {
-        input = <input placeholder={c.placeholder || "000.000.000-00"} value={valorEfetivo}
-          onChange={e => set(mascaraCPF(e.target.value))} style={inputStyleParaCampo(c)} />;
+        input = tipoPessoa === "cnpj"
+          ? <input placeholder="00.000.000/0000-00" value={valorEfetivo}
+              onChange={e => set(mascaraCNPJ(e.target.value))} style={inputStyleParaCampo(c)} />
+          : <input placeholder={c.placeholder || "000.000.000-00"} value={valorEfetivo}
+              onChange={e => set(mascaraCPF(e.target.value))} style={inputStyleParaCampo(c)} />;
       } else if (c.slug === "cep") {
         input = (
           <div style={{ position: "relative" }}>
@@ -1334,6 +1371,27 @@ function PropostaForm() {
           ) : (
             secoesAgrupadas.map((s: any) => {
               const prog = progressoSecao(s.campos);
+              // 🏢 Seção de dados pessoais: é a que tem o campo cpf/nome.
+              const ehPessoal = s.campos.some((c: CampoUnificado) =>
+                c.origem === "fixo" && (c.slug === "cpf" || c.slug === "nome"));
+              let camposRender: CampoUnificado[] = s.campos;
+              if (ehPessoal && tipoPessoa === "cnpj") {
+                const base: any = s.campos.find((c: CampoUnificado) => c.slug === "cpf") || s.campos[0];
+                const mk = (slug: string, label: string): CampoUnificado =>
+                  ({ ...base, origem: "custom", slug, label, tipo: "texto", obrigatorio: false, placeholder: "" } as CampoUnificado);
+                const ocultar = ["rg", "data_nascimento", "nome_mae"];
+                const filtrados = s.campos.filter((c: CampoUnificado) =>
+                  !(c.origem === "fixo" && ocultar.includes(c.slug)));
+                const out: CampoUnificado[] = [];
+                for (const c of filtrados) {
+                  out.push(c);
+                  if (c.origem === "fixo" && c.slug === "cpf") {
+                    out.push(mk("cnpj_nome_fantasia", "Nome Fantasia"));
+                    out.push(mk("cnpj_inscricao_estadual", "Inscrição Estadual"));
+                  }
+                }
+                camposRender = out;
+              }
               return (
                 <div key={s.keyUnica}
                   ref={(el) => { sectionsRef.current[s.keyUnica] = el; }}
@@ -1382,7 +1440,27 @@ function PropostaForm() {
                     gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
                     gap: isMobile ? 12 : 16,
                   }}>
-                    {s.campos.map((c: CampoUnificado) => (
+                    {ehPessoal && (
+                      <div style={{ gridColumn: "1 / -1", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" as const, marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 0.3 }}>TIPO DE CLIENTE</span>
+                        {(["cpf", "cnpj"] as const).map(t => {
+                          const ativo = tipoPessoa === t;
+                          return (
+                            <button key={t} type="button" onClick={() => trocarTipoPessoa(t)}
+                              style={{
+                                padding: "8px 16px", borderRadius: 10, cursor: "pointer",
+                                fontSize: 13, fontWeight: 700,
+                                border: ativo ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                                background: ativo ? "#eff6ff" : "#fff",
+                                color: ativo ? "#1d4ed8" : "#6b7280",
+                              }}>
+                              {t === "cpf" ? "👤 CPF (Pessoa Física)" : "🏢 CNPJ (Pessoa Jurídica)"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {camposRender.map((c: CampoUnificado) => (
                       <div key={`${c.origem}-${c.slug}`}
                         style={c.larguraTotal || c.tipo === "textarea" || (c.tipo as string) === "arquivo" ? { gridColumn: "1 / -1" } : undefined}>
                         {renderCampo(c)}
