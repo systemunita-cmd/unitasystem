@@ -592,7 +592,7 @@ export default function Funil() {
 
   // ─── FILTRO MESTRE ──────────────────────────────────────────────────────────
   const passaFiltrosBase = useCallback((p: Proposta): boolean => {
-    if (equipeId && p.equipe_id !== equipeId) return false;
+    if (equipeId && String(p.equipe_id_criador ?? "") !== String(equipeId)) return false;
     if (filtroVendedor !== "todos" && p.vendedor !== filtroVendedor) return false;
     for (const [slug, val] of Object.entries(filtrosDim)) {
       if (!val) continue;
@@ -1383,7 +1383,7 @@ export default function Funil() {
           <div>
             <h1 style={{ color: "#1f2937", fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>Funil de Vendas</h1>
             <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-              <b style={{ color: "#2563eb" }}>{metricas.total}</b> registros · {periodoLabelCurto}
+              <b style={{ color: "#2563eb" }}>{metricas.total}</b> negócios · {periodoLabelCurto}
               {campoStatus && <> · etapa: <b>{campoStatus.label}</b></>}
               {campoValor && <> · valor: <b>{campoValor.label}</b></>}
               {equipeId && <> · <span style={{ color: "#a855f7", fontWeight: 700 }}>👥 equipe</span></>}
@@ -1394,7 +1394,7 @@ export default function Funil() {
           <EquipeSelector />
           <button onClick={() => setShowConfig(s => !s)}
             style={{ ...inputStyle, display: "flex", alignItems: "center", gap: 6, background: showConfig ? "#eff6ff" : "#ffffff", color: showConfig ? "#2563eb" : "#6b7280", borderColor: showConfig ? "#bfdbfe" : "#e5e7eb" }}>
-            ⚙️ Configurar funil
+            ⚙️ Ajustar
           </button>
         </div>
       </div>
@@ -1620,16 +1620,16 @@ export default function Funil() {
       {/* ═══ TABS (Vendedores: verde→azul; resto mantém cores) ═══ */}
       <div style={{ ...cardStyle, padding: 6, display: "flex", gap: 4, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         {([
-          { key: "visao",      label: "Visão Geral",  icone: "📊", color: "#2563eb" },
-          { key: "etapas",     label: "Etapas",       icone: "🎯", color: "#3b82f6" },
-          { key: "dimensoes",  label: "Quebras",      icone: "🧩", color: "#8b5cf6" },
+          { key: "visao",      label: "Resumo geral",  icone: "📊", color: "#2563eb" },
+          { key: "etapas",     label: "Cada etapa",       icone: "🎯", color: "#3b82f6" },
+          { key: "dimensoes",  label: "Por categoria",      icone: "🧩", color: "#8b5cf6" },
           { key: "vendedores", label: "Vendedores",   icone: "👥", color: "#0891b2" },
           { key: "atendimentos", label: "Atendimentos", icone: "📞", color: "#a855f7" },
-          { key: "metas",      label: "Metas",        icone: "🏆", color: "#eab308" },
-          { key: "temporal",   label: "Temporal",     icone: "📈", color: "#f59e0b" },
-          { key: "cohort",     label: "Coorte",       icone: "🧬", color: "#0ea5e9" },
+          { key: "metas",      label: "Metas do mês",        icone: "🏆", color: "#eab308" },
+          { key: "temporal",   label: "Linha do tempo",     icone: "📈", color: "#f59e0b" },
+          { key: "cohort",     label: "Semana a semana",       icone: "🧬", color: "#0ea5e9" },
           { key: "horarios",   label: "Horários",     icone: "🗓️", color: "#14b8a6" },
-          { key: "lista",      label: "Lista",        icone: "📑", color: "#6366f1" },
+          { key: "lista",      label: "Lista completa",        icone: "📑", color: "#6366f1" },
         ] as { key: AbaKey; label: string; icone: string; color: string }[]).map(t => {
           const at = aba === t.key;
           return (
@@ -1658,15 +1658,63 @@ export default function Funil() {
           {/* ════════════ ABA: VISÃO GERAL ════════════ */}
           {aba === "visao" && (
             <>
+              {/* Resumo em português simples */}
+              <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, borderLeft: "4px solid #2563eb", background: "linear-gradient(135deg,#f8faff,#ffffff)" }}>
+                <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 6px" }}>📣 Em poucas palavras</p>
+                <p style={{ color: "#1f2937", fontSize: isMobile ? 15 : 17, fontWeight: 600, margin: 0, lineHeight: 1.6 }}>
+                  {metricas.total === 0
+                    ? "Ainda não chegou nenhum negócio nesse período."
+                    : `Chegaram ${formatNum(metricas.total)} negócios. ${formatNum(metricas.ganhos)} viraram venda e renderam ${formatBRL(metricas.receita)}. ${formatNum(metricas.pipelineCount)} ainda estão em conversa${metricas.valorPipeline > 0 ? ` (podem render ${formatBRLCompacto(metricas.valorPipeline)})` : ""}. ${formatNum(metricas.perdidos)} não deram certo.`}
+                </p>
+              </div>
+
+              {/* 4 números grandes, sem jargão */}
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
-                <KPI cor="#16a34a" bg="#f0fdf4" icone="💰" label="Receita (ganhos)" valor={formatBRLCompacto(metricas.receita)} titulo={formatBRL(metricas.receita)} sub={`${metricas.ganhos} ganhos`} trend={metricas.tRec} isMobile={isMobile} />
-                <KPI cor="#2563eb" bg="#eff6ff" icone="🎯" label="Pipeline" valor={formatBRLCompacto(metricas.valorPipeline)} titulo={formatBRL(metricas.valorPipeline)} sub={`${metricas.pipelineCount} em aberto`} isMobile={isMobile} />
-                <KPI cor="#8b5cf6" bg="#f3e8ff" icone="📊" label="Win Rate" valor={`${metricas.winRate}%`} sub={`${metricas.ganhos} ✓ / ${metricas.perdidos} ✗`} trend={metricas.tWin} isMobile={isMobile} />
-                <KPI cor="#06b6d4" bg="#ecfeff" icone="🎫" label="Ticket Médio" valor={formatBRLCompacto(metricas.ticket)} titulo={formatBRL(metricas.ticket)} sub={`mediana ${formatBRLCompacto(metricas.ticketMediana)}`} trend={metricas.tTicket} isMobile={isMobile} />
-                <KPI cor="#f59e0b" bg="#fffbeb" icone="⏱️" label="Ciclo Médio" valor={`${metricas.ciclo}d`} sub="Entrada → ganho" isMobile={isMobile} />
-                <KPI cor="#a855f7" bg="#f5f3ff" icone="🔮" label="Forecast Ponderado" valor={formatBRLCompacto(metricas.forecastPonderado)} titulo={formatBRL(metricas.forecastPonderado)} sub="valor × prob. por etapa" isMobile={isMobile} />
-                <KPI cor="#6366f1" bg="#eef2ff" icone="📨" label="Total" valor={formatNum(metricas.total)} sub={periodoLabelCurto} trend={metricas.tTotal} isMobile={isMobile} />
-                <KPI cor="#dc2626" bg="#fef2f2" icone="🚫" label="Perdidos" valor={formatNum(metricas.perdidos)} sub={`${metricas.taxaPerda}% dos fechados`} isMobile={isMobile} />
+                {[
+                  { emoji: "📥", titulo: "CHEGARAM", numero: formatNum(metricas.total), sub: "negócios no período", cor: "#6366f1", bg: "#eef2ff" },
+                  { emoji: "✅", titulo: "VIRARAM VENDA", numero: formatNum(metricas.ganhos), sub: `${formatBRL(metricas.receita)} que entraram`, cor: "#16a34a", bg: "#f0fdf4" },
+                  { emoji: "💬", titulo: "EM CONVERSA", numero: formatNum(metricas.pipelineCount), sub: metricas.valorPipeline > 0 ? `podem render ${formatBRLCompacto(metricas.valorPipeline)}` : "ainda podem fechar", cor: "#2563eb", bg: "#eff6ff" },
+                  { emoji: "❌", titulo: "NÃO DERAM CERTO", numero: formatNum(metricas.perdidos), sub: `${metricas.taxaPerda}% dos decididos`, cor: "#dc2626", bg: "#fef2f2" },
+                ].map(c => (
+                  <div key={c.titulo} style={{ ...cardStyle, padding: isMobile ? 14 : 18, borderTop: `4px solid ${c.cor}` }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: 10, background: c.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{c.emoji}</div>
+                      <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, margin: 0 }}>{c.titulo}</p>
+                    </div>
+                    <p style={{ color: c.cor, fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{c.numero}</p>
+                    <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Duas frases que explicam os números */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 10 : 14 }}>
+                <div style={{ ...cardStyle, padding: isMobile ? 16 : 18, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ width: 50, height: 50, borderRadius: 14, background: "#f0fdf4", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>🎯</div>
+                  <div>
+                    <p style={{ color: "#1f2937", fontSize: isMobile ? 14 : 16, fontWeight: 700, margin: 0 }}>A cada 10 negócios já decididos, <span style={{ color: "#16a34a" }}>{Math.round(metricas.winRate / 10)}</span> viraram venda.</p>
+                    <p style={{ color: "#9ca3af", fontSize: 12, margin: "3px 0 0" }}>Taxa de sucesso: {metricas.winRate}% · quanto maior, melhor.</p>
+                  </div>
+                </div>
+                <div style={{ ...cardStyle, padding: isMobile ? 16 : 18, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ width: 50, height: 50, borderRadius: 14, background: "#ecfeff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>🎫</div>
+                  <div>
+                    <p style={{ color: "#1f2937", fontSize: isMobile ? 14 : 16, fontWeight: 700, margin: 0 }}>Cada venda vale, em média, <span style={{ color: "#0891b2" }}>{formatBRL(metricas.ticket)}</span>.</p>
+                    <p style={{ color: "#9ca3af", fontSize: 12, margin: "3px 0 0" }}>Leva cerca de {metricas.ciclo} dia(s) pra fechar.</p>
+                  </div>
+                </div>
+              </div>
+
+              <p style={{ color: "#6b7280", fontSize: 12, fontWeight: 700, margin: "4px 0 -4px" }}>📋 Números completos</p>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
+                <KPI cor="#16a34a" bg="#f0fdf4" icone="💰" label="Dinheiro que entrou" valor={formatBRLCompacto(metricas.receita)} titulo={formatBRL(metricas.receita)} sub={`${metricas.ganhos} vendas fechadas`} trend={metricas.tRec} isMobile={isMobile} />
+                <KPI cor="#2563eb" bg="#eff6ff" icone="💬" label="Em conversa" valor={formatBRLCompacto(metricas.valorPipeline)} titulo={formatBRL(metricas.valorPipeline)} sub={`${metricas.pipelineCount} ainda podem fechar`} isMobile={isMobile} />
+                <KPI cor="#8b5cf6" bg="#f3e8ff" icone="🎯" label="Taxa de sucesso" valor={`${metricas.winRate}%`} sub={`${metricas.ganhos} venderam / ${metricas.perdidos} não`} trend={metricas.tWin} isMobile={isMobile} />
+                <KPI cor="#06b6d4" bg="#ecfeff" icone="🎫" label="Valor médio por venda" valor={formatBRLCompacto(metricas.ticket)} titulo={formatBRL(metricas.ticket)} sub={`a maioria perto de ${formatBRLCompacto(metricas.ticketMediana)}`} trend={metricas.tTicket} isMobile={isMobile} />
+                <KPI cor="#f59e0b" bg="#fffbeb" icone="⏱️" label="Tempo pra fechar" valor={`${metricas.ciclo}d`} sub="da entrada até virar venda" isMobile={isMobile} />
+                <KPI cor="#a855f7" bg="#f5f3ff" icone="🔮" label="Previsão do que vem" valor={formatBRLCompacto(metricas.forecastPonderado)} titulo={formatBRL(metricas.forecastPonderado)} sub="quanto ainda deve entrar" isMobile={isMobile} />
+                <KPI cor="#6366f1" bg="#eef2ff" icone="📨" label="Negócios no período" valor={formatNum(metricas.total)} sub={periodoLabelCurto} trend={metricas.tTotal} isMobile={isMobile} />
+                <KPI cor="#dc2626" bg="#fef2f2" icone="❌" label="Não deram certo" valor={formatNum(metricas.perdidos)} sub={`${metricas.taxaPerda}% dos decididos`} isMobile={isMobile} />
               </div>
 
               {/* Funil visual */}
@@ -2102,7 +2150,7 @@ export default function Funil() {
                 <div style={{ ...cardStyle, padding: 40, textAlign: "center" }}>
                   <p style={{ fontSize: 36, margin: "0 0 8px" }}>🏆</p>
                   <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: "0 0 6px" }}>Defina suas metas do mês</h3>
-                  <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 16px" }}>Configure a meta de receita e/ou de ganhos em ⚙️ Configurar funil pra acompanhar o pace.</p>
+                  <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 16px" }}>Configure a meta de receita e/ou de ganhos em ⚙️ Ajustar pra acompanhar o pace.</p>
                   <button onClick={() => setShowConfig(true)} style={{ background: "linear-gradient(135deg, #eab308 0%, #ca8a04 100%)", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>⚙️ Definir metas</button>
                 </div>
               ) : (
@@ -2220,16 +2268,7 @@ export default function Funil() {
                   <AreaChart data={serieTemporal} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
                     <defs>
                       <linearGradient id="recGrad" x1="0" y1="0" x2="0" y2="1">
-                       // ═══════════════════════════════════════════════════════════════════════════
-// 📌 CONTINUAÇÃO DO funil-page.tsx
-// ═══════════════════════════════════════════════════════════════════════════
-// Cola TUDO ABAIXO a partir da linha onde seu arquivo parou:
-//
-//     <stop offset="0%" stopColor="#16a34a" stopOpacity={0.4} />
-//
-// ↓ A partir daqui (essa linha É A PRÓXIMA depois da que ficou no seu arquivo) ↓
-// ═══════════════════════════════════════════════════════════════════════════
-
+                        <stop offset="0%" stopColor="#16a34a" stopOpacity={0.4} />
                         <stop offset="100%" stopColor="#16a34a" stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
