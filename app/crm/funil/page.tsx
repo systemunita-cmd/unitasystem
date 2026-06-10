@@ -357,7 +357,6 @@ export default function Funil() {
 
   // ─── DADOS BRUTOS ─────────────────────────────────────────────────────────
   const [propostas, setPropostas] = useState<Proposta[]>([]);
-  const [meuEmail, setMeuEmail] = useState("");
   const [campos, setCampos] = useState<CampoUni[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
@@ -372,11 +371,6 @@ export default function Funil() {
 
   // 👥 Filtro de equipe
   const { equipeId, EquipeSelector } = useEquipeFiltro();
-
-  // 🔒 Escopo de dados (booleano do checkbox):
-  //    sem "Ver vendas da equipe" e sem ser admin → vê SÓ as próprias.
-  const veTudoCRM = isSuperAdmin || isDono;
-  const soMinhasVendas = !veTudoCRM && !permissoes.vendas_equipe;
 
   // ─── CONFIG SEMÂNTICA DO FUNIL ────────────────────────────────────────────
   const [config, setConfig] = useState<FunilConfig | null>(null);
@@ -418,7 +412,6 @@ export default function Funil() {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      setMeuEmail((user.email || "").toLowerCase());
 
       // 1) Carrega config de campos (Editor de Proposta)
       let camposUnificados: CampoUni[] = [];
@@ -473,11 +466,20 @@ export default function Funil() {
       let propostasReais: Proposta[] = [];
       let usouMock = false;
       try {
-        const { data: props, error } = await supabase.from("proposta").select("*")
-          .order("created_at", { ascending: false })
-          .limit(10000);
-        if (error) throw error;
-        propostasReais = (props || []) as Proposta[];
+        // Paginação: o Supabase corta em 1000 por requisição; .limit(10000) não vence isso.
+        const PAGE = 1000, MAX_TOTAL = 600000;
+        let acc: any[] = [], off = 0;
+        while (off < MAX_TOTAL) {
+          const { data: pag, error } = await supabase.from("proposta").select("*")
+            .order("created_at", { ascending: false })
+            .range(off, off + PAGE - 1);
+          if (error) throw error;
+          if (!pag || pag.length === 0) break;
+          acc = acc.concat(pag);
+          if (pag.length < PAGE) break;
+          off += PAGE;
+        }
+        propostasReais = acc as Proposta[];
       } catch {
         usouMock = true;
       }
@@ -591,8 +593,6 @@ export default function Funil() {
   // ─── FILTRO MESTRE ──────────────────────────────────────────────────────────
   const passaFiltrosBase = useCallback((p: Proposta): boolean => {
     if (equipeId && p.equipe_id !== equipeId) return false;
-    // 🔒 Usuário restrito vê só o que é dele (a menos que tenha escopo Equipe/Todos)
-    if (soMinhasVendas && (p.vendedor || "").toLowerCase() !== meuEmail) return false;
     if (filtroVendedor !== "todos" && p.vendedor !== filtroVendedor) return false;
     for (const [slug, val] of Object.entries(filtrosDim)) {
       if (!val) continue;
@@ -608,7 +608,7 @@ export default function Funil() {
       if (!txtNome.includes(b) && !txtVend.includes(b) && !txtStatus.includes(b)) return false;
     }
     return true;
-  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe, soMinhasVendas, meuEmail]);
+  }, [equipeId, filtroVendedor, filtrosDim, camposMap, filtroBusca, nomeVendedor, statusDe]);
 
   const janela = useMemo(() => {
     const agora = new Date();

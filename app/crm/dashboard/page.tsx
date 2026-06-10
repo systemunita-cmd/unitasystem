@@ -120,11 +120,21 @@ export default function Dashboard() {
       }
 
       try {
-        const { data: props, error: errProps } = await supabase
-          .from("proposta").select("*")
-          .order("created_at", { ascending: false });
-        if (errProps) throw errProps;
-        propostasReais = props || [];
+        // Paginação: o Supabase corta em 1000 por requisição; busca em páginas até trazer tudo.
+        const PAGE = 1000, MAX_TOTAL = 600000;
+        let acc: any[] = [], off = 0;
+        while (off < MAX_TOTAL) {
+          const { data: pag, error: errProps } = await supabase
+            .from("proposta").select("*")
+            .order("created_at", { ascending: false })
+            .range(off, off + PAGE - 1);
+          if (errProps) throw errProps;
+          if (!pag || pag.length === 0) break;
+          acc = acc.concat(pag);
+          if (pag.length < PAGE) break;
+          off += PAGE;
+        }
+        propostasReais = acc;
       } catch {
         usouMock = true;
       }
