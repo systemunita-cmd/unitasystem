@@ -214,7 +214,7 @@ export default function Vendas() {
   //   • veEquipe ("ver vendas da equipe") → vê só os vendedores da PRÓPRIA FILA
   //     (cai pra própria EQUIPE/PDV se o usuário não tiver fila definida).
   //   • Sem nada disso → vê só as próprias.
-  const veTudo = isDono || perfil === "Administrador";
+  const veTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_todas;
   const veEquipe = !!permissoes?.vendas_equipe;
   const meuRegistro = usuarios.find(u => u.email?.toLowerCase() === userEmail.toLowerCase());
   const minhaFila = meuRegistro?.fila_id ?? null;

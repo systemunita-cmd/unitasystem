@@ -22,7 +22,7 @@ export type Permissoes = {
   chat_proprio: boolean; chat_todos: boolean; chat_interno: boolean;
   respostas_rapidas: boolean; transferir_chat: boolean; finalizar_chat: boolean;
   contatos_ver: boolean; contatos_editar: boolean; etiquetas: boolean;
-  dashboard: boolean; vendas_proprio: boolean; vendas_equipe: boolean;
+  dashboard: boolean; vendas_proprio: boolean; vendas_equipe: boolean; vendas_todas: boolean;
   funil: boolean; proposta_criar: boolean;
   disparo_enviar: boolean; templates_waba: boolean;
   voip_usar: boolean; voip_conexoes: boolean; voip_campanhas: boolean;
@@ -40,7 +40,7 @@ const PERMISSOES_ADMIN: Permissoes = {
   chat_proprio: true, chat_todos: true, chat_interno: true, respostas_rapidas: true,
   transferir_chat: true, finalizar_chat: true,
   contatos_ver: true, contatos_editar: true, etiquetas: true,
-  dashboard: true, vendas_proprio: true, vendas_equipe: true, funil: true, proposta_criar: true,
+  dashboard: true, vendas_proprio: true, vendas_equipe: true, vendas_todas: true, funil: true, proposta_criar: true,
   disparo_enviar: true, templates_waba: true,
   voip_usar: true, voip_conexoes: true, voip_campanhas: true,
   conexoes: true, filas: true, usuarios_gerenciar: true, grupos_permissao: true,
@@ -61,7 +61,7 @@ const PERMISSOES_ATENDENTE: Permissoes = {
   chat_proprio: true, chat_todos: false, chat_interno: true, respostas_rapidas: true,
   transferir_chat: true, finalizar_chat: true,
   contatos_ver: true, contatos_editar: false, etiquetas: false,
-  dashboard: true, vendas_proprio: true, vendas_equipe: false, funil: false, proposta_criar: true,
+  dashboard: true, vendas_proprio: true, vendas_equipe: false, vendas_todas: false, funil: false, proposta_criar: true,
   disparo_enviar: false, templates_waba: false,
   voip_usar: true, voip_conexoes: false, voip_campanhas: false,
   conexoes: false, filas: false, usuarios_gerenciar: false, grupos_permissao: false,
@@ -101,6 +101,7 @@ function derivarPermissoesDoGrupo(mapa: Record<string, string>): Permissoes {
     dashboard: tem("dashboard.ver"),
     vendas_proprio: escopoVivo("vendas.ver"),
     vendas_equipe: escopoIs("vendas.ver", "team", "all"),
+    vendas_todas: escopoIs("vendas.ver", "all"),
     funil: escopoVivo("vendas.ver"),
     proposta_criar: escopoVivo("propostas.crud"),
 
