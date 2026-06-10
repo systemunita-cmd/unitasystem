@@ -142,6 +142,7 @@ export default function Vendas() {
   const { equipeId, EquipeSelector, equipes } = useEquipeFiltro();
 
   const [busca, setBusca] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [filtroDataInicio, setFiltroDataInicio] = useState("");
   const [filtroDataFim, setFiltroDataFim] = useState("");
@@ -217,11 +218,16 @@ export default function Vendas() {
   //   • Sem nada disso → vê só as próprias.
   const veTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_todas;
   const veEquipe = !!permissoes?.vendas_equipe;
-  const meuRegistro = usuarios.find(u => u.email?.toLowerCase() === userEmail.toLowerCase());
+  // Map e-mail -> usuário (O(1)) — evita varrer a lista de usuários por linha (lento com 7,5k vendas)
+  const usuariosMap = useMemo(() => {
+    const m = new Map<string, Usuario>();
+    for (const u of usuarios) if (u.email) m.set(u.email.toLowerCase(), u);
+    return m;
+  }, [usuarios]);
+  const meuRegistro = usuariosMap.get(userEmail.toLowerCase());
   const minhaFila = meuRegistro?.fila_id ?? null;
   const minhaEquipe = meuRegistro?.equipe_id ?? null;
-  const regDoVendedor = (emailVend: string) =>
-    usuarios.find(u => u.email?.toLowerCase() === (emailVend || "").toLowerCase());
+  const regDoVendedor = (emailVend: string) => usuariosMap.get((emailVend || "").toLowerCase());
 
   // 🎨 ESTILOS
   const inputStyle = {
@@ -238,7 +244,7 @@ export default function Vendas() {
 
   const nomeVendedor = (v: string): string => {
     if (!v) return "—";
-    const u = usuarios.find(x => x.email?.toLowerCase() === v?.toLowerCase());
+    const u = usuariosMap.get((v || "").toLowerCase());
     return u?.nome || v;
   };
 
@@ -425,24 +431,35 @@ export default function Vendas() {
   // ═══ FETCH (single-tenant — sem workspace_id) ═══
   const fetchPropostas = async (): Promise<boolean> => {
     const PAGE_SIZE = 1000;
-    const TOTAL_LIMITE = 10000;
+    const MAX_PAGINAS = 60; // teto de segurança
     let lista: any[] = [];
-    let offset = 0;
-    let usouMock = false;
     try {
-      while (offset < TOTAL_LIMITE) {
-        const { data: pagina, error } = await supabase.from("proposta").select("*")
-          .order("created_at", { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1);
-        if (error) throw error;
-        if (!pagina || pagina.length === 0) break;
-        lista = lista.concat(pagina);
-        if (pagina.length < PAGE_SIZE) break;
-        offset += PAGE_SIZE;
+      // Descobre o total e busca todas as páginas EM PARALELO (bem mais rápido que sequencial)
+      const { count, error: errCount } = await supabase
+        .from("proposta").select("id", { count: "exact", head: true });
+      if (errCount) throw errCount;
+      const total = Math.min(count || 0, PAGE_SIZE * MAX_PAGINAS);
+      const nPaginas = Math.ceil(total / PAGE_SIZE);
+      if (nPaginas > 0) {
+        const reqs = [];
+        for (let i = 0; i < nPaginas; i++) {
+          reqs.push(
+            supabase.from("proposta").select("*")
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+              .range(i * PAGE_SIZE, i * PAGE_SIZE + PAGE_SIZE - 1)
+          );
+        }
+        const resultados = await Promise.all(reqs);
+        for (const r of resultados) {
+          if (r.error) throw r.error;
+          lista = lista.concat(r.data || []);
+        }
       }
     } catch {
-      usouMock = true;
+      lista = [];
     }
+    let usouMock = false;
     if (lista.length === 0) {
       usouMock = true;
       lista = gerarMockData();
@@ -795,7 +812,7 @@ export default function Vendas() {
     // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
     .filter(p => !veTudo || !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
-    .filter(p => !busca || p.nome?.toLowerCase().includes(busca.toLowerCase()) || p.cpf?.includes(busca) || nomeVendedor(p.vendedor).toLowerCase().includes(busca.toLowerCase()))
+    .filter(p => !buscaDebounced || p.nome?.toLowerCase().includes(buscaDebounced.toLowerCase()) || p.cpf?.includes(buscaDebounced) || nomeVendedor(p.vendedor).toLowerCase().includes(buscaDebounced.toLowerCase()))
     .filter(p => {
       if (!filtroDataInicio && !filtroDataFim) return true;
       const dt = p.data_proposta || "";
@@ -805,7 +822,7 @@ export default function Vendas() {
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, userEmail, equipeId, filtroStatus, busca, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
@@ -832,7 +849,7 @@ export default function Vendas() {
   }, [propostas, camposUnificados]);
 
   // Paginação: 50 por página
-  const POR_PAGINA = 50;
+  const POR_PAGINA = 20;
   const totalPaginas = Math.max(1, Math.ceil(propostasFiltradas.length / POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
   const propostasPagina = propostasFiltradas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
@@ -843,8 +860,14 @@ export default function Vendas() {
     cursor: off ? "default" : "pointer",
   } as const);
 
+  // Debounce da busca: só filtra 250ms após parar de digitar (evita travar com milhares de linhas)
+  useEffect(() => {
+    const t = setTimeout(() => setBuscaDebounced(busca), 250);
+    return () => clearTimeout(t);
+  }, [busca]);
+
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [busca, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, equipeId]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, equipeId]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
