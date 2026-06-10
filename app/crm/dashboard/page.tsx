@@ -37,6 +37,16 @@ type Proposta = {
 type Usuario = { email: string; nome: string };
 type Periodo = "hoje" | "semana" | "mes" | "trimestre";
 
+// 🔻 Todos os status que representam cancelamento/perda da venda.
+//    Usado no KPI "Canceladas", no donut e no funil por vendedor.
+const STATUS_CANCELAMENTO = [
+  "CANCELADA", "CANCELADA INTERNAMENTE", "CANCELADA EXTERNAMENTE",
+  "REPROVADA", "CHURN", "CHURN VOLUNTÁRIO", "CHURN INVOLUNTÁRIO",
+  "FRAUDE INST", "FR PREVENÇÃO",
+];
+const normStatus = (s: any): string => String(s ?? "").trim().toUpperCase();
+const ehCancelamento = (s: any): boolean => STATUS_CANCELAMENTO.includes(normStatus(s));
+
 // ───── DADOS MOCKADOS (fallback se tabela não existir) ────────────────
 
 const VENDEDORES_MOCK: Usuario[] = [
@@ -49,7 +59,7 @@ const VENDEDORES_MOCK: Usuario[] = [
 
 const OPERADORAS_MOCK = ["Vivo", "Claro", "Tim", "Oi", "Sercomtel"];
 const PLANOS_MOCK = ["100MB Fibra", "200MB Fibra", "500MB Fibra", "1GB Fibra", "Empresarial 2GB"];
-const STATUS_MOCK = ["INSTALADA", "INSTALADA", "INSTALADA", "INSTALADA", "GERADA", "GERADA", "PENDENTE", "CANCELADA", "AGUARDANDO AUDITORIA"];
+const STATUS_MOCK = ["INSTALADA", "INSTALADA", "INSTALADA", "INSTALADA", "GERADA", "GERADA", "AGUARDANDO INSTALAÇÃO", "CANCELADA", "AGUARDANDO AUDITORIA"];
 
 function gerarMockData(): Proposta[] {
   const propostas: Proposta[] = [];
@@ -222,19 +232,21 @@ export default function Dashboard() {
   const pAnt = useMemo(() => periodoAnterior(propostasVisiveis, periodo), [propostasVisiveis, periodo]);
 
   const calc = (lista: Proposta[]) => {
-    const totalReceita = lista
-      .filter(p => p.status_venda === "INSTALADA")
-      .reduce((acc, p) => acc + (p.valor_plano || 0), 0);
-    const instaladas = lista.filter(p => p.status_venda === "INSTALADA").length;
-    const geradas = lista.filter(p => p.status_venda === "GERADA").length;
-    const pendentes = lista.filter(p => p.status_venda === "PENDENTE").length;
-    const canceladas = lista.filter(p => p.status_venda === "CANCELADA").length;
-    const auditoria = lista.filter(p => p.status_venda === "AGUARDANDO AUDITORIA").length;
+    const instaladasArr = lista.filter(p => normStatus(p.status_venda) === "INSTALADA");
+    const aguardandoArr = lista.filter(p => normStatus(p.status_venda) === "AGUARDANDO INSTALAÇÃO");
+    const totalReceita = instaladasArr.reduce((acc, p) => acc + (p.valor_plano || 0), 0);
+    const receitaAguardando = aguardandoArr.reduce((acc, p) => acc + (p.valor_plano || 0), 0);
+    const instaladas = instaladasArr.length;
+    const aguardando = aguardandoArr.length;
+    const geradas = lista.filter(p => normStatus(p.status_venda) === "GERADA").length;
+    const pendentes = lista.filter(p => normStatus(p.status_venda) === "PENDENTE").length;
+    const canceladas = lista.filter(p => ehCancelamento(p.status_venda)).length;
+    const auditoria = lista.filter(p => normStatus(p.status_venda) === "AGUARDANDO AUDITORIA").length;
     const total = lista.length;
     const taxaConversao = total > 0 ? (instaladas / total) * 100 : 0;
     const ticketMedio = instaladas > 0 ? totalReceita / instaladas : 0;
     const vendedoresAtivos = new Set(lista.filter(p => p.vendedor).map(p => p.vendedor)).size;
-    return { totalReceita, instaladas, geradas, pendentes, canceladas, auditoria, total, taxaConversao, ticketMedio, vendedoresAtivos };
+    return { totalReceita, receitaAguardando, instaladas, aguardando, geradas, pendentes, canceladas, auditoria, total, taxaConversao, ticketMedio, vendedoresAtivos };
   };
 
   const stats = calc(pf);
@@ -250,7 +262,7 @@ export default function Dashboard() {
   // Ranking de vendedores por receita
   const rankingVendedores = useMemo(() => {
     return Object.entries(
-      pf.filter(p => p.status_venda === "INSTALADA").reduce((acc: Record<string, number>, p) => {
+      pf.filter(p => normStatus(p.status_venda) === "INSTALADA").reduce((acc: Record<string, number>, p) => {
         if (p.vendedor) acc[p.vendedor] = (acc[p.vendedor] || 0) + (p.valor_plano || 0);
         return acc;
       }, {})
@@ -264,9 +276,12 @@ export default function Dashboard() {
     return Object.entries(
       pf.reduce((acc: Record<string, Record<string, number>>, p) => {
         if (!p.vendedor) return acc;
-        if (!acc[p.vendedor]) acc[p.vendedor] = { INSTALADA: 0, GERADA: 0, PENDENTE: 0, CANCELADA: 0, AUDITORIA: 0 };
-        if (p.status_venda === "AGUARDANDO AUDITORIA") acc[p.vendedor].AUDITORIA++;
-        else if (acc[p.vendedor][p.status_venda] !== undefined) acc[p.vendedor][p.status_venda]++;
+        if (!acc[p.vendedor]) acc[p.vendedor] = { INSTALADA: 0, GERADA: 0, AGUARDANDO: 0, CANCELADA: 0, AUDITORIA: 0 };
+        const s = normStatus(p.status_venda);
+        if (s === "AGUARDANDO AUDITORIA") acc[p.vendedor].AUDITORIA++;
+        else if (s === "AGUARDANDO INSTALAÇÃO") acc[p.vendedor].AGUARDANDO++;
+        else if (ehCancelamento(s)) acc[p.vendedor].CANCELADA++;
+        else if (acc[p.vendedor][s] !== undefined) acc[p.vendedor][s]++;
         return acc;
       }, {})
     ).map(([k, v]) => ({ vendedor: nomeVendedor(k), ...v }));
@@ -276,7 +291,7 @@ export default function Dashboard() {
   const statusData = [
     { name: "Instaladas", value: stats.instaladas, color: "#10b981" },
     { name: "Geradas", value: stats.geradas, color: "#8b5cf6" },
-    { name: "Pendentes", value: stats.pendentes, color: "#f59e0b" },
+    { name: "Aguardando Inst.", value: stats.aguardando, color: "#0ea5e9" },
     { name: "Auditoria", value: stats.auditoria, color: "#06b6d4" },
     { name: "Canceladas", value: stats.canceladas, color: "#ef4444" },
   ].filter(s => s.value > 0);
@@ -304,7 +319,7 @@ export default function Dashboard() {
       dias[k] = 0;
     }
     propostasVisiveis.forEach(p => {
-      if (p.status_venda !== "INSTALADA") return;
+      if (normStatus(p.status_venda) !== "INSTALADA") return;
       const k = p.created_at.slice(0, 10);
       if (dias[k] !== undefined) dias[k] += p.valor_plano || 0;
     });
@@ -345,11 +360,11 @@ export default function Dashboard() {
         text: `Taxa de conversão alta: ${stats.taxaConversao.toFixed(1)}%`,
         color: "#2563eb",
       });
-    } else if (stats.taxaConversao > 0) {
+    } else if (stats.aguardando > 0) {
       lista.push({
-        icon: "💪",
-        text: `Tem ${stats.pendentes} propostas pendentes esperando ação`,
-        color: "#8b5cf6",
+        icon: "🔧",
+        text: `Tem ${stats.aguardando} venda(s) aguardando instalação`,
+        color: "#0ea5e9",
       });
     }
     if (operadorasData.length > 0) {
@@ -541,11 +556,12 @@ export default function Dashboard() {
             trend: trend(stats.ticketMedio, statsAnt.ticketMedio),
           },
           {
-            label: "Pendentes",
-            value: stats.pendentes,
-            color: "#f59e0b",
-            icon: "⏳",
-            trend: trend(stats.pendentes, statsAnt.pendentes),
+            label: "Aguardando Inst.",
+            value: stats.aguardando,
+            color: "#0ea5e9",
+            icon: "🔧",
+            trend: trend(stats.aguardando, statsAnt.aguardando),
+            sub: `receita: R$ ${stats.receitaAguardando.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
           },
           {
             label: "Vendedores",
@@ -601,6 +617,11 @@ export default function Dashboard() {
               color: "#0f172a", fontSize: isMobile ? 18 : 22, fontWeight: 800,
               margin: 0, letterSpacing: -0.5,
             }}>{c.value}</p>
+            {(c as any).sub && (
+              <p style={{ color: "#94a3b8", fontSize: 10, margin: "3px 0 0", fontWeight: 600 }}>
+                {(c as any).sub}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -915,7 +936,7 @@ export default function Dashboard() {
                   {[
                     { label: "Instaladas", k: "INSTALADA", color: "#10b981", bg: "#dcfce7" },
                     { label: "Geradas", k: "GERADA", color: "#8b5cf6", bg: "#ede9fe" },
-                    { label: "Pendentes", k: "PENDENTE", color: "#f59e0b", bg: "#fef3c7" },
+                    { label: "Aguardando", k: "AGUARDANDO", color: "#0ea5e9", bg: "#e0f2fe" },
                     { label: "Canceladas", k: "CANCELADA", color: "#ef4444", bg: "#fee2e2" },
                   ].map(s => (
                     <div key={s.k} style={{
@@ -936,7 +957,7 @@ export default function Dashboard() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#f8fafc" }}>
-                  {["Vendedor", "✅ Instaladas", "📄 Geradas", "⏳ Pendentes", "🔍 Auditoria", "❌ Canceladas"].map(h => (
+                  {["Vendedor", "✅ Instaladas", "📄 Geradas", "🔧 Aguardando", "🔍 Auditoria", "❌ Canceladas"].map(h => (
                     <th key={h} style={{
                       padding: "12px 16px", color: "#64748b", fontSize: 11,
                       textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5,
@@ -955,7 +976,7 @@ export default function Dashboard() {
                     {[
                       { k: "INSTALADA", color: "#10b981", bg: "#dcfce7", border: "#86efac" },
                       { k: "GERADA", color: "#8b5cf6", bg: "#ede9fe", border: "#c4b5fd" },
-                      { k: "PENDENTE", color: "#f59e0b", bg: "#fef3c7", border: "#fcd34d" },
+                      { k: "AGUARDANDO", color: "#0ea5e9", bg: "#e0f2fe", border: "#7dd3fc" },
                       { k: "AUDITORIA", color: "#06b6d4", bg: "#cffafe", border: "#67e8f9" },
                       { k: "CANCELADA", color: "#ef4444", bg: "#fee2e2", border: "#fca5a5" },
                     ].map(s => (
@@ -1084,12 +1105,14 @@ export default function Dashboard() {
               <p style={{ color: "#94a3b8", fontSize: 13, fontStyle: "italic" }}>Sem atividade recente.</p>
             ) : (
               atividadeRecente.map((p, i) => {
+                const s = normStatus(p.status_venda);
                 const corStatus =
-                  p.status_venda === "INSTALADA" ? "#10b981" :
-                  p.status_venda === "GERADA" ? "#8b5cf6" :
-                  p.status_venda === "PENDENTE" ? "#f59e0b" :
-                  p.status_venda === "AGUARDANDO AUDITORIA" ? "#06b6d4" :
-                  "#ef4444";
+                  s === "INSTALADA" ? "#10b981" :
+                  s === "GERADA" ? "#8b5cf6" :
+                  s === "AGUARDANDO INSTALAÇÃO" ? "#0ea5e9" :
+                  s === "AGUARDANDO AUDITORIA" ? "#06b6d4" :
+                  ehCancelamento(s) ? "#ef4444" :
+                  "#f59e0b";
                 const dataRel = ((Date.now() - new Date(p.created_at).getTime()) / (1000 * 60 * 60));
                 const dataLabel =
                   dataRel < 1 ? `${Math.floor(dataRel * 60)} min atrás` :
