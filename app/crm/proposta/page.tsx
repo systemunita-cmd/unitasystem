@@ -23,7 +23,7 @@ import {
 // Upload de anexos · Tipos auto-populados (equipe/fila/usuário/etiqueta)
 // ═══════════════════════════════════════════════════════════════════════
 
-type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string; equipe_id?: number | string | null };
+type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string; equipe_id?: number | string | null; fila_id?: number | string | null };
 type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
@@ -195,7 +195,7 @@ function PropostaForm() {
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");
 
         const lista: UsuarioOpt[] = (respUsuarios.data || []).map((u: any) => ({
-          id: u.id, email: u.email, nome: u.nome || u.email, role: u.role, equipe_id: u.equipe_id,
+          id: u.id, email: u.email, nome: u.nome || u.email, role: u.role, equipe_id: u.equipe_id, fila_id: u.fila_id,
         }));
         if (lista.length === 0 && user.email) {
           // Fallback: primeiro user vira admin
@@ -739,6 +739,28 @@ function PropostaForm() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdvEquipeSelecionada, podeEscolherVendedor, usuarios]);
+
+  // 🔗 Vendedor → PDV + fila: ao escolher o vendedor, puxa a equipe dele pro PDV
+  //    e a fila dele pro campo de fila. As listas (filas/vendedores) se ajustam sozinhas.
+  useEffect(() => {
+    if (!form.vendedor || camposUnificados.length === 0) return;
+    const v = usuarios.find(u => u.email?.toLowerCase() === String(form.vendedor).toLowerCase());
+    if (!v) return;
+    const eqId = v.equipe_id != null ? String(v.equipe_id) : "";
+    const flId = v.fila_id != null ? String(v.fila_id) : "";
+    setDadosCustomizados(prev => {
+      const novo = { ...prev };
+      let mudou = false;
+      for (const c of camposUnificados) {
+        if (c.origem !== "custom") continue;
+        const t = c.tipo as string;
+        if (t === "equipe" && eqId && novo[c.slug] !== eqId) { novo[c.slug] = eqId; mudou = true; }
+        if (t === "fila" && flId && novo[c.slug] !== flId) { novo[c.slug] = flId; mudou = true; }
+      }
+      return mudou ? novo : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.vendedor, usuarios, camposUnificados]);
 
   // ═══ RENDER CAMPOS ═══
   const renderCampoVendedor = () => {
