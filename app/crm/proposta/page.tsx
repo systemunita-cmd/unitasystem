@@ -629,6 +629,21 @@ function PropostaForm() {
     ? filasAuto.filter(f => idsEquipesPermitidas.includes(String(f.equipe_id ?? "")))
     : filasAuto;
 
+  // 🔗 PDV → filas: o campo "fila" (EQUIPE) mostra só as filas da equipe escolhida
+  //    no campo "equipe" (PDV). Sem PDV escolhido, cai nas filas permitidas do usuário.
+  const pdvEquipeSelecionada = (() => {
+    for (const c of camposUnificados) {
+      if (c.origem === "custom" && (c.tipo as string) === "equipe") {
+        const v = dadosCustomizados[c.slug];
+        if (v) return String(v);
+      }
+    }
+    return null;
+  })();
+  const filasParaFila = pdvEquipeSelecionada
+    ? filasVisiveis.filter(f => String(f.equipe_id ?? "") === pdvEquipeSelecionada)
+    : filasVisiveis;
+
   // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila e NÃO cobre várias equipes
   //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
   const filaForcada = (!ehAdminGeralProp && minhaFilaId != null && minhasEquipesAcesso.length <= 1) ? String(minhaFilaId) : null;
@@ -667,6 +682,25 @@ function PropostaForm() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [travadoFila, filaForcada, camposUnificados]);
+
+  // 🔗 Ao trocar o PDV (equipe), limpa a fila selecionada que não pertence mais a ele.
+  //    Não mexe quando a fila é travada pelo cadastro do usuário.
+  useEffect(() => {
+    if (travadoFila || camposUnificados.length === 0) return;
+    setDadosCustomizados(prev => {
+      const novo = { ...prev };
+      let mudou = false;
+      for (const c of camposUnificados) {
+        if (c.origem === "custom" && (c.tipo as string) === "fila" && novo[c.slug]) {
+          const f = filasAuto.find(x => String(x.id) === String(novo[c.slug]));
+          const pertence = !!f && (!pdvEquipeSelecionada || String(f.equipe_id ?? "") === pdvEquipeSelecionada);
+          if (!pertence) { novo[c.slug] = ""; mudou = true; }
+        }
+      }
+      return mudou ? novo : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdvEquipeSelecionada, travadoFila, camposUnificados, filasAuto]);
 
   // ═══ RENDER CAMPOS ═══
   const renderCampoVendedor = () => {
@@ -881,7 +915,7 @@ function PropostaForm() {
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
-          {renderCampoAuto(c, filasVisiveis)}
+          {renderCampoAuto(c, filasParaFila)}
         </div>
       );
     }
