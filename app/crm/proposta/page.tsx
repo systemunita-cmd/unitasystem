@@ -23,7 +23,7 @@ import {
 // Upload de anexos · Tipos auto-populados (equipe/fila/usuário/etiqueta)
 // ═══════════════════════════════════════════════════════════════════════
 
-type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string };
+type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string; equipe_id?: number | string | null };
 type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
@@ -195,7 +195,7 @@ function PropostaForm() {
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");
 
         const lista: UsuarioOpt[] = (respUsuarios.data || []).map((u: any) => ({
-          id: u.id, email: u.email, nome: u.nome || u.email, role: u.role,
+          id: u.id, email: u.email, nome: u.nome || u.email, role: u.role, equipe_id: u.equipe_id,
         }));
         if (lista.length === 0 && user.email) {
           // Fallback: primeiro user vira admin
@@ -646,6 +646,12 @@ function PropostaForm() {
     ? filasVisiveis.filter(f => String(f.equipe_id ?? "") === pdvEquipeSelecionada)
     : filasVisiveis;
 
+  // 🔗 PDV → vendedores: ao escolher o PDV, a lista de vendedores mostra só os
+  //    usuários daquela equipe. Sem PDV escolhido, mostra todos.
+  const vendedoresParaEscolher = pdvEquipeSelecionada
+    ? usuarios.filter(u => String(u.equipe_id ?? "") === pdvEquipeSelecionada)
+    : usuarios;
+
   // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila e NÃO cobre várias equipes
   //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
   const filaForcada = (!ehAdminGeralProp && minhaFilaId != null && minhasEquipesAcesso.length <= 1) ? String(minhaFilaId) : null;
@@ -721,6 +727,19 @@ function PropostaForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdvEquipeSelecionada, travadoFila, camposUnificados, filasAuto]);
 
+  // 🔗 Ao trocar o PDV (equipe), limpa o vendedor escolhido que não é daquela equipe.
+  //    Só pra quem escolhe vendedor — o vendedor travado no próprio usuário não é mexido.
+  useEffect(() => {
+    if (!podeEscolherVendedor || !pdvEquipeSelecionada) return;
+    setForm(prev => {
+      if (!prev.vendedor) return prev;
+      const v = usuarios.find(u => u.email?.toLowerCase() === String(prev.vendedor).toLowerCase());
+      const daEquipe = !!v && String(v.equipe_id ?? "") === pdvEquipeSelecionada;
+      return daEquipe ? prev : { ...prev, vendedor: "" };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdvEquipeSelecionada, podeEscolherVendedor, usuarios]);
+
   // ═══ RENDER CAMPOS ═══
   const renderCampoVendedor = () => {
     if (carregandoUsuarios) {
@@ -730,7 +749,7 @@ function PropostaForm() {
       return (
         <select value={form.vendedor || ""} onChange={(e) => setCampoFixo("vendedor", e.target.value)} style={inputStyleBase}>
           <option value="">Selecione o vendedor...</option>
-          {usuarios.map(u => (
+          {vendedoresParaEscolher.map(u => (
             <option key={u.email} value={u.email}>
               {u.nome} {u.email === userEmail ? "(você)" : ""}
             </option>
