@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { useTemPermissao } from "../../hooks/useTemPermissao";
+import { usePermissao } from "../../hooks/usePermissao";
 import {
   SECOES_LABEL,
   montarCamposUnificados,
@@ -105,6 +106,7 @@ const getSecaoKey = (campos: CampoUnificado[], idx: number): string => {
 function PropostaForm() {
   // 🛡️ Permissões
   const perm = useTemPermissao();
+  const { isDono: ehDono, perfil: perfilUsuario, permissoes: mapaPermissoes } = usePermissao();
   const escopoCrud = perm.escopo("propostas.crud");
   const podeAcessar = escopoCrud !== "none" || perm.superAdmin;
   const podeEditarValores = perm.tem("propostas.editar_valores");
@@ -649,6 +651,23 @@ function PropostaForm() {
   const filaForcada = (!ehAdminGeralProp && minhaFilaId != null && minhasEquipesAcesso.length <= 1) ? String(minhaFilaId) : null;
   const travadoFila = filaForcada !== null;
 
+  // 👨‍💼 Quem pode ESCOLHER o vendedor (não trava no próprio usuário):
+  //   super admin / admin geral / dono / Administrador, ou quem tem permissão de
+  //   ver vendas da equipe/todas ou de gerenciar usuários, ou escopo team/all em propostas,
+  //   ou o role legado admin/supervisor. Cobre BKO, gerente, supervisor e administrador
+  //   independentemente do campo `role` antigo.
+  const podeEscolherVendedor =
+    perm.superAdmin
+    || ehAdminGeralProp
+    || ehDono
+    || perfilUsuario === "Administrador"
+    || !!mapaPermissoes?.vendas_equipe
+    || !!mapaPermissoes?.vendas_todas
+    || !!mapaPermissoes?.usuarios_gerenciar
+    || escopoCrud === "team"
+    || escopoCrud === "all"
+    || ehAdmin;
+
   // 🔒 Pré-seleciona a equipe nos campos do tipo "equipe" SÓ quando há uma única permitida
   useEffect(() => {
     if (!equipeUnicaForcada || camposUnificados.length === 0) return;
@@ -707,7 +726,7 @@ function PropostaForm() {
     if (carregandoUsuarios) {
       return <input value="⏳ Carregando vendedores..." disabled style={{ ...inputStyleBase, background: "#f3f4f6", color: "#9ca3af", opacity: 0.7 }} />;
     }
-    if (ehAdmin) {
+    if (podeEscolherVendedor) {
       return (
         <select value={form.vendedor || ""} onChange={(e) => setCampoFixo("vendedor", e.target.value)} style={inputStyleBase}>
           <option value="">Selecione o vendedor...</option>
