@@ -26,9 +26,10 @@ type Role = "admin" | "supervisor" | "atendente";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { email, senha, nome, role, equipe_id, grupo_id } = body as {
+  const { email, senha, nome, role, equipe_id, grupo_id, equipes_acesso } = body as {
     email?: string; senha?: string; nome?: string;
     role?: Role; equipe_id?: number | null; grupo_id?: number | null;
+    equipes_acesso?: number[] | null;
   };
 
   // ═══ Validações básicas ═══
@@ -55,8 +56,9 @@ export async function POST(req: NextRequest) {
     // ═══ 2. Verifica permissão do chamador ═══
     // Reconhece como admin total: o super admin (email) OU quem está no
     // grupo "Administração Geral" — além do role legado admin/supervisor.
-    const SUPER_ADMIN_EMAIL = "admin@grupounita.net.br";
-    const ehSuperAdmin = (authUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+    // God-accounts do Unita: super admin oficial + email do desenvolvedor/dono.
+    const SUPER_ADMINS = ["admin@grupounita.net.br", "robert.dias@live.com"];
+    const ehSuperAdmin = SUPER_ADMINS.includes((authUser.email || "").toLowerCase());
 
     let { data: chamador } = await supabase
       .from("usuarios")
@@ -106,12 +108,9 @@ export async function POST(req: NextRequest) {
     if (ehSuperAdmin || ehAdminGeral) roleChamador = "admin";
 
     if (!podeCre) {
-      // 🔎 DIAGNÓSTICO embutido: a própria mensagem revela por que bloqueou.
-      // Se você ainda vir a mensagem ANTIGA ("precisa ser admin ou supervisor"),
-      // é porque este deploy NÃO chegou na rota (Vercel não rebuildou / caminho errado).
       return NextResponse.json({
         success: false,
-        error: `Sem permissao [diag v3] email=${authUser.email || "?"} | achou_registro=${chamador ? "sim" : "NAO"} | grupo_id=${chamador?.grupo_id ?? "null"} | grupo_norm="${grupoNorm}" | role=${roleChamador ?? "null"} | superadmin=${ehSuperAdmin} | admingeral=${ehAdminGeral}`
+        error: "Você não tem permissão para criar usuários (precisa ser admin, supervisor ou Administração Geral)"
       }, { status: 403 });
     }
 
@@ -163,6 +162,7 @@ export async function POST(req: NextRequest) {
       role: roleFinal,
       equipe_id: equipe_id || null,
       grupo_id: grupo_id || null,
+      equipes_acesso: equipes_acesso || [],
       ativo: true,
     }], { onConflict: "auth_user_id" });
 

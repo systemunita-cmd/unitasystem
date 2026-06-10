@@ -24,6 +24,7 @@ type Usuario = {
   role: "admin" | "supervisor" | "atendente";
   equipe_id?: number | null;
   fila_id?: number | null; // 🆕 v3 — fila de atendimento (1 por usuário, depende da equipe)
+  equipes_acesso?: number[] | null; // 🆕 equipes que o usuário pode VER (BKO/gerente)
   ativo?: boolean;
   primeiro_acesso?: boolean;
   ramal?: string | null;
@@ -68,8 +69,7 @@ const CATEGORIAS_PERMISSAO = [
     { key: "dashboard", label: "Dashboard de vendas" },
     { key: "funil", label: "Ver funil de vendas" },
     { key: "vendas_proprio", label: "Ver próprias vendas" },
-    { key: "vendas_equipe", label: "Ver vendas da equipe (somente a fila do usuário)" },
-    { key: "vendas_todas", label: "Ver todas as vendas (todas as filas/equipes)" },
+    { key: "vendas_equipe", label: "Ver vendas da equipe" },
     { key: "proposta_criar", label: "Criar propostas" },
     { key: "contatos_ver", label: "Ver contatos" },
     { key: "contatos_editar", label: "Editar cadastro de contatos" },
@@ -535,6 +535,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     role: "atendente" as "admin" | "supervisor" | "atendente",
     equipe_id: "", grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
+    equipes_acesso: [] as number[],
   });
   const [showSenha, setShowSenha] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -573,7 +574,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", equipe_id: "", grupo_id: "", ramal: "", telefone: "", fila_id: "" });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", equipe_id: "", grupo_id: "", ramal: "", telefone: "", fila_id: "", equipes_acesso: [] });
     setShowForm(true);
   };
 
@@ -591,6 +592,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
       grupo_id: u.grupo_id?.toString() || "",
       ramal: u.ramal || "", telefone: u.telefone || "",
       fila_id: u.fila_id?.toString() || "", // 🆕 v3
+      equipes_acesso: Array.isArray(u.equipes_acesso) ? u.equipes_acesso : [],
     });
     setShowForm(true);
   };
@@ -612,6 +614,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
         ramal: formUsuario.ramal.trim() || null,
         telefone: formUsuario.telefone.trim() || null,
         fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null, // 🆕 v3
+        equipes_acesso: formUsuario.equipes_acesso,
       }).eq("id", editandoUsuario.id);
       setSalvando(false);
       if (error) { alert("Erro: " + error.message); return; }
@@ -646,6 +649,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
           ramal: formUsuario.ramal.trim() || null,
           telefone: formUsuario.telefone.trim() || null,
           fila_id: formUsuario.fila_id ? parseInt(formUsuario.fila_id) : null, // 🆕 v3
+          equipes_acesso: formUsuario.equipes_acesso,
         }),
       });
       if (resp.status === 404) {
@@ -769,6 +773,36 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                   <option key={eq.id} value={eq.id.toString()}>{eq.icone} {eq.nome}</option>
                 ))}
               </select>
+            </div>
+
+            <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
+              <label style={labelStyle}>🔓 Equipes com acesso (vê as vendas dessas equipes)</label>
+              <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
+                {equipes.map((eq: Equipe) => {
+                  const marcada = formUsuario.equipes_acesso.includes(eq.id);
+                  return (
+                    <button key={eq.id} type="button"
+                      onClick={() => setFormUsuario(f => ({
+                        ...f,
+                        equipes_acesso: marcada
+                          ? f.equipes_acesso.filter(x => x !== eq.id)
+                          : [...f.equipes_acesso, eq.id],
+                      }))}
+                      style={{
+                        padding: "7px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                        border: "1px solid " + (marcada ? "#2563eb" : "#e5e7eb"),
+                        background: marcada ? "#eff6ff" : "#ffffff",
+                        color: marcada ? "#2563eb" : "#6b7280",
+                      }}>
+                      {marcada ? "\u2713 " : ""}{eq.icone} {eq.nome}
+                    </button>
+                  );
+                })}
+                {equipes.length === 0 && <span style={{ color: "#9ca3af", fontSize: 12 }}>Nenhuma equipe cadastrada</span>}
+              </div>
+              <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0", lineHeight: 1.4 }}>
+                Vazio = comportamento padrão (própria equipe/fila). Marque as equipes que este usuário pode ver nas Vendas — útil pra BKO e gerentes.
+              </p>
             </div>
 
 

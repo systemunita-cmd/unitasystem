@@ -39,7 +39,7 @@ type Proposta = {
   criado_por?: string | null;
   equipe_id_criador?: number | string | null;
 };
-type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; };
+type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; };
 
 // Cores semânticas dos status — mantêm padrão CRM (INSTALADA = verde, CANCELADA = vermelho)
 const statusColor: Record<string, string> = {
@@ -227,6 +227,7 @@ export default function Vendas() {
   const meuRegistro = usuariosMap.get(userEmail.toLowerCase());
   const minhaFila = meuRegistro?.fila_id ?? null;
   const minhaEquipe = meuRegistro?.equipe_id ?? null;
+  const minhasEquipesAcesso: number[] = Array.isArray(meuRegistro?.equipes_acesso) ? (meuRegistro!.equipes_acesso as number[]) : [];
   const regDoVendedor = (emailVend: string) => usuariosMap.get((emailVend || "").toLowerCase());
 
   // 🎨 ESTILOS
@@ -471,7 +472,7 @@ export default function Vendas() {
   const fetchUsuarios = async (usouMock: boolean) => {
     let lista: Usuario[] = [];
     try {
-      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id, fila_id");
+      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id, fila_id, equipes_acesso");
       lista = (us || []) as Usuario[];
     } catch {
       // tabela não existe
@@ -801,6 +802,10 @@ export default function Vendas() {
       const minha = (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
         || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase());
       if (minha) return true; // sempre vê as próprias
+      // 🔓 Acesso multi-equipe (BKO/gerente): vê as vendas das equipes liberadas pra ele
+      if (minhasEquipesAcesso.length > 0) {
+        return minhasEquipesAcesso.some(id => String(id) === String(p.equipe_id_criador));
+      }
       if (veEquipe) {
         const rv = regDoVendedor(p.vendedor);
         if (minhaFila != null) return !!rv && String(rv.fila_id ?? "") === String(minhaFila);     // mesma FILA
@@ -822,7 +827,7 @@ export default function Vendas() {
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
