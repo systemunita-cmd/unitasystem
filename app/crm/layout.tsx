@@ -36,9 +36,10 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const [secoesAberto, setSecoesAberto] = useState(false);
 
   // 🖥️ Tela cheia no DESKTOP: recolhe sidebar + sub-barra (vira gaveta, igual mobile). Salvo no localStorage.
-  const [menuColapsado, setMenuColapsado] = useState(false);
+  // Desktop abre JA em tela cheia (recolhido). Se o usuario fixar/recolher manualmente, respeita a escolha salva.
+  const [menuColapsado, setMenuColapsado] = useState(true);
   useEffect(() => {
-    try { setMenuColapsado(localStorage.getItem("unita_menu_colapsado") === "1"); } catch {}
+    try { const v = localStorage.getItem("unita_menu_colapsado"); if (v !== null) setMenuColapsado(v === "1"); } catch {}
   }, []);
   const colapsar = (v: boolean) => {
     setMenuColapsado(v);
