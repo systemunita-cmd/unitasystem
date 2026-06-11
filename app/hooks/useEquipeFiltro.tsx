@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../lib/supabase";
 import { useTemPermissao } from "./useTemPermissao";
+import { usePermissao } from "./usePermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 👥 useEquipeFiltro + <EquipeSelector /> — UnitaSystem (single-tenant)
@@ -39,11 +40,18 @@ export function useEquipeFiltro(_workspaceId?: string) {
 
   // ─── 🛡️ Permissões: define se o usuário é restrito a 1 equipe ──────────
   const perm = useTemPermissao();
+  const { permissoes, isDono, isSuperAdmin, perfil, loading: loadingPerm } = usePermissao();
   const ehAdminGeral =
     perm.superAdmin || perm.grupoNome === "Administração Geral";
-  // Usuário restrito (escopo team): NÃO é admin geral E tem equipe definida
+  // 🔓 Quem pode ver TODAS as vendas (admin geral / dono / super / "Ver todas as
+  //    vendas" marcado no grupo) escolhe QUALQUER equipe — inclusive "Todas".
+  const podeVerTudo =
+    ehAdminGeral || isDono || isSuperAdmin || perfil === "Administrador"
+    || !!(permissoes as any)?.vendas_todas;
+  // 🔒 Usuário restrito (Diretor / Gerente sem acesso / Supervisor): tem equipe
+  //    definida e NÃO pode ver tudo → fica travado na própria equipe.
   const equipeForcada =
-    !perm.carregando && !ehAdminGeral && perm.equipeId != null
+    (!perm.carregando && !loadingPerm && !podeVerTudo && perm.equipeId != null)
       ? String(perm.equipeId)
       : null;
   const travado = equipeForcada !== null;
