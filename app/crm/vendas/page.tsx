@@ -394,6 +394,20 @@ export default function Vendas() {
     if (c.slug === "cpf") {
       return <span style={{ color: "#6b7280", fontSize: 12, fontFamily: "monospace" }}>{raw || <span style={{ color: "#d1d5db" }}>—</span>}</span>;
     }
+    if (c.slug === "data_proposta") {
+      // mostra a data + o HORÁRIO em que a venda foi cadastrada (created_at) —
+      // desempata quando 2 vendedores sobem a mesma venda: vale quem subiu primeiro
+      let dt = "—";
+      try { if (raw) dt = new Date(raw + "T00:00:00").toLocaleDateString("pt-BR"); } catch { dt = String(raw || "—"); }
+      let hora = "";
+      try { if (v.created_at) hora = new Date(v.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }); } catch { hora = ""; }
+      return (
+        <span style={{ whiteSpace: "nowrap" }}>
+          <span style={{ color: "#6b7280", fontSize: 12, display: "block" }}>{dt}</span>
+          {hora && <span style={{ color: "#2563eb", fontSize: 10.5, fontWeight: 700, display: "block", marginTop: 1 }}>⏰ {hora}</span>}
+        </span>
+      );
+    }
 
     if (raw === undefined || raw === null || raw === "") {
       return <span style={{ color: "#d1d5db" }}>—</span>;
@@ -1393,7 +1407,7 @@ export default function Vendas() {
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "#ecfeff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👁️</div>
                 <div>
                   <h2 style={{ color: "#1f2937", fontSize: 17, fontWeight: 700, margin: 0 }}>Detalhes da Proposta</h2>
-                  <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{propostaVisualizando.nome} <span style={{ color: "#d1d5db" }}>·</span> #{propostaVisualizando.id}</p>
+                  <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{propostaVisualizando.nome} <span style={{ color: "#d1d5db" }}>·</span> #{propostaVisualizando.id}{propostaVisualizando.created_at && <> <span style={{ color: "#d1d5db" }}>·</span> <b style={{ color: "#2563eb" }}>⏰ cadastrada {new Date(propostaVisualizando.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</b></>}</p>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
