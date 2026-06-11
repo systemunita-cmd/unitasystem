@@ -203,27 +203,27 @@ const substituirVars = (texto: string, vars: Record<string, string>): string =>
 // ─── ESTILOS ───────────────────────────────────────────────────────────────
 const cardStyle = {
   background: "#ffffff",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  borderRadius: 16,
+  border: "1px solid #ececf1",
+  boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
 };
 const inputStyle = {
-  background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10,
-  padding: "9px 12px", color: "#1f2937", fontSize: 13, outline: "none",
+  background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10,
+  padding: "10px 12px", color: "#0f172a", fontSize: 13, outline: "none",
   width: "100%", boxSizing: "border-box" as const,
 };
 const labelStyle = {
-  color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
+  color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
   letterSpacing: 0.5, display: "block", marginBottom: 6,
 };
 const btnPrimario = {
-  background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+  background: "#d97706",
   color: "#ffffff", border: "none", borderRadius: 10, padding: "10px 18px",
   fontSize: 13, cursor: "pointer", fontWeight: 700,
-  boxShadow: "0 4px 12px rgba(220,38,38,0.3)",
+  boxShadow: "0 1px 2px rgba(217,119,6,0.35)",
 };
 const btnSecundario = {
-  background: "#ffffff", color: "#374151", border: "1px solid #e5e7eb",
+  background: "#ffffff", color: "#334155", border: "1px solid #e2e8f0",
   borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600,
 };
 
@@ -799,13 +799,13 @@ export default function CobrancaPage() {
   return (
     <div style={{ padding: isMobile ? 14 : 24, background: "#f8fafc", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* HEADER */}
-      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ ...cardStyle, padding: isMobile ? 16 : "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #4f46e5 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>💰</div>
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💰</div>
           <div>
-            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 17 : 20, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>Cobrança</h1>
-            <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-              UnitaSystem · <b style={{ color: "#2563eb" }}>Grupo Unita</b> · Cobre direto do CRM ou suba uma planilha
+            <h1 style={{ color: "#0f172a", fontSize: isMobile ? 18 : 22, fontWeight: 800, margin: 0, letterSpacing: -0.4 }}>Cobrança</h1>
+            <p style={{ color: "#94a3b8", fontSize: 12.5, margin: "2px 0 0" }}>
+              Grupo Unita · receba e acompanhe as mensalidades dos clientes
             </p>
           </div>
         </div>
@@ -933,92 +933,51 @@ export default function CobrancaPage() {
                     </p>
                   </div>
                 ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 900 : "auto" }}>
-                      <thead>
-                        <tr style={{ background: "#f9fafb" }}>
-                          <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          {["Cliente", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
-                            <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {faturasFiltradas.map((f, i) => {
-                          const k = chaveSelecao(f);
-                          const sel = selecionadasFat.has(k);
-                          const c = corStatus(f.status_visual);
-                          return (
-                            <tr key={k}
-                              style={{ borderTop: "1px solid #f3f4f6", background: sel ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc") }}>
-                              <td style={{ padding: "12px", textAlign: "center" }}>
-                                <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
-                              </td>
-                              <td style={{ padding: "12px", maxWidth: 220, overflow: "hidden" }}>
-                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.proposta.nome || "—"}</div>
-                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
-                              </td>
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 700 }}>{formatMesExtenso(f.numero_referencia)}</div>
-                                {f.proporcional && <div style={{ color: "#a855f7", fontSize: 10, fontWeight: 600 }}>⚠ 1ª (+{f.dias_cobertos - 30}d proporcional)</div>}
-                              </td>
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 600 }}>{formatData(f.data_vencimento)}</div>
-                                {f.status_visual === "atrasada" && (
-                                  <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>🔴 {f.dias_atraso}d atraso</div>
-                                )}
-                                {f.status_visual === "pendente" && f.dias_atraso < 0 && (
-                                  <div style={{ color: "#16a34a", fontSize: 10, fontWeight: 600 }}>🟢 Em {Math.abs(f.dias_atraso)}d</div>
-                                )}
-                                {(f.status_visual === "paga" || f.status_visual === "paga_atraso" || f.status_visual === "paga_parcial") && f.data_pagamento && (
-                                  <div style={{ color: STATUS_META[f.status_visual].color, fontSize: 10, fontWeight: 600 }}>✓ {STATUS_META[f.status_visual].icone} {formatData(f.data_pagamento)}</div>
-                                )}
-                                {f.observacoes && (
-                                  <div style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }} title={f.observacoes}>
-                                    💬 {f.observacoes}
-                                  </div>
-                                )}
-                              </td>
-                              <td style={{ padding: "12px", color: "#16a34a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{formatBRL(f.valor)}</td>
-                              <td style={{ padding: "12px" }}>
-                                <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                                  {c.label}
-                                </span>
-                              </td>
-                              <td style={{ padding: "12px" }}>
-                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                  {podeMudarStatus ? (
-                                    <>
-                                      {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
-                                        <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga / outras opções"
-                                          style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                          ✓ Paga
-                                        </button>
-                                      ) : (
-                                        <button onClick={() => marcarAPagar(f)} title="Reverter status"
-                                          style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                          ↩ A pagar
-                                        </button>
-                                      )}
-                                      <button onClick={() => abrirStatus(f, "promessa")} title="Mais opções de status"
-                                        style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                        ⚙ Status
-                                      </button>
-                                      <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço"
-                                        style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                        ✕ Cancelou
-                                      </button>
-                                    </>
+                  <div>
+                    {faturasFiltradas.map((f, i) => {
+                      const k = chaveSelecao(f);
+                      const sel = selecionadasFat.has(k);
+                      const c = corStatus(f.status_visual);
+                      const pago = f.status_visual === "paga" || f.status_visual === "paga_atraso" || f.status_visual === "paga_parcial";
+                      return (
+                        <div key={k} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i === 0 ? "none" : "1px solid #f1f5f9", borderLeft: `3px solid ${c.color}`, background: sel ? "#fffbeb" : "#ffffff" }}>
+                          <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#d97706", marginTop: 3 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ color: "#0f172a", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: isMobile ? 200 : 340 }}>{f.proposta.nome || "—"}</div>
+                                <div style={{ color: "#94a3b8", fontSize: 11.5, marginTop: 1 }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
+                              </div>
+                              <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                <div style={{ color: pago ? "#059669" : "#0f172a", fontSize: 16, fontWeight: 800, letterSpacing: -0.4, fontVariantNumeric: "tabular-nums" }}>{formatBRL(f.valor)}</div>
+                                <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 1 }}>{formatMesExtenso(f.numero_referencia)} · vence {formatData(f.data_vencimento)}</div>
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                              <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{c.label}</span>
+                              {f.status_visual === "atrasada" && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>🔴 {f.dias_atraso}d em atraso</span>}
+                              {f.status_visual === "pendente" && f.dias_atraso < 0 && <span style={{ color: "#059669", fontSize: 11, fontWeight: 600 }}>🟢 vence em {Math.abs(f.dias_atraso)}d</span>}
+                              {f.proporcional && <span style={{ color: "#a855f7", fontSize: 11, fontWeight: 600 }}>1ª proporcional</span>}
+                              {pago && f.data_pagamento && <span style={{ color: c.color, fontSize: 11, fontWeight: 600 }}>✓ pago {formatData(f.data_pagamento)}</span>}
+                              {f.observacoes && <span style={{ color: "#94a3b8", fontSize: 11, fontStyle: "italic", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.observacoes}>💬 {f.observacoes}</span>}
+                              {podeMudarStatus ? (
+                                <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                                  {!pago ? (
+                                    <button onClick={() => abrirStatus(f, "paga")} style={{ background: "#059669", color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Receber</button>
                                   ) : (
-                                    <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }} title="Você não tem permissão pra mudar status de fatura">somente leitura</span>
+                                    <button onClick={() => marcarAPagar(f)} style={{ background: "#ffffff", color: "#d97706", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Reabrir</button>
                                   )}
+                                  <button onClick={() => abrirStatus(f, "promessa")} title="Outros status (promessa, acordo, negociação...)" style={{ background: "#ffffff", color: "#475569", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Status</button>
+                                  <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço" style={{ background: "#ffffff", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>✕</button>
                                 </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                              ) : (
+                                <span style={{ color: "#94a3b8", fontSize: 11, fontStyle: "italic", marginLeft: "auto" }}>somente leitura</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1469,13 +1428,13 @@ function KPI({ cor, bg, icone, label, valor, sub, isMobile }: {
   cor: string; bg: string; icone: string; label: string; valor: string; sub: string; isMobile: boolean;
 }) {
   return (
-    <div style={{ ...cardStyle, padding: isMobile ? 14 : 18, borderTop: `3px solid ${cor}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        <div style={{ width: 30, height: 30, borderRadius: 8, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{icone}</div>
-        <p style={{ color: "#6b7280", fontSize: 10, margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</p>
+    <div style={{ ...cardStyle, padding: isMobile ? 14 : "16px 18px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 999, background: cor, display: "inline-block" }} aria-hidden>{bg ? "" : icone}</span>
+        <p style={{ color: "#64748b", fontSize: 10.5, margin: 0, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
       </div>
-      <p style={{ color: cor, fontSize: isMobile ? 19 : 25, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{valor}</p>
-      <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", fontWeight: 500 }}>{sub}</p>
+      <p style={{ color: "#0f172a", fontSize: isMobile ? 22 : 28, fontWeight: 800, margin: 0, letterSpacing: -0.8, fontVariantNumeric: "tabular-nums" as const }}>{valor}</p>
+      <p style={{ color: "#94a3b8", fontSize: 11, margin: "5px 0 0", fontWeight: 500 }}>{sub}</p>
     </div>
   );
 }
