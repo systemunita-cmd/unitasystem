@@ -135,6 +135,11 @@ const iconeArquivo = (tipo: string): string => {
 const isoLocal = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
+// 🔤 Texto padrão do sistema: MAIÚSCULO, sem acento e sem ç ("José Gonçalves" → "JOSE GONCALVES")
+const textoLimpo = (v: string): string =>
+  v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+
 export default function Vendas() {
   const router = useRouter();
   const { isDono, perfil, permissoes, isSuperAdmin } = usePermissao();
@@ -240,6 +245,24 @@ export default function Vendas() {
   const [dadosCustomizadosEdit, setDadosCustomizadosEdit] = useState<Record<string, any>>({});
   const [uploadandoEdit, setUploadandoEdit] = useState<Record<string, boolean>>({});
   const [salvando, setSalvando] = useState(false);
+
+  // 📋 Copiar valor de campos de data no modal de edição (data nasce em input
+  // type=date, que não deixa selecionar o texto — o botão resolve)
+  const [copiadoSlug, setCopiadoSlug] = useState<string>("");
+  const copiarValor = async (slug: string, txt: string) => {
+    try {
+      await navigator.clipboard.writeText(txt);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = txt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopiadoSlug(slug);
+    setTimeout(() => setCopiadoSlug(s2 => (s2 === slug ? "" : s2)), 1500);
+  };
 
   const podeExcluir = isDono || perfil === "Administrador";
   const podeEditarCamposCustom = isDono || perfil === "Administrador";
@@ -635,10 +658,11 @@ export default function Vendas() {
     }
     setSalvando(true);
     try {
+      const up = (v: any) => (typeof v === "string" ? textoLimpo(v) : v);
       const { error } = await supabase.from("proposta").update({
-        data_proposta: form.data_proposta, nome: form.nome, cpf: form.cpf, rg: form.rg,
-        data_nascimento: form.data_nascimento, nome_mae: form.nome_mae, email: form.email,
-        endereco: form.endereco, cep: form.cep, cidade: form.cidade, estado: form.estado,
+        data_proposta: form.data_proposta, nome: up(form.nome), cpf: form.cpf, rg: up(form.rg),
+        data_nascimento: form.data_nascimento, nome_mae: up(form.nome_mae), email: form.email,
+        endereco: up(form.endereco), cep: form.cep, cidade: up(form.cidade), estado: up(form.estado),
         telefone1: form.telefone1, telefone2: form.telefone2, telefone3: form.telefone3,
         vencimento: form.vencimento, forma_pagamento: form.forma_pagamento, plano: form.plano,
         valor_plano: form.valor_plano ? Number(form.valor_plano) : null,
@@ -744,7 +768,22 @@ export default function Vendas() {
         );
       }
 
-      if (c.tipo === "data") return <div>{lab}<input type="date" value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
+      if (c.tipo === "data") {
+        const txtData = val ? new Date(String(val) + "T00:00:00").toLocaleDateString("pt-BR") : "";
+        const copiado = copiadoSlug === `fixo-${c.slug}`;
+        return (
+          <div>{lab}
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="date" value={val || ""} onChange={e => set(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <button type="button" onClick={() => txtData && copiarValor(`fixo-${c.slug}`, txtData)}
+                title={txtData ? `Copiar ${txtData}` : "Sem data pra copiar"}
+                style={{ background: copiado ? "#f0fdf4" : "#eff6ff", color: copiado ? "#16a34a" : "#2563eb", border: `1px solid ${copiado ? "#bbf7d0" : "#bfdbfe"}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                {copiado ? "✓" : "📋"}
+              </button>
+            </div>
+          </div>
+        );
+      }
       if (c.tipo === "email") return <div>{lab}<input type="email" placeholder={c.placeholder || ""} value={val} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
       if (c.tipo === "numero") return <div>{lab}<input type="number" placeholder={c.placeholder || ""} value={val} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
       if (c.tipo === "moeda") return <div>{lab}<input type="number" step="0.01" placeholder={c.placeholder || ""} value={val} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
@@ -760,7 +799,7 @@ export default function Vendas() {
           </div>
         );
       }
-      return <div>{lab}<input placeholder={c.placeholder || ""} value={val} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
+      return <div>{lab}<input placeholder={c.placeholder || ""} value={val} onChange={e => set(textoLimpo(e.target.value))} style={inputStyle} /></div>;
     }
 
     // CUSTOM
@@ -803,10 +842,25 @@ export default function Vendas() {
       );
     }
 
-    if (c.tipo === "textarea") return <div>{lab}<textarea placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} rows={3} style={{ ...inputStyle, resize: "vertical" as const, fontFamily: "inherit" }} /></div>;
+    if (c.tipo === "textarea") return <div>{lab}<textarea placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} rows={3} style={{ ...inputStyle, resize: "vertical" as const, fontFamily: "inherit" }} /></div>;
     if (c.tipo === "numero") return <div>{lab}<input type="number" placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
     if (c.tipo === "moeda") return <div>{lab}<input type="number" step="0.01" placeholder={c.placeholder || "0,00"} value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
-    if (c.tipo === "data") return <div>{lab}<input type="date" value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
+    if (c.tipo === "data") {
+      const txtData = val ? new Date(String(val) + "T00:00:00").toLocaleDateString("pt-BR") : "";
+      const copiado = copiadoSlug === `custom-${c.slug}`;
+      return (
+        <div>{lab}
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="date" value={val || ""} onChange={e => set(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+            <button type="button" onClick={() => txtData && copiarValor(`custom-${c.slug}`, txtData)}
+              title={txtData ? `Copiar ${txtData}` : "Sem data pra copiar"}
+              style={{ background: copiado ? "#f0fdf4" : "#eff6ff", color: copiado ? "#16a34a" : "#2563eb", border: `1px solid ${copiado ? "#bbf7d0" : "#bfdbfe"}`, borderRadius: 8, padding: "8px 10px", fontSize: 12, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {copiado ? "✓" : "📋"}
+            </button>
+          </div>
+        </div>
+      );
+    }
     if (c.tipo === "dropdown") return (
       <div>{lab}<select value={val || ""} onChange={e => set(e.target.value)} style={inputStyle}>
         <option value="">Selecione...</option>
@@ -832,7 +886,7 @@ export default function Vendas() {
         </div>
       );
     }
-    return <div>{lab}<input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
+    return <div>{lab}<input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} style={inputStyle} /></div>;
   };
 
   const propostasFiltradas = useMemo(() => propostas

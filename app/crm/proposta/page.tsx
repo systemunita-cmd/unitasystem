@@ -78,6 +78,11 @@ const iconeArquivo = (tipo: string): string => {
   return "📎";
 };
 
+// 🔤 Texto padrão do sistema: MAIÚSCULO, sem acento e sem ç ("José Gonçalves" → "JOSE GONCALVES")
+const textoLimpo = (v: string): string =>
+  v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+
 // ═══ SEÇÃO META — mesmas cores do Editor Unita ═══
 const SECAO_META: Record<string, { icone: string; cor: string; descricao: string; ordem: number }> = {
   pessoal:        { icone: "👤", cor: "#2563eb", descricao: "Identificação do cliente",        ordem: 1 },
@@ -518,20 +523,21 @@ function PropostaForm() {
 
     setLoading(true);
 
+    const up = (v: any) => (typeof v === "string" ? textoLimpo(v) : v);
     const payload: any = {
       criado_por: perm.userEmail || null,
       equipe_id_criador: perm.equipeId || null,
       data_proposta: form.data_proposta || null,
-      nome: form.nome || "",
+      nome: up(form.nome || ""),
       cpf: form.cpf || "",
       data_nascimento: form.data_nascimento || null,
-      nome_mae: form.nome_mae || "",
-      rg: form.rg || "",
+      nome_mae: up(form.nome_mae || ""),
+      rg: up(form.rg || ""),
       email: form.email || "",
-      endereco: form.endereco || "",
+      endereco: up(form.endereco || ""),
       cep: form.cep || "",
-      cidade: form.cidade || "",
-      estado: form.estado || "",
+      cidade: up(form.cidade || ""),
+      estado: up(form.estado || ""),
       telefone1: form.telefone1 || "",
       telefone2: form.telefone2 || "",
       telefone3: form.telefone3 || "",
@@ -688,7 +694,7 @@ function PropostaForm() {
     } else if (opts?.cpf) {
       input = <input value={v} placeholder="000.000.000-00" onChange={e => onCh(mascaraCPF(e.target.value))} style={inputStyleBase} />;
     } else {
-      input = <input value={v} placeholder={opts?.ph || ""} onChange={e => onCh(e.target.value)} style={inputStyleBase} />;
+      input = <input value={v} placeholder={opts?.ph || ""} onChange={e => onCh(textoLimpo(e.target.value))} style={inputStyleBase} />;
     }
     return (
       <div style={{ display: "flex", flexDirection: "column" as const }}>
@@ -1103,7 +1109,7 @@ function PropostaForm() {
           </div>
         );
       } else {
-        input = <input placeholder={c.placeholder || ""} value={valorEfetivo} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)} />;
+        input = <input placeholder={c.placeholder || ""} value={valorEfetivo} onChange={e => set(textoLimpo(e.target.value))} style={inputStyleParaCampo(c)} />;
       }
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
@@ -1178,7 +1184,7 @@ function PropostaForm() {
     }
 
     if (tipo === "textarea") {
-      input = <textarea placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} rows={3}
+      input = <textarea placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} rows={3}
         style={{ ...inputStyleParaCampo(c), resize: "vertical" as const, fontFamily: "inherit" }} />;
     } else if (tipo === "numero") {
       input = <input type="number" placeholder={c.placeholder || "0"} value={val || ""} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)} />;
@@ -1216,7 +1222,7 @@ function PropostaForm() {
         </div>
       );
     } else {
-      input = <input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)} />;
+      input = <input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} style={inputStyleParaCampo(c)} />;
     }
     return (
       <div style={{ display: "flex", flexDirection: "column" as const }}>
