@@ -29,7 +29,23 @@ type Proposta = {
   status_venda?: string | null;
   data_instalacao?: string | null;
   operadora?: string | null;
+  cpf?: string | null;
+  dados_customizados?: Record<string, any> | null;
   created_at: string;
+};
+
+// 🔍 Busca de cliente: nome, telefone, plano, CPF (com ou sem pontos) e OS do CRM
+const buscaMatch = (p: Proposta, termo: string): boolean => {
+  const t = termo.toLowerCase();
+  const dig = termo.replace(/\D/g, "");
+  const cpfDig = String(p.cpf || "").replace(/\D/g, "");
+  const os = String(p.dados_customizados?.os || "").toLowerCase();
+  return (p.nome || "").toLowerCase().includes(t)
+    || (p.telefone1 || "").includes(termo)
+    || (p.plano || "").toLowerCase().includes(t)
+    || String(p.cpf || "").toLowerCase().includes(t)
+    || (dig.length > 0 && cpfDig.includes(dig))
+    || (os.length > 0 && os.includes(t));
 };
 
 type Canal = { id: number; nome: string; tipo: string; status: string; waba_id?: string };
@@ -173,8 +189,8 @@ const STATUS_META: Record<StatusFatura, {
   label: string; icone: string; bg: string; border: string; color: string;
   recebido: boolean; pendencia: boolean; descricao: string;
 }> = {
-  pendente:     { label: "A pagar",            icone: "⏳", bg: "#fffbeb", border: "#fde68a", color: "#d97706", recebido: false, pendencia: true,  descricao: "Aguardando pagamento" },
-  atrasada:     { label: "Atrasada",           icone: "🔴", bg: "#fef2f2", border: "#fecaca", color: "#dc2626", recebido: false, pendencia: true,  descricao: "Venceu e não foi paga" },
+  pendente:     { label: "Em vencer",          icone: "⏳", bg: "#fffbeb", border: "#fde68a", color: "#d97706", recebido: false, pendencia: true,  descricao: "Ainda não venceu" },
+  atrasada:     { label: "Em aberto",          icone: "🔴", bg: "#fef2f2", border: "#fecaca", color: "#dc2626", recebido: false, pendencia: true,  descricao: "Venceu e não foi paga" },
   paga:         { label: "Paga",               icone: "✅", bg: "#f0fdf4", border: "#bbf7d0", color: "#16a34a", recebido: true,  pendencia: false, descricao: "Paga em dia" },
   paga_atraso:  { label: "Paga c/ atraso",     icone: "⏰", bg: "#ecfdf5", border: "#a7f3d0", color: "#059669", recebido: true,  pendencia: false, descricao: "Paga depois do vencimento" },
   paga_parcial: { label: "Paga parcial",       icone: "💰", bg: "#fffbeb", border: "#fcd34d", color: "#b45309", recebido: true,  pendencia: true,  descricao: "Pagou só parte do valor" },
@@ -365,7 +381,7 @@ export default function CobrancaPage() {
   async function fetchPropostas(faltando?: string[]) {
     const { data, error } = await supabase
       .from("proposta")
-      .select("id, nome, telefone1, telefone2, telefone3, plano, valor_plano, vencimento, forma_pagamento, status_venda, data_instalacao, operadora, created_at")
+      .select("id, nome, telefone1, telefone2, telefone3, plano, valor_plano, vencimento, forma_pagamento, status_venda, data_instalacao, operadora, cpf, dados_customizados, created_at")
       .order("created_at", { ascending: false });
     if (error?.code === "PGRST205") faltando?.push("proposta");
     setPropostas(data || []);
@@ -447,12 +463,7 @@ export default function CobrancaPage() {
     else if (filtroStatus !== "todas")       arr = arr.filter(f => f.status_visual === filtroStatus);
 
     if (filtroBusca) {
-      const b = filtroBusca.toLowerCase();
-      arr = arr.filter(f =>
-        (f.proposta.nome || "").toLowerCase().includes(b) ||
-        (f.proposta.telefone1 || "").includes(b) ||
-        (f.proposta.plano || "").toLowerCase().includes(b)
-      );
+      arr = arr.filter(f => buscaMatch(f.proposta, filtroBusca));
     }
 
     return [...arr].sort((a, b) => {
@@ -491,8 +502,7 @@ export default function CobrancaPage() {
     if (segmento === "inadimplentes") arr = arr.filter(c => c.situacao === "inadimplente");
     else if (segmento === "em_dia") arr = arr.filter(c => c.situacao === "em_dia");
     if (buscaCliente) {
-      const b = buscaCliente.toLowerCase();
-      arr = arr.filter(c => (c.proposta.nome || "").toLowerCase().includes(b) || (c.proposta.telefone1 || "").includes(b) || (c.proposta.plano || "").toLowerCase().includes(b));
+      arr = arr.filter(c => buscaMatch(c.proposta, buscaCliente));
     }
     return arr;
   }, [clientes, segmento, buscaCliente]);
@@ -525,7 +535,6 @@ export default function CobrancaPage() {
 
   const abrirStatus = (f: Fatura, statusInicial: StatusFatura = "paga") => {
     setNovoStatus(statusInicial);
-    if (statusInicial === "paga" && f.dias_atraso > 0) setNovoStatus("paga_atraso");
     setStatusData(new Date().toISOString().slice(0, 10));
     setStatusForma(f.proposta.forma_pagamento || "");
     setStatusValor(String(f.valor.toFixed(2)));
@@ -917,7 +926,7 @@ export default function CobrancaPage() {
                   })}
                 </div>
                 <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
-                  <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Buscar cliente..." style={{ ...inputStyle, padding: "8px 12px" }} />
+                  <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Nome, CPF ou OS..." style={{ ...inputStyle, padding: "8px 12px" }} />
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
                   {clienteSel != null && (
@@ -970,23 +979,18 @@ export default function CobrancaPage() {
                     </button>
                   );
                 })}
-                <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="🔍 Buscar nome/telefone/plano..."
+                <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="🔍 Nome, CPF, OS, telefone, plano..."
                   style={{ ...inputStyle, flex: 1, minWidth: 180, padding: "7px 12px" }} />
               </div>
 
               <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 4 }}>Status:</span>
                 {([
-                  { k: "todas",     l: "🌐 Todas",        cor: "#374151" },
-                  { k: "pendentes", l: "⏳ A pagar",      cor: "#d97706" },
-                  { k: "atrasadas", l: "🔴 Atrasadas",    cor: "#dc2626" },
-                  { k: "pagas",     l: "✅ Pagas",         cor: "#16a34a" },
-                  { k: "promessa",  l: "🤝 Promessa",     cor: "#2563eb" },
-                  { k: "negociacao",l: "📞 Negociação",   cor: "#7c3aed" },
-                  { k: "acordo",    l: "📋 Acordo",       cor: "#0284c7" },
-                  { k: "nao_pagara",l: "❌ Não vai pagar", cor: "#991b1b" },
-                  { k: "cancelada", l: "🚫 Canceladas",   cor: "#6b7280" },
-                  { k: "juridico",  l: "⚖️ Jurídico",     cor: "#7f1d1d" },
+                  { k: "todas",     l: "🌐 Todas",          cor: "#374151" },
+                  { k: "pagas",     l: "✅ Pagas",           cor: "#16a34a" },
+                  { k: "atrasadas", l: "🔴 Em aberto",      cor: "#dc2626" },
+                  { k: "pendentes", l: "⏳ Em vencer",      cor: "#d97706" },
+                  { k: "negociacao",l: "📞 Em negociação",  cor: "#7c3aed" },
                 ] as { k: string; l: string; cor: string }[]).map(f => {
                   const at = filtroStatus === f.k;
                   return (
@@ -1416,15 +1420,7 @@ export default function CobrancaPage() {
                 <div>
                   <label style={labelStyle}>Qual o status dessa fatura?</label>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6 }}>
-                    {(Object.keys(STATUS_META) as StatusFatura[])
-                      .filter(s => s !== "atrasada" && s !== "pendente")
-                      .filter(s => {
-                        // 🛡️ Filtra por toggles específicos
-                        if (s === "cancelada"  && !podeCancelar)   return false;
-                        if (s === "juridico"   && !podeJuridico)   return false;
-                        if (s === "protestada" && !podeProtestada) return false;
-                        return true;
-                      })
+                    {(["paga", "atrasada", "pendente", "negociacao"] as StatusFatura[])
                       .map(s => {
                         const m = STATUS_META[s];
                         const at = novoStatus === s;
