@@ -35,6 +35,20 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
   const [secoesAberto, setSecoesAberto] = useState(false);
 
+  // 🖥️ Tela cheia no DESKTOP: recolhe sidebar + sub-barra (vira gaveta, igual mobile). Salvo no localStorage.
+  const [menuColapsado, setMenuColapsado] = useState(false);
+  useEffect(() => {
+    try { setMenuColapsado(localStorage.getItem("unita_menu_colapsado") === "1"); } catch {}
+  }, []);
+  const colapsar = (v: boolean) => {
+    setMenuColapsado(v);
+    setMenuMobileAberto(false);
+    setSecoesAberto(false);
+    try { localStorage.setItem("unita_menu_colapsado", v ? "1" : "0"); } catch {}
+  };
+  // No desktop colapsado o comportamento vira "compacto" (gavetas), igual mobile.
+  const compacto = isMobile || menuColapsado;
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -84,7 +98,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
 
   const navegarPara = (path: string) => {
     router.push(path);
-    if (isMobile) { setMenuMobileAberto(false); setSecoesAberto(false); }
+    if (compacto) { setMenuMobileAberto(false); setSecoesAberto(false); }
   };
 
   const signOut = async () => {
@@ -336,7 +350,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         `}</style>
 
         {/* ═══ BOTÃO HAMBÚRGUER (mobile) ═══ */}
-        {isMobile && !menuMobileAberto && (
+        {compacto && !menuMobileAberto && (
           <button
             onClick={() => setMenuMobileAberto(true)}
             title="Abrir menu"
@@ -362,7 +376,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ═══ OVERLAY (mobile) ═══ */}
-        {isMobile && menuMobileAberto && (
+        {compacto && menuMobileAberto && (
           <div
             onClick={() => setMenuMobileAberto(false)}
             style={{
@@ -378,7 +392,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         {/* ═══ SIDEBAR ═══ */}
         <div
           style={{
-            width: isMobile ? 280 : 240,
+            width: compacto ? 280 : 240,
             background: "#ffffff",
             borderRight: "1px solid #e2e8f0",
             display: "flex",
@@ -387,15 +401,15 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
             gap: 6,
             flexShrink: 0,
             overflowY: "auto",
-            position: isMobile ? "fixed" : "relative",
-            top: isMobile ? 0 : "auto",
-            left: isMobile ? 0 : "auto",
-            bottom: isMobile ? 0 : "auto",
-            height: isMobile ? "100vh" : "auto",
-            zIndex: isMobile ? 1000 : "auto",
-            transform: isMobile && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
+            position: compacto ? "fixed" : "relative",
+            top: compacto ? 0 : "auto",
+            left: compacto ? 0 : "auto",
+            bottom: compacto ? 0 : "auto",
+            height: compacto ? "100vh" : "auto",
+            zIndex: compacto ? 1000 : "auto",
+            transform: compacto && !menuMobileAberto ? "translateX(-100%)" : "translateX(0)",
             transition: "transform 0.25s ease",
-            boxShadow: isMobile ? "4px 0 16px rgba(0,0,0,0.08)" : "none",
+            boxShadow: compacto ? "4px 0 16px rgba(0,0,0,0.08)" : "none",
           }}
         >
           {/* Logo + nome */}
@@ -457,10 +471,10 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
                 </span>
               </div>
             </div>
-            {isMobile && (
+            {compacto ? (
               <button
-                onClick={() => setMenuMobileAberto(false)}
-                title="Fechar menu"
+                onClick={() => { setMenuMobileAberto(false); if (!isMobile) colapsar(false); }}
+                title={isMobile ? "Fechar menu" : "Fixar menu (sair da tela cheia)"}
                 style={{
                   background: "#f1f5f9",
                   border: "none",
@@ -476,7 +490,28 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
                   flexShrink: 0,
                 }}
               >
-                ✕
+                {isMobile ? "✕" : "📌"}
+              </button>
+            ) : (
+              <button
+                onClick={() => colapsar(true)}
+                title="Tela cheia (recolher menu)"
+                style={{
+                  background: "#f1f5f9",
+                  border: "none",
+                  color: "#64748b",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                «
               </button>
             )}
           </div>
@@ -593,7 +628,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* ═══ SUB-BARRA CRM (igual Wolf) ═══ */}
-        {podeVerCRM && naCRM && !isMobile && (
+        {podeVerCRM && naCRM && !compacto && (
           <div style={{ width: 230, background: "#ffffff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", padding: 16, gap: 4, flexShrink: 0, overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 6px 14px" }}>
               <div style={{ width: 38, height: 38, borderRadius: 10, background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#fff", boxShadow: "0 4px 10px rgba(22,163,74,0.3)" }}>{"\uD83C\uDFAF"}</div>
@@ -617,20 +652,20 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         )}
 
         {/* ═══ "☰ Seções" — sub-barra CRM no MOBILE (igual Wolf (crm)/layout) ═══ */}
-        {podeVerCRM && naCRM && isMobile && !secoesAberto && (
+        {podeVerCRM && naCRM && compacto && !secoesAberto && (
           <button onClick={() => setSecoesAberto(true)} title="Abrir seções"
             style={{ position: "fixed", top: 8, right: 8, zIndex: 65, background: "#ffffff", border: "1px solid #e5e7eb", color: "#15803d", borderRadius: 10, padding: "8px 14px", fontSize: 14, cursor: "pointer", lineHeight: 1, boxShadow: "0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04)", fontWeight: 700, fontFamily: "inherit" }}>
             ☰ Seções
           </button>
         )}
 
-        {podeVerCRM && naCRM && isMobile && secoesAberto && (
+        {podeVerCRM && naCRM && compacto && secoesAberto && (
           <div onClick={() => setSecoesAberto(false)}
             style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", backdropFilter: "blur(2px)", zIndex: 1090 }}
           />
         )}
 
-        {podeVerCRM && naCRM && isMobile && (
+        {podeVerCRM && naCRM && compacto && (
           <div style={{ width: 260, background: "#ffffff", borderRight: "1px solid #e2e8f0", display: "flex", flexDirection: "column", padding: 16, gap: 4, position: "fixed", top: 0, left: 0, bottom: 0, height: "100vh", zIndex: 1100, transform: secoesAberto ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.25s ease", boxShadow: "4px 0 16px rgba(0,0,0,0.1)", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "4px 6px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -662,8 +697,8 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: isMobile ? "56px 12px 16px" : 32,
-            width: isMobile ? "100%" : "auto",
+            padding: compacto ? "56px 16px 16px" : 32,
+            width: compacto ? "100%" : "auto",
             minWidth: 0,
           }}
         >

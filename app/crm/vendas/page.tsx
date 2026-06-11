@@ -131,6 +131,10 @@ const iconeArquivo = (tipo: string): string => {
   return "📎";
 };
 
+// Data local YYYY-MM-DD (evita o desvio de fuso do toISOString)
+const isoLocal = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
 export default function Vendas() {
   const router = useRouter();
   const { isDono, perfil, permissoes, isSuperAdmin } = usePermissao();
@@ -144,8 +148,10 @@ export default function Vendas() {
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
-  const [filtroDataInicio, setFiltroDataInicio] = useState("");
-  const [filtroDataFim, setFiltroDataFim] = useState("");
+  // 📅 Padrao = HOJE. Toggles rapidos (Hoje / 7 / 30 / 90 dias / Personalizado) controlam o range.
+  const [filtroDataInicio, setFiltroDataInicio] = useState(() => isoLocal(new Date()));
+  const [filtroDataFim, setFiltroDataFim] = useState(() => isoLocal(new Date()));
+  const [rangeRapido, setRangeRapido] = useState<"hoje" | "7d" | "30d" | "90d" | "custom">("hoje");
   const [propostaVisualizando, setPropostaVisualizando] = useState<Proposta | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -158,6 +164,22 @@ export default function Vendas() {
   // 🔎 Filtros dinâmicos por coluna (slug → valor)
   const [filtrosColuna, setFiltrosColuna] = useState<Record<string, string>>({});
   const [pagina, setPagina] = useState(1);
+
+  // Aplica um periodo rapido (define inicio/fim). "custom" libera os campos De/Ate.
+  const aplicarRange = (r: "hoje" | "7d" | "30d" | "90d" | "custom") => {
+    setRangeRapido(r);
+    if (r === "custom") return;
+    const hoje = new Date();
+    const fim = isoLocal(hoje);
+    let ini = fim;
+    if (r !== "hoje") {
+      const d = new Date(hoje);
+      d.setDate(d.getDate() - (r === "7d" ? 6 : r === "30d" ? 29 : 89));
+      ini = isoLocal(d);
+    }
+    setFiltroDataInicio(ini);
+    setFiltroDataFim(fim);
+  };
 
   // 📏 Refs pro scrollbar superior sincronizado com o de baixo
   const tableContainerRef = useRef<HTMLDivElement>(null);
@@ -1086,16 +1108,36 @@ export default function Vendas() {
           <option value="todos">Status: Todos</option>
           {STATUS_OPCOES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "5px 12px" }}>
-          <span style={{ color: "#6b7280", fontSize: 11, whiteSpace: "nowrap", fontWeight: 600 }}>📅 De:</span>
-          <input type="date" value={filtroDataInicio} onChange={e => setFiltroDataInicio(e.target.value)} max={filtroDataFim || undefined}
-            style={{ background: "transparent", border: "none", color: "#1f2937", fontSize: 12, padding: "5px 0", outline: "none", fontWeight: 600 }} />
-          <span style={{ color: "#6b7280", fontSize: 11, whiteSpace: "nowrap", fontWeight: 600 }}>Até:</span>
-          <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} min={filtroDataInicio || undefined}
-            style={{ background: "transparent", border: "none", color: "#1f2937", fontSize: 12, padding: "5px 0", outline: "none", fontWeight: 600 }} />
+        {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {([
+            { k: "hoje", l: "Hoje" },
+            { k: "7d", l: "7 dias" },
+            { k: "30d", l: "30 dias" },
+            { k: "90d", l: "90 dias" },
+            { k: "custom", l: "Personalizado" },
+          ] as { k: "hoje" | "7d" | "30d" | "90d" | "custom"; l: string }[]).map(o => {
+            const at = rangeRapido === o.k;
+            return (
+              <button key={o.k} onClick={() => aplicarRange(o.k)}
+                style={{ background: at ? "#2563eb" : "#ffffff", color: at ? "#ffffff" : "#6b7280", border: `1px solid ${at ? "#2563eb" : "#e5e7eb"}`, borderRadius: 20, padding: "7px 14px", fontSize: 12, fontWeight: at ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                {o.l}
+              </button>
+            );
+          })}
+          {rangeRapido === "custom" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "5px 12px" }}>
+              <span style={{ color: "#6b7280", fontSize: 11, whiteSpace: "nowrap", fontWeight: 600 }}>📅 De:</span>
+              <input type="date" value={filtroDataInicio} onChange={e => setFiltroDataInicio(e.target.value)} max={filtroDataFim || undefined}
+                style={{ background: "transparent", border: "none", color: "#1f2937", fontSize: 12, padding: "5px 0", outline: "none", fontWeight: 600 }} />
+              <span style={{ color: "#6b7280", fontSize: 11, whiteSpace: "nowrap", fontWeight: 600 }}>Até:</span>
+              <input type="date" value={filtroDataFim} onChange={e => setFiltroDataFim(e.target.value)} min={filtroDataInicio || undefined}
+                style={{ background: "transparent", border: "none", color: "#1f2937", fontSize: 12, padding: "5px 0", outline: "none", fontWeight: 600 }} />
+            </div>
+          )}
         </div>
-        {(busca || filtroStatus !== "todos" || filtroDataInicio || filtroDataFim || Object.keys(filtrosColuna).length > 0) && (
-          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltroDataInicio(""); setFiltroDataFim(""); setFiltrosColuna({}); }}
+        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || Object.keys(filtrosColuna).length > 0) && (
+          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); aplicarRange("hoje"); }}
             style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 10, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
             ✕ Limpar filtros
           </button>
