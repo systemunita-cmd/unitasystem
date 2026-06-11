@@ -39,7 +39,7 @@ type Proposta = {
   criado_por?: string | null;
   equipe_id_criador?: number | string | null;
 };
-type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; };
+type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; filas_acesso?: number[] | null; };
 
 // Cores semânticas dos status — mantêm padrão CRM (INSTALADA = verde, CANCELADA = vermelho)
 const statusColor: Record<string, string> = {
@@ -239,6 +239,11 @@ export default function Vendas() {
   }, [usuarios]);
   const meuRegistro = usuariosMap.get(userEmail.toLowerCase());
   const minhaFila = meuRegistro?.fila_id ?? null;
+  const minhasFilas: string[] = (() => {
+    const arr = Array.isArray(meuRegistro?.filas_acesso) ? (meuRegistro!.filas_acesso as any[]) : [];
+    const base = arr.length ? arr : (meuRegistro?.fila_id != null ? [meuRegistro.fila_id] : []);
+    return base.map((x: any) => String(x));
+  })();
   const minhaEquipe = meuRegistro?.equipe_id ?? null;
   const minhasEquipesAcesso: number[] = Array.isArray(meuRegistro?.equipes_acesso) ? (meuRegistro!.equipes_acesso as number[]) : [];
   const regDoVendedor = (emailVend: string) => usuariosMap.get((emailVend || "").toLowerCase());
@@ -485,7 +490,7 @@ export default function Vendas() {
   const fetchUsuarios = async (usouMock: boolean) => {
     let lista: Usuario[] = [];
     try {
-      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id, fila_id, equipes_acesso");
+      const { data: us } = await supabase.from("usuarios").select("email, nome, equipe_id, fila_id, equipes_acesso, filas_acesso");
       lista = (us || []) as Usuario[];
     } catch {
       // tabela não existe
@@ -825,7 +830,7 @@ export default function Vendas() {
       }
       if (veFila) {
         const rv = regDoVendedor(p.vendedor);
-        return minhaFila != null && !!rv && String(rv.fila_id ?? "") === String(minhaFila);
+        return minhasFilas.length > 0 && !!rv && minhasFilas.includes(String(rv.fila_id ?? ""));
       }
       return false;
     })

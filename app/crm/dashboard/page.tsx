@@ -7,6 +7,7 @@ import {
 } from "recharts";
 import { supabase } from "../../lib/supabase";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
+import { usePermissao } from "../../hooks/usePermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // DASHBOARD — Grupo Unita (single-tenant)
@@ -34,7 +35,7 @@ type Proposta = {
   equipe_id_criador?: number | null;
 };
 
-type Usuario = { email: string; nome: string };
+type Usuario = { email: string; nome: string; mostrar_ranking?: boolean };
 type Periodo = "hoje" | "semana" | "mes" | "trimestre";
 
 // 🔻 Todos os status que representam cancelamento/perda da venda.
@@ -89,6 +90,9 @@ function gerarMockData(): Proposta[] {
 export default function Dashboard() {
   const router = useRouter();
   const { equipeId, EquipeSelector } = useEquipeFiltro();
+  const { isDono, isSuperAdmin, perfil } = usePermissao();
+  // 🔓 Só admin/dono/super veem o dashboard completo. Os demais veem só quem o admin liberou.
+  const veTudo = isDono || isSuperAdmin || perfil === "Administrador";
   const [periodo, setPeriodo] = useState<Periodo>("mes");
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -116,8 +120,16 @@ export default function Dashboard() {
       let usouMock = false;
 
       try {
-        const { data: us, error: errUs } = await supabase.from("usuarios").select("email, nome");
-        if (errUs) throw errUs;
+        // tenta trazer o flag mostrar_ranking; se a coluna ainda não existe, cai no select simples
+        let us: any[] | null = null;
+        const r1 = await supabase.from("usuarios").select("email, nome, mostrar_ranking");
+        if (r1.error) {
+          const r2 = await supabase.from("usuarios").select("email, nome");
+          if (r2.error) throw r2.error;
+          us = r2.data;
+        } else {
+          us = r1.data;
+        }
         if (us) usuariosReais = us;
 
         if (us) {
@@ -164,15 +176,40 @@ export default function Dashboard() {
     init();
   }, [router]);
 
-  // 🔒 Filtra por equipe ANTES de tudo (Diretor vê só a equipe dele).
-  // Admin geral / Super Admin → equipeId vazio → vê tudo.
-  // Modo demo (mock) não filtra, pois os mocks não têm equipe.
+  // 👁️ E-mails que o admin liberou pra aparecer no ranking público (pros outros logins).
+  const emailsPublicos = useMemo(
+    () => new Set(usuarios.filter(u => u.mostrar_ranking).map(u => (u.email || "").toLowerCase())),
+    [usuarios]
+  );
+
+  // 🔒 Recorte do dashboard:
+  //   • Admin / Dono / Super → veem TODAS as propostas.
+  //   • Demais usuários → veem só as pessoas que o admin marcou (emailsPublicos).
+  //   Depois aplica o filtro de equipe do seletor. Modo demo (mock) não filtra.
   const propostasVisiveis = useMemo(() => {
-    if (!equipeId || modoDemo) return propostas;
-    return propostas.filter(
-      p => String(p.equipe_id_criador ?? "") === String(equipeId)
-    );
-  }, [propostas, equipeId, modoDemo]);
+    let base = propostas;
+    if (!modoDemo) {
+      if (!veTudo) {
+        base = base.filter(p => p.vendedor && emailsPublicos.has(p.vendedor.toLowerCase()));
+      }
+      if (equipeId) {
+        base = base.filter(p => String(p.equipe_id_criador ?? "") === String(equipeId));
+      }
+    }
+    return base;
+  }, [propostas, veTudo, emailsPublicos, equipeId, modoDemo]);
+
+  // 🔁 Liga/desliga quem aparece no ranking público. Salva no banco → vale pra todos os logins.
+  const toggleRanking = async (email: string, atual: boolean) => {
+    setUsuarios(prev => prev.map(u => u.email === email ? { ...u, mostrar_ranking: !atual } : u));
+    try {
+      const { error } = await supabase.from("usuarios").update({ mostrar_ranking: !atual }).eq("email", email);
+      if (error) throw error;
+    } catch (e) {
+      setUsuarios(prev => prev.map(u => u.email === email ? { ...u, mostrar_ranking: atual } : u));
+      console.error("[dashboard] erro ao salvar mostrar_ranking:", e);
+    }
+  };
 
   // ─── Helpers ─────────────────────────────────────────────────────────
   const nomeVendedor = (email: string): string => {
@@ -519,6 +556,40 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* ═══ PAINEL ADMIN: quem aparece no ranking público ═══ */}
+      {veTudo && !modoDemo && (
+        <details className="fade-up" style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 16, padding: isMobile ? 14 : 18, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <summary style={{ cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 15, display: "flex", alignItems: "center", gap: 8, listStyle: "none" }}>
+            <span>👁️</span> Quem aparece no ranking público
+            <span style={{ fontWeight: 500, color: "#94a3b8", fontSize: 12 }}>
+              ({usuarios.filter(u => u.mostrar_ranking).length} de {usuarios.length} visíveis pros outros)
+            </span>
+          </summary>
+          <p style={{ color: "#64748b", fontSize: 12.5, margin: "8px 0 14px", lineHeight: 1.5 }}>
+            Você (admin) vê tudo sempre. Os demais usuários veem o dashboard só com as pessoas marcadas abaixo — desligue os indicadores pra eles não aparecerem no ranking dos outros.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 8 }}>
+            {[...usuarios].sort((a, b) => (a.nome || a.email).localeCompare(b.nome || b.email)).map(u => {
+              const on = !!u.mostrar_ranking;
+              return (
+                <button key={u.email} onClick={() => toggleRanking(u.email, on)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${on ? "#bfdbfe" : "#e5e7eb"}`, background: on ? "#eff6ff" : "#f8fafc", cursor: "pointer", textAlign: "left" }}>
+                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>
+                    {u.nome || u.email}
+                  </span>
+                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: on ? "#2563eb" : "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 34, height: 18, borderRadius: 999, background: on ? "#2563eb" : "#cbd5e1", position: "relative", transition: "all .15s", display: "inline-block" }}>
+                      <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "all .15s" }} />
+                    </span>
+                    {on ? "Aparece" : "Oculto"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       {/* ═══ KPIs ═══ */}
       <div style={{
