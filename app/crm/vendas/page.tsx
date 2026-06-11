@@ -245,6 +245,19 @@ export default function Vendas() {
   const [dadosCustomizadosEdit, setDadosCustomizadosEdit] = useState<Record<string, any>>({});
   const [uploadandoEdit, setUploadandoEdit] = useState<Record<string, boolean>>({});
   const [salvando, setSalvando] = useState(false);
+  const [atualizando, setAtualizando] = useState(false);
+
+  // 🔄 Recarrega os dados da tela sem precisar de F5
+  const recarregarTudo = async () => {
+    if (atualizando) return;
+    setAtualizando(true);
+    try {
+      await fetchPropostas();
+      await Promise.all([fetchUsuarios(false), fetchListasAux(), fetchCamposUnificados(false)]);
+    } finally {
+      setAtualizando(false);
+    }
+  };
 
   // 📋 Copiar valor de campos de data no modal de edição (data nasce em input
   // type=date, que não deixa selecionar o texto — o botão resolve)
@@ -264,7 +277,38 @@ export default function Vendas() {
     setTimeout(() => setCopiadoSlug(s2 => (s2 === slug ? "" : s2)), 1500);
   };
 
-  const podeExcluir = isDono || perfil === "Administrador";
+  // 🔔 Notificações de NOVA PROPOSTA (toast no canto + bip)
+  const [notifs, setNotifs] = useState<{ id: number; titulo: string; msg: string }[]>([]);
+  const notifIdRef = useRef(0);
+  const notificarNovaProposta = (nova: any) => {
+    const id = ++notifIdRef.current;
+    const titulo = "🔔 Nova proposta no CRM!";
+    const msg = `${nova?.nome || "Cliente"} · ${nomeVendedor(nova?.vendedor || "")}${nova?.valor_plano ? ` · R$ ${Number(nova.valor_plano).toFixed(2).replace(".", ",")}` : ""}`;
+    setNotifs(prev => [...prev, { id, titulo, msg }]);
+    setTimeout(() => setNotifs(prev => prev.filter(n => n.id !== id)), 8000);
+    // bip curto (ignora se o navegador bloquear áudio sem interação)
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = 880; gain.gain.value = 0.08;
+      osc.start(); osc.stop(ctx.currentTime + 0.18);
+      osc.onended = () => ctx.close();
+    } catch { /* sem áudio, segue o toast */ }
+    // notificação do navegador, só se o usuário já tiver dado permissão
+    try {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification(titulo, { body: msg });
+      }
+    } catch { /* ignora */ }
+  };
+
+  // 🗑️ Excluir: só o VENDEDOR comum (que vê apenas as próprias vendas) NÃO pode.
+  //    Supervisor (fila), gerente (equipe), admin, dono e super podem.
+  const podeExcluir = isDono || isSuperAdmin || perfil === "Administrador"
+    || !!permissoes?.vendas_todas || !!permissoes?.vendas_equipe
+    || !!(permissoes as any)?.vendas_fila || !!permissoes?.usuarios_gerenciar;
   const podeEditarCamposCustom = isDono || perfil === "Administrador";
   const podeVerTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_equipe;
 
@@ -621,7 +665,10 @@ export default function Vendas() {
   useEffect(() => {
     if (loading || modoDemo) return; // sem realtime em modo demo
     const ch = supabase.channel("proposta_rt_unita")
-      .on("postgres_changes", { event: "*", schema: "public", table: "proposta" }, async () => { await fetchPropostas(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "proposta" }, async (payload: any) => {
+        if (payload?.eventType === "INSERT" && payload?.new) notificarNovaProposta(payload.new);
+        await fetchPropostas();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, () => fetchUsuarios(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "proposta_campos_customizados" }, () => fetchCamposUnificados(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "proposta_campos_padrao_config" }, () => fetchCamposUnificados(false))
@@ -1324,7 +1371,7 @@ export default function Vendas() {
 
       {/* Avisos rodapé */}
       {!podeExcluir && propostas.length > 0 && (
-        <p style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", margin: 0 }}>🔒 Apenas administradores podem excluir propostas.</p>
+        <p style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", margin: 0 }}>🔒 Vendedores não podem excluir propostas — somente supervisores, gerentes e administradores.</p>
       )}
       {!podeVerTudo && (
         <p style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", margin: 0 }}>👤 Você só vê suas próprias propostas. Pra ver as da equipe, peça ao admin para habilitar <b style={{ color: "#6b7280" }}>"Ver vendas da equipe"</b>.</p>
@@ -1436,11 +1483,45 @@ export default function Vendas() {
         </div>
       )}
 
-      {/* ═══ BOTÕES FLUTUANTES ↑↓ ═══ */}
+      {/* ═══ TOASTS DE NOVA PROPOSTA ═══ */}
+      {notifs.length > 0 && (
+        <div style={{ position: "fixed", top: 16, right: 16, zIndex: 2500, display: "flex", flexDirection: "column", gap: 8, maxWidth: 340 }}>
+          <style>{`@keyframes notifIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
+          {notifs.map(n => (
+            <div key={n.id} onClick={() => setNotifs(prev => prev.filter(x => x.id !== n.id))}
+              style={{
+                background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
+                color: "#ffffff", borderRadius: 12, padding: "12px 16px",
+                boxShadow: "0 10px 28px rgba(37,99,235,0.45)",
+                cursor: "pointer", animation: "notifIn 0.25s ease-out",
+              }}
+              title="Clique pra fechar">
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>{n.titulo}</p>
+              <p style={{ margin: "3px 0 0", fontSize: 12, opacity: 0.95 }}>{n.msg}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ BOTÕES FLUTUANTES 🔄↑↓ ═══ */}
       <div style={{
         position: "fixed", right: 16, bottom: 20, zIndex: 1500,
         display: "flex", flexDirection: "column", gap: 6,
       }}>
+        <style>{`@keyframes giraAtualiza { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        <button onClick={recarregarTudo} disabled={atualizando}
+          title={atualizando ? "Atualizando..." : "Atualizar dados (sem F5)"}
+          style={{
+            width: 42, height: 42, borderRadius: "50%",
+            background: "#ffffff",
+            color: "#2563eb", border: "1px solid #bfdbfe",
+            cursor: atualizando ? "wait" : "pointer", fontSize: 17,
+            boxShadow: "0 6px 16px rgba(0,0,0,0.10)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 700,
+          }}>
+          <span style={{ display: "inline-block", animation: atualizando ? "giraAtualiza 0.8s linear infinite" : "none" }}>🔄</span>
+        </button>
         {scrollY > 200 && (
           <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             title="Ir para o topo"
