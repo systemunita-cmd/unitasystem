@@ -175,6 +175,10 @@ function PropostaForm() {
   // CEP loading
   const [buscandoCep, setBuscandoCep] = useState(false);
 
+  // Busca de cliente por CPF (cadastro interno)
+  const [buscandoCpf, setBuscandoCpf] = useState(false);
+  const [cpfEncontrado, setCpfEncontrado] = useState(false);
+
   // Upload loading
   const [uploadando, setUploadando] = useState<Record<string, boolean>>({});
 
@@ -394,6 +398,49 @@ function PropostaForm() {
       }
     } catch (e) { /* ignore */ }
     setBuscandoCep(false);
+  };
+
+  // ═══ Busca de cliente pelo CPF no cadastro interno (tabela proposta) ═══
+  // Ao digitar um CPF completo (11 dígitos), procura a proposta mais recente
+  // com esse documento e preenche os dados pessoais que ainda estiverem vazios.
+  const buscarClientePorCpf = async (cpf: string) => {
+    const digitos = cpf.replace(/\D/g, "");
+    if (digitos.length !== 11) return; // só pessoa física
+    setBuscandoCpf(true);
+    setCpfEncontrado(false);
+    try {
+      const mascarado = mascaraCPF(digitos);
+      const { data } = await supabase
+        .from("proposta")
+        .select("nome, data_nascimento, nome_mae, rg, email, endereco, cep, cidade, estado, telefone1, telefone2, telefone3, dados_customizados, created_at")
+        .or(`cpf.eq.${mascarado},cpf.eq.${digitos}`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const cli: any = data && data[0];
+      if (cli) {
+        setForm(prev => {
+          const next: Record<string, any> = { ...prev };
+          const campos = ["nome", "data_nascimento", "nome_mae", "rg", "email", "endereco", "cep", "cidade", "estado", "telefone1", "telefone2", "telefone3"];
+          campos.forEach(k => {
+            const v = cli[k];
+            const vazio = next[k] == null || String(next[k]).trim() === "";
+            if (v != null && String(v).trim() !== "" && vazio) next[k] = v;
+          });
+          return next;
+        });
+        const dcAnt = cli.dados_customizados || {};
+        if (dcAnt.numero_ou_complemento) {
+          setDadosCustomizados(prev =>
+            (prev.numero_ou_complemento == null || String(prev.numero_ou_complemento).trim() === "")
+              ? { ...prev, numero_ou_complemento: dcAnt.numero_ou_complemento }
+              : prev
+          );
+        }
+        setDirty(true);
+        setCpfEncontrado(true);
+      }
+    } catch (e) { /* ignore */ }
+    setBuscandoCpf(false);
   };
 
   // ═══ UPLOAD ═══
@@ -1026,8 +1073,24 @@ function PropostaForm() {
         input = tipoPessoa === "cnpj"
           ? <input placeholder="00.000.000/0000-00" value={valorEfetivo}
               onChange={e => set(mascaraCNPJ(e.target.value))} style={inputStyleParaCampo(c)} />
-          : <input placeholder={c.placeholder || "000.000.000-00"} value={valorEfetivo}
-              onChange={e => set(mascaraCPF(e.target.value))} style={inputStyleParaCampo(c)} />;
+          : (
+            <div style={{ position: "relative" }}>
+              <input placeholder={c.placeholder || "000.000.000-00"} value={valorEfetivo}
+                onChange={e => {
+                  const v = mascaraCPF(e.target.value);
+                  set(v);
+                  setCpfEncontrado(false);
+                  if (v.replace(/\D/g, "").length === 11) buscarClientePorCpf(v);
+                }}
+                style={inputStyleParaCampo(c)} />
+              {buscandoCpf && (
+                <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#2563eb", fontSize: 11, fontWeight: 700 }}>🔍 Buscando...</span>
+              )}
+              {!buscandoCpf && cpfEncontrado && (
+                <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#16a34a", fontSize: 11, fontWeight: 700 }}>✓ Cliente encontrado</span>
+              )}
+            </div>
+          );
       } else if (c.slug === "cep") {
         input = (
           <div style={{ position: "relative" }}>
