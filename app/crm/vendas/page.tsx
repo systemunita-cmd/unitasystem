@@ -280,22 +280,65 @@ export default function Vendas() {
   // 🔔 Notificações de NOVA PROPOSTA (toast no canto + bip)
   const [notifs, setNotifs] = useState<{ id: number; titulo: string; msg: string }[]>([]);
   const notifIdRef = useRef(0);
+
+  // 🔊 O navegador bloqueia áudio criado sem gesto do usuário (autoplay policy).
+  //    Destrava o AudioContext no PRIMEIRO clique/tecla e reaproveita ele nos bips.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  useEffect(() => {
+    const destravar = () => {
+      try {
+        if (!audioCtxRef.current) {
+          const AC = window.AudioContext || (window as any).webkitAudioContext;
+          if (AC) audioCtxRef.current = new AC();
+        }
+        if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
+          audioCtxRef.current.resume();
+        }
+      } catch { /* sem áudio */ }
+    };
+    window.addEventListener("pointerdown", destravar);
+    window.addEventListener("keydown", destravar);
+    return () => {
+      window.removeEventListener("pointerdown", destravar);
+      window.removeEventListener("keydown", destravar);
+      try { audioCtxRef.current?.close(); } catch {}
+    };
+  }, []);
+
+  const tocarBip = async () => {
+    try {
+      let ctx = audioCtxRef.current;
+      if (!ctx) {
+        const AC = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+        audioCtxRef.current = ctx;
+      }
+      if (ctx.state === "suspended") await ctx.resume();
+      if (ctx.state !== "running") return; // usuário ainda não interagiu com a página
+      // dois tons rápidos (ding-ding), mais audível que um beep seco
+      const agora = ctx.currentTime;
+      [[880, 0], [1175, 0.16]].forEach(([freq, off]) => {
+        const osc = ctx!.createOscillator();
+        const gain = ctx!.createGain();
+        osc.connect(gain); gain.connect(ctx!.destination);
+        osc.type = "sine";
+        osc.frequency.value = freq as number;
+        const ini = agora + (off as number);
+        gain.gain.setValueAtTime(0.0001, ini);
+        gain.gain.exponentialRampToValueAtTime(0.22, ini + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ini + 0.22);
+        osc.start(ini); osc.stop(ini + 0.24);
+      });
+    } catch { /* sem áudio, segue o toast */ }
+  };
   const notificarNovaProposta = (nova: any) => {
     const id = ++notifIdRef.current;
     const titulo = "🔔 Nova proposta no CRM!";
     const msg = `${nova?.nome || "Cliente"} · ${nomeVendedor(nova?.vendedor || "")}${nova?.valor_plano ? ` · R$ ${Number(nova.valor_plano).toFixed(2).replace(".", ",")}` : ""}`;
     setNotifs(prev => [...prev, { id, titulo, msg }]);
     setTimeout(() => setNotifs(prev => prev.filter(n => n.id !== id)), 8000);
-    // bip curto (ignora se o navegador bloquear áudio sem interação)
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 880; gain.gain.value = 0.08;
-      osc.start(); osc.stop(ctx.currentTime + 0.18);
-      osc.onended = () => ctx.close();
-    } catch { /* sem áudio, segue o toast */ }
+    tocarBip();
     // notificação do navegador, só se o usuário já tiver dado permissão
     try {
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
