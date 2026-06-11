@@ -138,6 +138,7 @@ function PropostaForm() {
   const [ehAdmin, setEhAdmin] = useState<boolean>(false);
   const [minhaFilaId, setMinhaFilaId] = useState<number | string | null>(null);
   const [minhasEquipesAcesso, setMinhasEquipesAcesso] = useState<number[]>([]);
+  const [minhasFilasAcesso, setMinhasFilasAcesso] = useState<number[]>([]);
 
   const [equipesAuto, setEquipesAuto] = useState<EquipeOpt[]>([]);
   const [filasAuto, setFilasAuto] = useState<FilaOpt[]>([]);
@@ -196,7 +197,7 @@ function PropostaForm() {
 
         // ── Carrega lista de usuários (e detecta admin) ──
         const respUsuarios = await supabase.from("usuarios")
-          .select("id, email, nome, role, fila_id, equipe_id, equipes_acesso")
+          .select("id, email, nome, role, fila_id, equipe_id, equipes_acesso, filas_acesso")
           .order("nome");
 
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");
@@ -216,6 +217,7 @@ function PropostaForm() {
         const meuRaw = (respUsuarios.data || []).find((u: any) => u.email?.toLowerCase() === user.email?.toLowerCase());
         setMinhaFilaId(meuRaw?.fila_id ?? null);
         setMinhasEquipesAcesso(Array.isArray(meuRaw?.equipes_acesso) ? meuRaw.equipes_acesso : []);
+        setMinhasFilasAcesso(Array.isArray(meuRaw?.filas_acesso) ? meuRaw.filas_acesso : []);
 
         setForm(p => ({ ...p, vendedor: user.email || "" }));
         setCarregandoUsuarios(false);
@@ -694,9 +696,19 @@ function PropostaForm() {
     }
     return null;
   })();
-  const filasParaFila = pdvEquipeSelecionada
-    ? filasVisiveis.filter(f => String(f.equipe_id ?? "") === pdvEquipeSelecionada)
+  // 🔒 Filas próprias do usuário: usa filas_acesso (várias); cai no fila_id legado se vazio.
+  const minhasFilasIds: string[] = (() => {
+    const arr = minhasFilasAcesso.length ? minhasFilasAcesso : (minhaFilaId != null ? [minhaFilaId] : []);
+    return arr.map(x => String(x));
+  })();
+  // Se o usuário (não admin geral) tem filas específicas, o campo EQUIPE só mostra as dele;
+  // senão mostra todas as filas visíveis. Depois filtra pela equipe (PDV) escolhida.
+  const filasBasePermitidas = (!ehAdminGeralProp && minhasFilasIds.length > 0)
+    ? filasVisiveis.filter(f => minhasFilasIds.includes(String(f.id)))
     : filasVisiveis;
+  const filasParaFila = pdvEquipeSelecionada
+    ? filasBasePermitidas.filter(f => String(f.equipe_id ?? "") === pdvEquipeSelecionada)
+    : filasBasePermitidas;
 
   // 🔗 EQUIPE selecionada (campo do tipo "fila") — usada junto com o PDV pra filtrar.
   const filaSelecionada = (() => {
@@ -728,7 +740,7 @@ function PropostaForm() {
 
   // 🔒 Fila do próprio usuário (puxada do cadastro). Quem tem fila e NÃO cobre várias equipes
   //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
-  const filaForcada = (!ehAdminGeralProp && minhaFilaId != null && minhasEquipesAcesso.length <= 1) ? String(minhaFilaId) : null;
+  const filaForcada = (!ehAdminGeralProp && minhasFilasIds.length === 1 && minhasEquipesAcesso.length <= 1) ? minhasFilasIds[0] : null;
   const travadoFila = filaForcada !== null;
 
   // 👨‍💼 Quem pode ESCOLHER o vendedor (não trava no próprio usuário):
