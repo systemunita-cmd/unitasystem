@@ -133,7 +133,7 @@ const iconeArquivo = (tipo: string): string => {
 
 export default function Vendas() {
   const router = useRouter();
-  const { isDono, perfil, permissoes } = usePermissao();
+  const { isDono, perfil, permissoes, isSuperAdmin } = usePermissao();
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [loading, setLoading] = useState(true);
   const [modoDemo, setModoDemo] = useState(false);
@@ -228,7 +228,7 @@ export default function Vendas() {
   //   • veEquipe ("ver vendas da equipe") → vê só os vendedores da PRÓPRIA FILA
   //     (cai pra própria EQUIPE/PDV se o usuário não tiver fila definida).
   //   • Sem nada disso → vê só as próprias.
-  const veTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_todas;
+  const veTudo = isDono || isSuperAdmin || perfil === "Administrador";
   const veEquipe = !!permissoes?.vendas_equipe;
   // Map e-mail -> usuário (O(1)) — evita varrer a lista de usuários por linha (lento com 7,5k vendas)
   const usuariosMap = useMemo(() => {
@@ -808,22 +808,15 @@ export default function Vendas() {
   };
 
   const propostasFiltradas = useMemo(() => propostas
-    // 👁️ Recorte de visibilidade (vendedor vê só a própria fila):
+    // 👁️ Recorte de visibilidade — REGRA ESTRITA:
+    //   • Dono / Super admin / Administrador → veem TODAS as vendas (pra gerenciar).
+    //   • Qualquer outro login (atendente/vendedor) → vê SOMENTE as próprias vendas.
+    //   A comparação de desempenho entre todos fica só no Dashboard, nunca aqui.
     .filter(p => {
-      if (veTudo) return true; // super/admin/dono vê tudo
+      if (veTudo) return true;
       const minha = (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
         || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase());
-      if (minha) return true; // sempre vê as próprias
-      // 🔓 Acesso multi-equipe (BKO/gerente): vê as vendas das equipes liberadas pra ele
-      if (minhasEquipesAcesso.length > 0) {
-        return minhasEquipesAcesso.some(id => String(id) === String(p.equipe_id_criador));
-      }
-      if (veEquipe) {
-        const rv = regDoVendedor(p.vendedor);
-        if (minhaFila != null) return !!rv && String(rv.fila_id ?? "") === String(minhaFila);     // mesma FILA
-        if (minhaEquipe != null) return !!rv && String(rv.equipe_id ?? "") === String(minhaEquipe); // mesma EQUIPE/PDV
-      }
-      return false;
+      return !!minha;
     })
     // 🔒 O seletor de equipe (que vem do localStorage) só filtra quem vê tudo.
     // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
