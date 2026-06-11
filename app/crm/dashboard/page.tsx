@@ -332,16 +332,25 @@ export default function Dashboard() {
     return { val: Math.abs(diff), up: diff >= 0 };
   };
 
-  // Ranking de vendedores por receita
+  // Ranking de vendedores por receita (instaladas + aguardando instalação)
   const rankingVendedores = useMemo(() => {
-    return Object.entries(
-      pf.filter(p => normStatus(p.status_venda) === "INSTALADA").reduce((acc: Record<string, number>, p) => {
-        if (p.vendedor) acc[p.vendedor] = (acc[p.vendedor] || 0) + (p.valor_plano || 0);
-        return acc;
-      }, {})
-    )
-      .map(([k, v]) => ({ nome: nomeVendedor(k), valor: v, key: k }))
-      .sort((a, b) => b.valor - a.valor);
+    const acc: Record<string, { inst: number; aguard: number }> = {};
+    for (const p of pf) {
+      if (!p.vendedor) continue;
+      const st = normStatus(p.status_venda);
+      if (st !== "INSTALADA" && st !== "AGUARDANDO INSTALAÇÃO") continue;
+      if (!acc[p.vendedor]) acc[p.vendedor] = { inst: 0, aguard: 0 };
+      if (st === "INSTALADA") acc[p.vendedor].inst += p.valor_plano || 0;
+      else acc[p.vendedor].aguard += p.valor_plano || 0;
+    }
+    return Object.entries(acc)
+      .map(([k, v]) => {
+        const nome = nomeVendedor(k);
+        const partes = nome.trim().split(/\s+/);
+        const nomeCurto = partes.length > 1 ? `${partes[0]} ${partes[1].charAt(0)}.` : partes[0];
+        return { nome, nomeCurto, valor: v.inst, aguardando: v.aguard, key: k };
+      })
+      .sort((a, b) => b.valor - a.valor || b.aguardando - a.aguardando);
   }, [pf, usuarios]);
 
   // Funil por vendedor
@@ -391,16 +400,22 @@ export default function Dashboard() {
       const k = d.toISOString().slice(0, 10);
       dias[k] = 0;
     }
+    const diasAguard: Record<string, number> = {};
+    Object.keys(dias).forEach(k => { diasAguard[k] = 0; });
     propostasVisiveis.forEach(p => {
-      if (normStatus(p.status_venda) !== "INSTALADA") return;
+      const st = normStatus(p.status_venda);
+      if (st !== "INSTALADA" && st !== "AGUARDANDO INSTALAÇÃO") return;
       const k = p.created_at.slice(0, 10);
-      if (dias[k] !== undefined) dias[k] += p.valor_plano || 0;
+      if (dias[k] === undefined) return;
+      if (st === "INSTALADA") dias[k] += p.valor_plano || 0;
+      else diasAguard[k] += p.valor_plano || 0;
     });
     return Object.entries(dias).map(([data, receita]) => {
       const d = new Date(data + "T12:00:00");
       return {
         data: `${d.getDate().toString().padStart(2, "0")}/${(d.getMonth() + 1).toString().padStart(2, "0")}`,
         receita,
+        aguardando: diasAguard[data] || 0,
       };
     });
   }, [propostasVisiveis]);
@@ -792,7 +807,7 @@ export default function Dashboard() {
                 letterSpacing: -0.2,
               }}>Receita — últimos 30 dias</h3>
               <p style={{ color: "#64748b", fontSize: 12, margin: "4px 0 0" }}>
-                Evolução das vendas instaladas
+                Instaladas + aguardando instalação
               </p>
             </div>
             <div style={{
@@ -802,6 +817,13 @@ export default function Dashboard() {
             }}>
               R$ {receitaPorDia.reduce((acc, d) => acc + d.receita, 0).toLocaleString("pt-BR")}
             </div>
+            <div style={{
+              background: "#e0f2fe", color: "#0369a1",
+              fontSize: 11, fontWeight: 700, padding: "4px 10px",
+              borderRadius: 8, letterSpacing: 0.3, marginLeft: 6,
+            }}>
+              + R$ {receitaPorDia.reduce((acc, d) => acc + (d.aguardando || 0), 0).toLocaleString("pt-BR")} aguard.
+            </div>
           </div>
           <ResponsiveContainer width="100%" height={isMobile ? 200 : 240}>
             <AreaChart data={receitaPorDia} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
@@ -809,6 +831,10 @@ export default function Dashboard() {
                 <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
                   <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="colorAguard" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.30} />
+                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -820,10 +846,12 @@ export default function Dashboard() {
                   borderRadius: 10, fontSize: 12, padding: "8px 12px",
                   boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
                 }}
-                formatter={(value: any) => [`R$ ${Number(value).toLocaleString("pt-BR")}`, "Receita"]}
+                formatter={(value: any, nomeSerie: any) => [`R$ ${Number(value).toLocaleString("pt-BR")}`, nomeSerie]}
                 labelStyle={{ color: "#64748b", fontSize: 11, fontWeight: 600 }}
               />
-              <Area type="monotone" dataKey="receita" stroke="#2563eb" strokeWidth={2.5} fill="url(#colorReceita)" />
+              <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+              <Area type="monotone" dataKey="receita" name="Instaladas" stroke="#2563eb" strokeWidth={2.5} fill="url(#colorReceita)" />
+              <Area type="monotone" dataKey="aguardando" name="Aguardando inst." stroke="#0ea5e9" strokeWidth={2} fill="url(#colorAguard)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -899,14 +927,14 @@ export default function Dashboard() {
             <span>🏆</span> Ranking de vendedores
           </h3>
           <p style={{ color: "#64748b", fontSize: 12, margin: "0 0 18px" }}>
-            Por receita de vendas instaladas · {periodoLabel[periodo]}
+            Instaladas + aguardando instalação · {periodoLabel[periodo]}
           </p>
           {rankingVendedores.length === 0 ? (
             <p style={{ color: "#94a3b8", fontSize: 13, fontStyle: "italic" }}>Sem vendas no período.</p>
           ) : (
             <>
               <ResponsiveContainer width="100%" height={isMobile ? 180 : 220}>
-                <BarChart data={rankingVendedores} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
+                <BarChart data={rankingVendedores.slice(0, 10)} margin={{ top: 5, right: 5, left: -15, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorBar" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#3b82f6" />
@@ -914,7 +942,7 @@ export default function Dashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="nome" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} interval={0} angle={isMobile ? -25 : 0} textAnchor={isMobile ? "end" : "middle"} height={isMobile ? 55 : 30} />
+                  <XAxis dataKey="nomeCurto" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} interval={0} angle={-30} textAnchor="end" height={isMobile ? 60 : 55} />
                   <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
                   <Tooltip
                     contentStyle={{
@@ -922,10 +950,12 @@ export default function Dashboard() {
                       borderRadius: 10, fontSize: 12, padding: "8px 12px",
                       boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
                     }}
-                    formatter={(v: any) => [`R$ ${Number(v).toLocaleString("pt-BR")}`, "Receita"]}
+                    formatter={(v: any, nomeSerie: any) => [`R$ ${Number(v).toLocaleString("pt-BR")}`, nomeSerie]}
                     cursor={{ fill: "#eff6ff" }}
                   />
-                  <Bar dataKey="valor" fill="url(#colorBar)" radius={[8, 8, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
+                  <Bar dataKey="valor" name="Instaladas" stackId="rk" fill="url(#colorBar)" />
+                  <Bar dataKey="aguardando" name="Aguardando inst." stackId="rk" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 16 }}>
@@ -958,11 +988,18 @@ export default function Dashboard() {
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         }}>{v.nome}</span>
                       </div>
-                      <span style={{
-                        color: i === 0 ? "#92400e" : "#1d4ed8",
-                        fontSize: 13, fontWeight: 800, letterSpacing: -0.3,
-                      }}>
-                        R$ {v.valor.toLocaleString("pt-BR")}
+                      <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                        <span style={{
+                          color: i === 0 ? "#92400e" : "#1d4ed8",
+                          fontSize: 13, fontWeight: 800, letterSpacing: -0.3,
+                        }}>
+                          R$ {v.valor.toLocaleString("pt-BR")}
+                        </span>
+                        {v.aguardando > 0 && (
+                          <span style={{ color: "#0ea5e9", fontSize: 10.5, fontWeight: 700 }}>
+                            + R$ {v.aguardando.toLocaleString("pt-BR")} aguard.
+                          </span>
+                        )}
                       </span>
                     </div>
                   );
