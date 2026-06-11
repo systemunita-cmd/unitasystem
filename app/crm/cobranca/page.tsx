@@ -268,6 +268,9 @@ export default function CobrancaPage() {
   const [filtroBusca, setFiltroBusca] = useState("");
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
+  const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
+  const [clienteSel, setClienteSel] = useState<number | null>(null);
+  const [buscaCliente, setBuscaCliente] = useState("");
 
   const [showStatus, setShowStatus] = useState<Fatura | null>(null);
   const [novoStatus, setNovoStatus] = useState<StatusFatura>("paga");
@@ -421,6 +424,7 @@ export default function CobrancaPage() {
 
   const faturasFiltradas = useMemo(() => {
     let arr = todasFaturas;
+    if (clienteSel != null) arr = arr.filter(f => f.proposta.id === clienteSel);
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
@@ -458,7 +462,40 @@ export default function CobrancaPage() {
       if (oa !== ob) return oa - ob;
       return a.data_vencimento.getTime() - b.data_vencimento.getTime();
     });
-  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca]);
+  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel]);
+
+  // 🆕 Lista de clientes do lado: agrupa faturas por cliente e calcula situação.
+  const clientes = useMemo<any[]>(() => {
+    const map = new Map<number, any>();
+    for (const f of todasFaturas) {
+      const id = f.proposta.id;
+      let c = map.get(id);
+      if (!c) { c = { proposta: f.proposta, faturas: [], totalAberto: 0, atrasadas: 0, atrasoMax: 0 }; map.set(id, c); }
+      c.faturas.push(f);
+      const meta = STATUS_META[f.status_visual];
+      if (meta?.pendencia) c.totalAberto += f.valor;
+      if (f.status_visual === "atrasada") { c.atrasadas++; c.atrasoMax = Math.max(c.atrasoMax, f.dias_atraso); }
+    }
+    const arr = Array.from(map.values()).map(c => ({ ...c, situacao: c.atrasadas > 0 ? "inadimplente" : "em_dia" }));
+    return arr.sort((a, b) => {
+      const ina = a.situacao === "inadimplente", inb = b.situacao === "inadimplente";
+      if (ina !== inb) return ina ? -1 : 1;
+      if (b.atrasoMax !== a.atrasoMax) return b.atrasoMax - a.atrasoMax;
+      return b.totalAberto - a.totalAberto;
+    });
+  }, [todasFaturas]);
+  const qtdInad = useMemo(() => clientes.filter(c => c.situacao === "inadimplente").length, [clientes]);
+  const qtdEmDia = useMemo(() => clientes.length - qtdInad, [clientes, qtdInad]);
+  const clientesFiltrados = useMemo(() => {
+    let arr = clientes;
+    if (segmento === "inadimplentes") arr = arr.filter(c => c.situacao === "inadimplente");
+    else if (segmento === "em_dia") arr = arr.filter(c => c.situacao === "em_dia");
+    if (buscaCliente) {
+      const b = buscaCliente.toLowerCase();
+      arr = arr.filter(c => (c.proposta.nome || "").toLowerCase().includes(b) || (c.proposta.telefone1 || "").includes(b) || (c.proposta.plano || "").toLowerCase().includes(b));
+    }
+    return arr;
+  }, [clientes, segmento, buscaCliente]);
 
   const kpis = useMemo(() => {
     const hoje = new Date();
@@ -861,7 +898,62 @@ export default function CobrancaPage() {
         <>
           {/* ════════════ ABA: DO CRM ════════════ */}
           {aba === "do_crm" && (
-            <>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr", gap: 14, alignItems: "start" }}>
+              {/* 🆕 LISTA DE CLIENTES DO LADO (inadimplente / em dia) */}
+              <div style={{ ...cardStyle, overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: isMobile ? 420 : "calc(100vh - 190px)" }}>
+                <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #f1f5f9" }}>
+                  {([
+                    { k: "inadimplentes", l: "Inadimplentes", n: qtdInad, cor: "#dc2626" },
+                    { k: "em_dia", l: "Em dia", n: qtdEmDia, cor: "#16a34a" },
+                    { k: "todos", l: "Todos", n: clientes.length, cor: "#475569" },
+                  ] as { k: "inadimplentes" | "em_dia" | "todos"; l: string; n: number; cor: string }[]).map(seg => {
+                    const at = segmento === seg.k;
+                    return (
+                      <button key={seg.k} onClick={() => { setSegmento(seg.k); setClienteSel(null); }}
+                        style={{ flex: 1, background: at ? seg.cor : "#ffffff", color: at ? "#ffffff" : "#6b7280", border: `1px solid ${at ? seg.cor : "#e5e7eb"}`, borderRadius: 10, padding: "7px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1.3 }}>
+                        {seg.l}<br /><span style={{ fontSize: 15, fontWeight: 800 }}>{seg.n}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
+                  <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Buscar cliente..." style={{ ...inputStyle, padding: "8px 12px" }} />
+                </div>
+                <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
+                  {clienteSel != null && (
+                    <button onClick={() => setClienteSel(null)} style={{ width: "100%", textAlign: "center", border: "none", borderBottom: "1px solid #f3f4f6", background: "#f9fafb", color: "#2563eb", fontSize: 12, fontWeight: 700, padding: "8px", cursor: "pointer" }}>← Ver todas as faturas</button>
+                  )}
+                  {clientesFiltrados.length === 0 ? (
+                    <div style={{ padding: 28, textAlign: "center", color: "#9ca3af", fontSize: 12.5 }}>Nenhum cliente nesse filtro.</div>
+                  ) : clientesFiltrados.map(c => {
+                    const inad = c.situacao === "inadimplente";
+                    const selc = c.proposta.id === clienteSel;
+                    return (
+                      <button key={c.proposta.id} onClick={() => { setClienteSel(c.proposta.id); setSelecionadasFat(new Set()); }}
+                        style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: selc ? "#eff6ff" : "#ffffff", cursor: "pointer" }}>
+                        <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</div>
+                          <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
+                        </div>
+                        <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                          {inad ? (
+                            <>
+                              <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 800 }}>{formatBRL(c.totalAberto)}</div>
+                              <div style={{ color: "#9ca3af", fontSize: 10 }}>{c.atrasadas} mês · {c.atrasoMax}d</div>
+                            </>
+                          ) : (
+                            <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>em dia</div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* COLUNA DIREITA — conteúdo ORIGINAL (filtros + tabela) */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ ...cardStyle, padding: isMobile ? 12 : 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 {([
                   { k: "vencendo_7d", l: "🟡 Próximos 7 dias", cor: "#f59e0b" },
@@ -1022,7 +1114,8 @@ export default function CobrancaPage() {
                   </div>
                 )}
               </div>
-            </>
+              </div>
+            </div>
           )}
 
           {/* ════════════ ABA: PLANILHA ════════════ */}
