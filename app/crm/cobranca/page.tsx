@@ -203,27 +203,27 @@ const substituirVars = (texto: string, vars: Record<string, string>): string =>
 // ─── ESTILOS ───────────────────────────────────────────────────────────────
 const cardStyle = {
   background: "#ffffff",
-  borderRadius: 16,
-  border: "1px solid #ececf1",
-  boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
+  borderRadius: 14,
+  border: "1px solid #e5e7eb",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
 };
 const inputStyle = {
-  background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 10,
-  padding: "10px 12px", color: "#0f172a", fontSize: 13, outline: "none",
+  background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10,
+  padding: "9px 12px", color: "#1f2937", fontSize: 13, outline: "none",
   width: "100%", boxSizing: "border-box" as const,
 };
 const labelStyle = {
-  color: "#64748b", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
+  color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const,
   letterSpacing: 0.5, display: "block", marginBottom: 6,
 };
 const btnPrimario = {
-  background: "#d97706",
+  background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
   color: "#ffffff", border: "none", borderRadius: 10, padding: "10px 18px",
   fontSize: 13, cursor: "pointer", fontWeight: 700,
-  boxShadow: "0 1px 2px rgba(217,119,6,0.35)",
+  boxShadow: "0 4px 12px rgba(220,38,38,0.3)",
 };
 const btnSecundario = {
-  background: "#ffffff", color: "#334155", border: "1px solid #e2e8f0",
+  background: "#ffffff", color: "#374151", border: "1px solid #e5e7eb",
   borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600,
 };
 
@@ -268,8 +268,6 @@ export default function CobrancaPage() {
   const [filtroBusca, setFiltroBusca] = useState("");
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
-  const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
-  const [clienteSel, setClienteSel] = useState<number | null>(null);
 
   const [showStatus, setShowStatus] = useState<Fatura | null>(null);
   const [novoStatus, setNovoStatus] = useState<StatusFatura>("paga");
@@ -462,52 +460,6 @@ export default function CobrancaPage() {
     });
   }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca]);
 
-  // 🆕 Central de cobrança: agrupa as faturas por cliente e calcula a situação.
-  const clientes = useMemo<any[]>(() => {
-    const map = new Map<number, any>();
-    for (const f of todasFaturas) {
-      const id = f.proposta.id;
-      let c = map.get(id);
-      if (!c) { c = { proposta: f.proposta, faturas: [], totalAberto: 0, atrasadas: 0, atrasoMax: 0, qtdAbertas: 0 }; map.set(id, c); }
-      c.faturas.push(f);
-      const meta = STATUS_META[f.status_visual];
-      if (meta?.pendencia) { c.totalAberto += f.valor; c.qtdAbertas++; }
-      if (f.status_visual === "atrasada") { c.atrasadas++; c.atrasoMax = Math.max(c.atrasoMax, f.dias_atraso); }
-    }
-    const arr = Array.from(map.values()).map(c => ({
-      ...c,
-      situacao: c.atrasadas > 0 ? "inadimplente" : "em_dia",
-      faturas: [...c.faturas].sort((a: Fatura, b: Fatura) => b.data_vencimento.getTime() - a.data_vencimento.getTime()),
-    }));
-    return arr.sort((a, b) => {
-      const ina = a.situacao === "inadimplente", inb = b.situacao === "inadimplente";
-      if (ina !== inb) return ina ? -1 : 1;
-      if (b.atrasoMax !== a.atrasoMax) return b.atrasoMax - a.atrasoMax;
-      return b.totalAberto - a.totalAberto;
-    });
-  }, [todasFaturas]);
-
-  const qtdInad = useMemo(() => clientes.filter(c => c.situacao === "inadimplente").length, [clientes]);
-  const qtdEmDia = useMemo(() => clientes.length - qtdInad, [clientes, qtdInad]);
-
-  const clientesFiltrados = useMemo(() => {
-    let arr = clientes;
-    if (segmento === "inadimplentes") arr = arr.filter(c => c.situacao === "inadimplente");
-    else if (segmento === "em_dia") arr = arr.filter(c => c.situacao === "em_dia");
-    if (filtroBusca) {
-      const b = filtroBusca.toLowerCase();
-      arr = arr.filter(c =>
-        (c.proposta.nome || "").toLowerCase().includes(b) ||
-        (c.proposta.telefone1 || "").includes(b) ||
-        (c.proposta.plano || "").toLowerCase().includes(b));
-    }
-    return arr;
-  }, [clientes, segmento, filtroBusca]);
-
-  const clienteAtual = useMemo(
-    () => clientesFiltrados.find(c => c.proposta.id === clienteSel) || clientesFiltrados[0] || null,
-    [clientesFiltrados, clienteSel]);
-
   const kpis = useMemo(() => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
@@ -615,13 +567,13 @@ export default function CobrancaPage() {
     });
   };
 
-  const abrirEnvioCrm = (faturasParaCobrar?: Fatura[]) => {
-    const base = faturasParaCobrar ?? todasFaturas.filter(f => selecionadasFat.has(chaveSelecao(f)));
-    if (base.length === 0) {
+  const abrirEnvioCrm = () => {
+    if (selecionadasFat.size === 0) {
       setFeedback({ tipo: "aviso", titulo: "Nenhuma fatura selecionada", mensagem: "Marque ao menos uma fatura pra disparar a cobrança." });
       return;
     }
-    const contatos = base
+    const contatos = faturasFiltradas
+      .filter(f => selecionadasFat.has(chaveSelecao(f)))
       .map(f => {
         const p = f.proposta;
         const tel = normalizarTelefone(p.telefone1) || normalizarTelefone(p.telefone2) || normalizarTelefone(p.telefone3);
@@ -847,13 +799,13 @@ export default function CobrancaPage() {
   return (
     <div style={{ padding: isMobile ? 14 : 24, background: "#f8fafc", minHeight: "100vh", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* HEADER */}
-      <div style={{ ...cardStyle, padding: isMobile ? 16 : "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>💰</div>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #4f46e5 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>💰</div>
           <div>
-            <h1 style={{ color: "#0f172a", fontSize: isMobile ? 18 : 22, fontWeight: 800, margin: 0, letterSpacing: -0.4 }}>Cobrança</h1>
-            <p style={{ color: "#94a3b8", fontSize: 12.5, margin: "2px 0 0" }}>
-              Grupo Unita · receba e acompanhe as mensalidades dos clientes
+            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 17 : 20, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>Cobrança</h1>
+            <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
+              UnitaSystem · <b style={{ color: "#2563eb" }}>Grupo Unita</b> · Cobre direto do CRM ou suba uma planilha
             </p>
           </div>
         </div>
@@ -908,149 +860,172 @@ export default function CobrancaPage() {
       ) : (
         <>
           {/* ════════════ ABA: DO CRM ════════════ */}
-          {aba === "do_crm" && (() => {
-            const clienteSelEfetivo = clienteAtual?.proposta.id ?? null;
-            const segs = [
-              { k: "inadimplentes", l: "Inadimplentes", n: qtdInad, cor: "#dc2626" },
-              { k: "em_dia", l: "Em dia", n: qtdEmDia, cor: "#059669" },
-              { k: "todos", l: "Todos", n: clientes.length, cor: "#475569" },
-            ] as { k: "inadimplentes" | "em_dia" | "todos"; l: string; n: number; cor: string }[];
-            return (
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(300px, 360px) 1fr", gap: 14, alignItems: "start" }}>
+          {aba === "do_crm" && (
+            <>
+              <div style={{ ...cardStyle, padding: isMobile ? 12 : 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {([
+                  { k: "vencendo_7d", l: "🟡 Próximos 7 dias", cor: "#f59e0b" },
+                  { k: "hoje",        l: "⏰ Vencendo hoje",    cor: "#ea580c" },
+                  { k: "vencidos",    l: "🔴 Vencidos",         cor: "#dc2626" },
+                  { k: "este_mes",    l: "📅 Este mês",         cor: "#2563eb" },
+                  { k: "todos",       l: "🌐 Todos",            cor: "#6b7280" },
+                ] as { k: FiltroVenc; l: string; cor: string }[]).map(f => {
+                  const at = filtroVenc === f.k;
+                  return (
+                    <button key={f.k} onClick={() => { setFiltroVenc(f.k); setSelecionadasFat(new Set()); }}
+                      style={{ background: at ? `${f.cor}15` : "#ffffff", color: at ? f.cor : "#6b7280", border: `1px solid ${at ? f.cor : "#e5e7eb"}`, borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: at ? 700 : 600, whiteSpace: "nowrap" }}>
+                      {f.l}
+                    </button>
+                  );
+                })}
+                <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="🔍 Buscar nome/telefone/plano..."
+                  style={{ ...inputStyle, flex: 1, minWidth: 180, padding: "7px 12px" }} />
+              </div>
 
-                {/* ESQUERDA — clientes por situação */}
-                <div style={{ ...cardStyle, overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: isMobile ? 460 : "calc(100vh - 200px)" }}>
-                  <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #f1f5f9" }}>
-                    {segs.map(seg => {
-                      const at = segmento === seg.k;
-                      return (
-                        <button key={seg.k} onClick={() => { setSegmento(seg.k); setClienteSel(null); setSelecionadasFat(new Set()); }}
-                          style={{ flex: 1, background: at ? seg.cor : "#ffffff", color: at ? "#ffffff" : "#64748b", border: `1px solid ${at ? seg.cor : "#e2e8f0"}`, borderRadius: 10, padding: "7px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1.3 }}>
-                          {seg.l}<br /><span style={{ fontSize: 15, fontWeight: 800 }}>{seg.n}</span>
-                        </button>
-                      );
-                    })}
+              <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 4 }}>Status:</span>
+                {([
+                  { k: "todas",     l: "🌐 Todas",        cor: "#374151" },
+                  { k: "pendentes", l: "⏳ A pagar",      cor: "#d97706" },
+                  { k: "atrasadas", l: "🔴 Atrasadas",    cor: "#dc2626" },
+                  { k: "pagas",     l: "✅ Pagas",         cor: "#16a34a" },
+                  { k: "promessa",  l: "🤝 Promessa",     cor: "#2563eb" },
+                  { k: "negociacao",l: "📞 Negociação",   cor: "#7c3aed" },
+                  { k: "acordo",    l: "📋 Acordo",       cor: "#0284c7" },
+                  { k: "nao_pagara",l: "❌ Não vai pagar", cor: "#991b1b" },
+                  { k: "cancelada", l: "🚫 Canceladas",   cor: "#6b7280" },
+                  { k: "juridico",  l: "⚖️ Jurídico",     cor: "#7f1d1d" },
+                ] as { k: string; l: string; cor: string }[]).map(f => {
+                  const at = filtroStatus === f.k;
+                  return (
+                    <button key={f.k} onClick={() => { setFiltroStatus(f.k); setSelecionadasFat(new Set()); }}
+                      style={{ background: at ? `${f.cor}15` : "#ffffff", color: at ? f.cor : "#6b7280", border: `1px solid ${at ? f.cor : "#e5e7eb"}`, borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: at ? 700 : 600, whiteSpace: "nowrap" }}>
+                      {f.l}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ ...cardStyle, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 600 }}>
+                    {faturasFiltradas.length} fatura(s) · {selecionadasFat.size} selecionada(s)
                   </div>
-                  <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
-                    <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="🔍 Buscar cliente..." style={{ ...inputStyle, padding: "8px 12px" }} />
-                  </div>
-                  <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
-                    {clientesFiltrados.length === 0 ? (
-                      <div style={{ padding: 28, textAlign: "center", color: "#94a3b8", fontSize: 12.5 }}>Nenhum cliente nesse filtro.</div>
-                    ) : clientesFiltrados.map(c => {
-                      const inad = c.situacao === "inadimplente";
-                      const sel = c.proposta.id === clienteSelEfetivo;
-                      return (
-                        <button key={c.proposta.id} onClick={() => setClienteSel(c.proposta.id)}
-                          style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#059669"}`, borderBottom: "1px solid #f6f7f9", background: sel ? "#fffbeb" : "#ffffff", cursor: "pointer" }}>
-                          <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#059669", flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: "#0f172a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</div>
-                            <div style={{ color: "#94a3b8", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
-                          </div>
-                          <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                            {inad ? (
-                              <>
-                                <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{formatBRL(c.totalAberto)}</div>
-                                <div style={{ color: "#94a3b8", fontSize: 10 }}>{c.atrasadas} mês · {c.atrasoMax}d</div>
-                              </>
-                            ) : (
-                              <div style={{ color: "#059669", fontSize: 12, fontWeight: 700 }}>em dia</div>
-                            )}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={selecionarTodasFat} style={btnSecundario}>
+                      {selecionadasFat.size === faturasFiltradas.length && faturasFiltradas.length > 0 ? "✗ Desmarcar todos" : "✓ Selecionar todos"}
+                    </button>
+                    {podeDisparar && (
+                      <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0} style={{ ...btnPrimario, opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
+                        📤 Cobrar {selecionadasFat.size} fatura(s)
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* DIREITA — detalhe do cliente */}
-                {!clienteAtual ? (
-                  <div style={{ ...cardStyle, padding: 48, textAlign: "center", color: "#94a3b8" }}>
-                    <div style={{ fontSize: 38, marginBottom: 8 }}>👈</div>
-                    <p style={{ color: "#0f172a", fontWeight: 700, margin: "0 0 4px", fontSize: 14 }}>Escolha um cliente</p>
-                    <p style={{ margin: 0, fontSize: 12.5 }}>Selecione alguém na lista pra ver as faturas e receber pagamentos.</p>
+                {faturasFiltradas.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center" }}>
+                    <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
+                    <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhuma fatura nesse filtro</p>
+                    <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>
+                      As faturas são calculadas pra cada cliente <b>INSTALADO</b> a partir de <b>data_instalacao</b> + dia de <b>vencimento</b> + <b>valor_plano</b>.<br/>
+                      Sem instalados ou sem esses 3 campos preenchidos, nada aparece aqui.
+                    </p>
                   </div>
-                ) : (() => {
-                  const c = clienteAtual;
-                  const inad = c.situacao === "inadimplente";
-                  const abertas = c.faturas.filter((f: Fatura) => STATUS_META[f.status_visual]?.pendencia);
-                  return (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                              <h2 style={{ color: "#0f172a", fontSize: isMobile ? 17 : 20, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>{c.proposta.nome || "—"}</h2>
-                              <span style={{ background: inad ? "#fef2f2" : "#f0fdf4", color: inad ? "#dc2626" : "#059669", border: `1px solid ${inad ? "#fecaca" : "#bbf7d0"}`, borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 700 }}>{inad ? "Inadimplente" : "Em dia"}</span>
-                            </div>
-                            <p style={{ color: "#64748b", fontSize: 12.5, margin: "6px 0 0" }}>{c.proposta.telefone1 || "sem telefone"} · {c.proposta.plano || "sem plano"} · vence dia {c.proposta.vencimento || "—"}</p>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ color: "#94a3b8", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Em aberto</div>
-                            <div style={{ color: inad ? "#dc2626" : "#059669", fontSize: 26, fontWeight: 800, letterSpacing: -0.8, fontVariantNumeric: "tabular-nums" }}>{formatBRL(c.totalAberto)}</div>
-                            <div style={{ color: "#94a3b8", fontSize: 11 }}>{abertas.length} fatura(s) em aberto</div>
-                          </div>
-                        </div>
-                        {podeDisparar && abertas.length > 0 && (
-                          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                            <button onClick={() => abrirEnvioCrm(abertas)} style={{ background: "#16a34a", color: "#ffffff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>💬 Cobrar no WhatsApp ({abertas.length})</button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ ...cardStyle, overflow: "hidden" }}>
-                        <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", color: "#64748b", fontSize: 12, fontWeight: 700 }}>Faturas · {c.faturas.length}</div>
-                        {c.faturas.map((f: Fatura, i: number) => {
-                      const k = chaveSelecao(f);
-                      const sel = selecionadasFat.has(k);
-                      const cs = corStatus(f.status_visual);
-                      const pago = f.status_visual === "paga" || f.status_visual === "paga_atraso" || f.status_visual === "paga_parcial";
-                      return (
-                        <div key={k} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: isMobile ? "12px 12px" : "14px 16px", borderTop: i === 0 ? "none" : "1px solid #f1f5f9", borderLeft: `3px solid ${cs.color}`, background: sel ? "#fffbeb" : "#ffffff" }}>
-                          {podeDisparar && <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#16a34a", marginTop: 3 }} />}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ color: "#0f172a", fontSize: 13.5, fontWeight: 700 }}>{formatMesExtenso(f.numero_referencia)}{f.proporcional ? " · 1ª proporcional" : ""}</div>
-                                <div style={{ color: "#94a3b8", fontSize: 11.5, marginTop: 1 }}>vence {formatData(f.data_vencimento)}</div>
-                              </div>
-                              <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                                <div style={{ color: pago ? "#059669" : "#0f172a", fontSize: 15, fontWeight: 800, letterSpacing: -0.3, fontVariantNumeric: "tabular-nums" }}>{formatBRL(f.valor)}</div>
-                              </div>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, flexWrap: "wrap" }}>
-                              <span style={{ background: cs.bg, color: cs.color, border: `1px solid ${cs.border}`, borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700 }}>{cs.label}</span>
-                              {f.status_visual === "atrasada" && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>🔴 {f.dias_atraso}d em atraso</span>}
-                              {f.status_visual === "pendente" && f.dias_atraso < 0 && <span style={{ color: "#059669", fontSize: 11, fontWeight: 600 }}>🟢 vence em {Math.abs(f.dias_atraso)}d</span>}
-                              {pago && f.data_pagamento && <span style={{ color: cs.color, fontSize: 11, fontWeight: 600 }}>✓ pago {formatData(f.data_pagamento)}</span>}
-                              {f.observacoes && <span style={{ color: "#94a3b8", fontSize: 11, fontStyle: "italic", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.observacoes}>💬 {f.observacoes}</span>}
-                              {podeMudarStatus ? (
-                                <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                                  {!pago ? (
-                                    <button onClick={() => abrirStatus(f, "paga")} style={{ background: "#059669", color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Receber</button>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 900 : "auto" }}>
+                      <thead>
+                        <tr style={{ background: "#f9fafb" }}>
+                          <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
+                          {["Cliente", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
+                            <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {faturasFiltradas.map((f, i) => {
+                          const k = chaveSelecao(f);
+                          const sel = selecionadasFat.has(k);
+                          const c = corStatus(f.status_visual);
+                          return (
+                            <tr key={k}
+                              style={{ borderTop: "1px solid #f3f4f6", background: sel ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc") }}>
+                              <td style={{ padding: "12px", textAlign: "center" }}>
+                                <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
+                              </td>
+                              <td style={{ padding: "12px", maxWidth: 220, overflow: "hidden" }}>
+                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.proposta.nome || "—"}</div>
+                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
+                              </td>
+                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
+                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 700 }}>{formatMesExtenso(f.numero_referencia)}</div>
+                                {f.proporcional && <div style={{ color: "#a855f7", fontSize: 10, fontWeight: 600 }}>⚠ 1ª (+{f.dias_cobertos - 30}d proporcional)</div>}
+                              </td>
+                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
+                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 600 }}>{formatData(f.data_vencimento)}</div>
+                                {f.status_visual === "atrasada" && (
+                                  <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>🔴 {f.dias_atraso}d atraso</div>
+                                )}
+                                {f.status_visual === "pendente" && f.dias_atraso < 0 && (
+                                  <div style={{ color: "#16a34a", fontSize: 10, fontWeight: 600 }}>🟢 Em {Math.abs(f.dias_atraso)}d</div>
+                                )}
+                                {(f.status_visual === "paga" || f.status_visual === "paga_atraso" || f.status_visual === "paga_parcial") && f.data_pagamento && (
+                                  <div style={{ color: STATUS_META[f.status_visual].color, fontSize: 10, fontWeight: 600 }}>✓ {STATUS_META[f.status_visual].icone} {formatData(f.data_pagamento)}</div>
+                                )}
+                                {f.observacoes && (
+                                  <div style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }} title={f.observacoes}>
+                                    💬 {f.observacoes}
+                                  </div>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px", color: "#16a34a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{formatBRL(f.valor)}</td>
+                              <td style={{ padding: "12px" }}>
+                                <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                                  {c.label}
+                                </span>
+                              </td>
+                              <td style={{ padding: "12px" }}>
+                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                  {podeMudarStatus ? (
+                                    <>
+                                      {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
+                                        <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga / outras opções"
+                                          style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                          ✓ Paga
+                                        </button>
+                                      ) : (
+                                        <button onClick={() => marcarAPagar(f)} title="Reverter status"
+                                          style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                          ↩ A pagar
+                                        </button>
+                                      )}
+                                      <button onClick={() => abrirStatus(f, "promessa")} title="Mais opções de status"
+                                        style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                        ⚙ Status
+                                      </button>
+                                      <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço"
+                                        style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                        ✕ Cancelou
+                                      </button>
+                                    </>
                                   ) : (
-                                    <button onClick={() => marcarAPagar(f)} style={{ background: "#ffffff", color: "#d97706", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>Reabrir</button>
+                                    <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }} title="Você não tem permissão pra mudar status de fatura">somente leitura</span>
                                   )}
-                                  <button onClick={() => abrirStatus(f, "promessa")} title="Outros status (promessa, acordo, negociação...)" style={{ background: "#ffffff", color: "#475569", border: "1px solid #e2e8f0", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>Status</button>
-                                  <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço" style={{ background: "#ffffff", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>✕</button>
                                 </div>
-                              ) : (
-                                <span style={{ color: "#94a3b8", fontSize: 11, fontStyle: "italic", marginLeft: "auto" }}>somente leitura</span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                      </div>
-                    </div>
-                  );
-                })()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            );
-          })()}
+            </>
+          )}
 
+          {/* ════════════ ABA: PLANILHA ════════════ */}
           {aba === "planilha" && (
             <>
               <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
@@ -1494,13 +1469,13 @@ function KPI({ cor, bg, icone, label, valor, sub, isMobile }: {
   cor: string; bg: string; icone: string; label: string; valor: string; sub: string; isMobile: boolean;
 }) {
   return (
-    <div style={{ ...cardStyle, padding: isMobile ? 14 : "16px 18px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
-        <span style={{ width: 8, height: 8, borderRadius: 999, background: cor, display: "inline-block" }} aria-hidden>{bg ? "" : icone}</span>
-        <p style={{ color: "#64748b", fontSize: 10.5, margin: 0, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</p>
+    <div style={{ ...cardStyle, padding: isMobile ? 14 : 18, borderTop: `3px solid ${cor}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>{icone}</div>
+        <p style={{ color: "#6b7280", fontSize: 10, margin: 0, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</p>
       </div>
-      <p style={{ color: "#0f172a", fontSize: isMobile ? 22 : 28, fontWeight: 800, margin: 0, letterSpacing: -0.8, fontVariantNumeric: "tabular-nums" as const }}>{valor}</p>
-      <p style={{ color: "#94a3b8", fontSize: 11, margin: "5px 0 0", fontWeight: 500 }}>{sub}</p>
+      <p style={{ color: cor, fontSize: isMobile ? 19 : 25, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{valor}</p>
+      <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0", fontWeight: 500 }}>{sub}</p>
     </div>
   );
 }
