@@ -99,6 +99,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [userNome, setUserNome] = useState("");
   const [modoDemo, setModoDemo] = useState(false);
+  const [rankingFlags, setRankingFlags] = useState<Record<string, boolean>>({});
+  const [filtroRanking, setFiltroRanking] = useState("");
 
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -120,16 +122,8 @@ export default function Dashboard() {
       let usouMock = false;
 
       try {
-        // tenta trazer o flag mostrar_ranking; se a coluna ainda não existe, cai no select simples
-        let us: any[] | null = null;
-        const r1 = await supabase.from("usuarios").select("email, nome, mostrar_ranking");
-        if (r1.error) {
-          const r2 = await supabase.from("usuarios").select("email, nome");
-          if (r2.error) throw r2.error;
-          us = r2.data;
-        } else {
-          us = r1.data;
-        }
+        const { data: us, error: errUs } = await supabase.from("usuarios").select("email, nome");
+        if (errUs) throw errUs;
         if (us) usuariosReais = us;
 
         if (us) {
@@ -168,6 +162,16 @@ export default function Dashboard() {
         usuariosReais = VENDEDORES_MOCK;
       }
 
+      // Flags de quem aparece no ranking público (guardadas por nome/e-mail do vendedor)
+      try {
+        const { data: rp } = await supabase.from("ranking_publico").select("vendedor, mostrar");
+        if (rp) {
+          const m: Record<string, boolean> = {};
+          for (const r of rp) m[r.vendedor] = !!r.mostrar;
+          setRankingFlags(m);
+        }
+      } catch { /* tabela ainda não existe — rode o SQL */ }
+
       setPropostas(propostasReais);
       setUsuarios(usuariosReais);
       setModoDemo(usouMock);
@@ -176,38 +180,50 @@ export default function Dashboard() {
     init();
   }, [router]);
 
-  // 👁️ E-mails que o admin liberou pra aparecer no ranking público (pros outros logins).
-  const emailsPublicos = useMemo(
-    () => new Set(usuarios.filter(u => u.mostrar_ranking).map(u => (u.email || "").toLowerCase())),
-    [usuarios]
+  // 👁️ Vendedores (nome/e-mail) que o admin liberou pro ranking público.
+  const chavesPublicas = useMemo(
+    () => new Set(Object.keys(rankingFlags).filter(k => rankingFlags[k])),
+    [rankingFlags]
   );
 
   // 🔒 Recorte do dashboard:
   //   • Admin / Dono / Super → veem TODAS as propostas.
-  //   • Demais usuários → veem só as pessoas que o admin marcou (emailsPublicos).
+  //   • Demais usuários → veem só os vendedores que o admin marcou (chavesPublicas).
   //   Depois aplica o filtro de equipe do seletor. Modo demo (mock) não filtra.
   const propostasVisiveis = useMemo(() => {
     let base = propostas;
     if (!modoDemo) {
       if (!veTudo) {
-        base = base.filter(p => p.vendedor && emailsPublicos.has(p.vendedor.toLowerCase()));
+        base = base.filter(p => p.vendedor && chavesPublicas.has(p.vendedor));
       }
       if (equipeId) {
         base = base.filter(p => String(p.equipe_id_criador ?? "") === String(equipeId));
       }
     }
     return base;
-  }, [propostas, veTudo, emailsPublicos, equipeId, modoDemo]);
+  }, [propostas, veTudo, chavesPublicas, equipeId, modoDemo]);
 
-  // 🔁 Liga/desliga quem aparece no ranking público. Salva no banco → vale pra todos os logins.
-  const toggleRanking = async (email: string, atual: boolean) => {
-    setUsuarios(prev => prev.map(u => u.email === email ? { ...u, mostrar_ranking: !atual } : u));
+  // 🔁 Liga/desliga UM vendedor no ranking público. Salva por nome na tabela ranking_publico.
+  const toggleRanking = async (vendedor: string, atual: boolean) => {
+    setRankingFlags(prev => ({ ...prev, [vendedor]: !atual }));
     try {
-      const { error } = await supabase.from("usuarios").update({ mostrar_ranking: !atual }).eq("email", email);
+      const { error } = await supabase.from("ranking_publico").upsert({ vendedor, mostrar: !atual }, { onConflict: "vendedor" });
       if (error) throw error;
     } catch (e) {
-      setUsuarios(prev => prev.map(u => u.email === email ? { ...u, mostrar_ranking: atual } : u));
-      console.error("[dashboard] erro ao salvar mostrar_ranking:", e);
+      setRankingFlags(prev => ({ ...prev, [vendedor]: atual }));
+      console.error("[dashboard] erro ao salvar ranking_publico:", e);
+    }
+  };
+
+  // 🔁 Marca/desmarca TODOS de uma vez (útil: mostrar todos os vendedores e desligar só os indicadores).
+  const marcarTodos = async (valor: boolean) => {
+    const rows = todosVendedores.map(v => ({ vendedor: v.key, mostrar: valor }));
+    setRankingFlags(Object.fromEntries(rows.map(r => [r.vendedor, valor])));
+    try {
+      const { error } = await supabase.from("ranking_publico").upsert(rows, { onConflict: "vendedor" });
+      if (error) throw error;
+    } catch (e) {
+      console.error("[dashboard] erro no ajuste em massa do ranking_publico:", e);
     }
   };
 
@@ -217,6 +233,26 @@ export default function Dashboard() {
     const u = usuarios.find(x => x.email?.toLowerCase() === email?.toLowerCase());
     return u?.nome || email.split("@")[0];
   };
+
+  // 🧑‍🤝‍🧑 Todos os "vendedores" do sistema: nomes/e-mails que aparecem nas vendas
+  //    (inclusive os subidos por SQL e indicadores) + os usuários cadastrados.
+  const todosVendedores = useMemo(() => {
+    const nomeDe = (v: string) => {
+      const u = usuarios.find(x => x.email?.toLowerCase() === v?.toLowerCase());
+      return u?.nome || (v.includes("@") ? v.split("@")[0] : v);
+    };
+    const map = new Map<string, string>(); // chave = valor exato de p.vendedor → nome de exibição
+    for (const p of propostas) {
+      const k = p.vendedor;
+      if (k && !map.has(k)) map.set(k, nomeDe(k));
+    }
+    for (const u of usuarios) {
+      if (u.email && !map.has(u.email)) map.set(u.email, u.nome || u.email);
+    }
+    return [...map.entries()]
+      .map(([key, nome]) => ({ key, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [propostas, usuarios]);
 
   const saudacao = useMemo(() => {
     const h = new Date().getHours();
@@ -563,30 +599,44 @@ export default function Dashboard() {
           <summary style={{ cursor: "pointer", fontWeight: 800, color: "#0f172a", fontSize: 15, display: "flex", alignItems: "center", gap: 8, listStyle: "none" }}>
             <span>👁️</span> Quem aparece no ranking público
             <span style={{ fontWeight: 500, color: "#94a3b8", fontSize: 12 }}>
-              ({usuarios.filter(u => u.mostrar_ranking).length} de {usuarios.length} visíveis pros outros)
+              ({todosVendedores.filter(v => rankingFlags[v.key]).length} de {todosVendedores.length} visíveis pros outros)
             </span>
           </summary>
-          <p style={{ color: "#64748b", fontSize: 12.5, margin: "8px 0 14px", lineHeight: 1.5 }}>
-            Você (admin) vê tudo sempre. Os demais usuários veem o dashboard só com as pessoas marcadas abaixo — desligue os indicadores pra eles não aparecerem no ranking dos outros.
+          <p style={{ color: "#64748b", fontSize: 12.5, margin: "8px 0 12px", lineHeight: 1.5 }}>
+            Você (admin) vê tudo sempre. Os demais veem o dashboard só com as pessoas marcadas abaixo. A lista traz todo mundo que aparece nas vendas (inclusive nomes subidos por SQL e indicadores) — desligue os indicadores pra eles não entrarem no ranking dos outros.
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 8 }}>
-            {[...usuarios].sort((a, b) => (a.nome || a.email).localeCompare(b.nome || b.email)).map(u => {
-              const on = !!u.mostrar_ranking;
-              return (
-                <button key={u.email} onClick={() => toggleRanking(u.email, on)}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${on ? "#bfdbfe" : "#e5e7eb"}`, background: on ? "#eff6ff" : "#f8fafc", cursor: "pointer", textAlign: "left" }}>
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>
-                    {u.nome || u.email}
-                  </span>
-                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: on ? "#2563eb" : "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ width: 34, height: 18, borderRadius: 999, background: on ? "#2563eb" : "#cbd5e1", position: "relative", transition: "all .15s", display: "inline-block" }}>
-                      <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "all .15s" }} />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const, marginBottom: 12 }}>
+            <input value={filtroRanking} onChange={e => setFiltroRanking(e.target.value)} placeholder="🔎 Buscar nome..."
+              style={{ flex: 1, minWidth: 160, padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, outline: "none" }} />
+            <button onClick={() => marcarTodos(true)}
+              style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              Mostrar todos
+            </button>
+            <button onClick={() => marcarTodos(false)}
+              style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#f8fafc", color: "#64748b", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+              Ocultar todos
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, 1fr)", gap: 8, maxHeight: 420, overflowY: "auto" as const }}>
+            {todosVendedores
+              .filter(v => !filtroRanking || v.nome.toLowerCase().includes(filtroRanking.toLowerCase()) || v.key.toLowerCase().includes(filtroRanking.toLowerCase()))
+              .map(v => {
+                const on = !!rankingFlags[v.key];
+                return (
+                  <button key={v.key} onClick={() => toggleRanking(v.key, on)}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1px solid ${on ? "#bfdbfe" : "#e5e7eb"}`, background: on ? "#eff6ff" : "#f8fafc", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>
+                      {v.nome}
                     </span>
-                    {on ? "Aparece" : "Oculto"}
-                  </span>
-                </button>
-              );
-            })}
+                    <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: on ? "#2563eb" : "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 34, height: 18, borderRadius: 999, background: on ? "#2563eb" : "#cbd5e1", position: "relative", transition: "all .15s", display: "inline-block" }}>
+                        <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "all .15s" }} />
+                      </span>
+                      {on ? "Aparece" : "Oculto"}
+                    </span>
+                  </button>
+                );
+              })}
           </div>
         </details>
       )}
