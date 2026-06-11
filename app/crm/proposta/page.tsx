@@ -698,11 +698,24 @@ function PropostaForm() {
     ? filasVisiveis.filter(f => String(f.equipe_id ?? "") === pdvEquipeSelecionada)
     : filasVisiveis;
 
-  // 🔗 PDV → vendedores: ao escolher o PDV, a lista de vendedores mostra só os
-  //    usuários daquela equipe. Sem PDV escolhido, mostra todos.
-  const vendedoresParaEscolher = pdvEquipeSelecionada
-    ? usuarios.filter(u => String(u.equipe_id ?? "") === pdvEquipeSelecionada)
-    : usuarios;
+  // 🔗 EQUIPE selecionada (campo do tipo "fila") — usada junto com o PDV pra filtrar.
+  const filaSelecionada = (() => {
+    for (const c of camposUnificados) {
+      if (c.origem === "custom" && (c.tipo as string) === "fila") {
+        const v = dadosCustomizados[c.slug];
+        if (v) return String(v);
+      }
+    }
+    return null;
+  })();
+
+  // 🔗 PDV + EQUIPE → vendedores: a lista mostra só os vendedores cadastrados na
+  //    equipe (PDV) e na equipe/fila escolhida. Sem nada escolhido, mostra todos.
+  const vendedoresParaEscolher = usuarios.filter(u => {
+    if (pdvEquipeSelecionada && String(u.equipe_id ?? "") !== pdvEquipeSelecionada) return false;
+    if (filaSelecionada && String(u.fila_id ?? "") !== filaSelecionada) return false;
+    return true;
+  });
 
   // 🧑‍💼/🏢 Tipo de cliente: "cpf" (pessoa física) ou "cnpj" (pessoa jurídica).
   //    Guardado em dados_customizados.tipo_pessoa. O documento vai sempre na coluna
@@ -788,18 +801,19 @@ function PropostaForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdvEquipeSelecionada, travadoFila, camposUnificados, filasAuto]);
 
-  // 🔗 Ao trocar o PDV (equipe), limpa o vendedor escolhido que não é daquela equipe.
-  //    Só pra quem escolhe vendedor — o vendedor travado no próprio usuário não é mexido.
+  // 🔗 Ao trocar o PDV ou a EQUIPE, limpa o vendedor que não pertence mais à equipe
+  //    (PDV) e/ou à equipe/fila escolhida. Só pra quem escolhe vendedor.
   useEffect(() => {
-    if (!podeEscolherVendedor || !pdvEquipeSelecionada) return;
+    if (!podeEscolherVendedor || (!pdvEquipeSelecionada && !filaSelecionada)) return;
     setForm(prev => {
       if (!prev.vendedor) return prev;
       const v = usuarios.find(u => u.email?.toLowerCase() === String(prev.vendedor).toLowerCase());
-      const daEquipe = !!v && String(v.equipe_id ?? "") === pdvEquipeSelecionada;
-      return daEquipe ? prev : { ...prev, vendedor: "" };
+      const okEquipe = !pdvEquipeSelecionada || (!!v && String(v.equipe_id ?? "") === pdvEquipeSelecionada);
+      const okFila = !filaSelecionada || (!!v && String(v.fila_id ?? "") === filaSelecionada);
+      return (v && okEquipe && okFila) ? prev : { ...prev, vendedor: "" };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdvEquipeSelecionada, podeEscolherVendedor, usuarios]);
+  }, [pdvEquipeSelecionada, filaSelecionada, podeEscolherVendedor, usuarios]);
 
   // 🔗 Vendedor → PDV + fila: ao escolher o vendedor, puxa a equipe dele pro PDV
   //    e a fila dele pro campo de fila. As listas (filas/vendedores) se ajustam sozinhas.
@@ -1425,6 +1439,17 @@ function PropostaForm() {
                 }
                 camposRender = out;
               }
+              // 🔗 A caixa de EQUIPE (campo do tipo "fila") aparece logo ANTES do Vendedor.
+              camposRender = (() => {
+                const arr = [...camposRender];
+                const idxFila = arr.findIndex((c: CampoUnificado) => c.origem === "custom" && (c.tipo as string) === "fila");
+                const temVend = arr.some((c: CampoUnificado) => (c.tipo as string) === "vendedor");
+                if (idxFila === -1 || !temVend) return arr;
+                const [campoFila] = arr.splice(idxFila, 1);
+                const idxVend = arr.findIndex((c: CampoUnificado) => (c.tipo as string) === "vendedor");
+                arr.splice(idxVend, 0, campoFila);
+                return arr;
+              })();
               return (
                 <div key={s.keyUnica}
                   ref={(el) => { sectionsRef.current[s.keyUnica] = el; }}
