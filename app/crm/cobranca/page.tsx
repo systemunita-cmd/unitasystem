@@ -367,7 +367,31 @@ export default function CobrancaPage() {
   }
 
   async function fetchStatusFaturas(faltando?: string[]) {
-    const { data, error } = await supabase.from("faturas_status").select("*");
+    // ⚠️ Mesmo corte de 1000 linhas — pagina tudo (já temos 1500+ faturas com status)
+    const PAGE_SIZE = 1000;
+    let data: any[] = [];
+    let error: any = null;
+    try {
+      const { count, error: errCount } = await supabase
+        .from("faturas_status").select("proposta_id", { count: "exact", head: true });
+      if (errCount) {
+        error = errCount;
+      } else {
+        const total = count || 0;
+        const nPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
+        const reqs = [];
+        for (let i = 0; i < nPaginas; i++) {
+          reqs.push(supabase.from("faturas_status").select("*").order("proposta_id", { ascending: true }).order("numero_referencia", { ascending: true }).range(i * PAGE_SIZE, i * PAGE_SIZE + PAGE_SIZE - 1));
+        }
+        const resultados = await Promise.all(reqs);
+        for (const r of resultados) {
+          if (r.error) { error = r.error; break; }
+          data = data.concat(r.data || []);
+        }
+      }
+    } catch (e) {
+      error = e;
+    }
     if (error) {
       if (error.code === "PGRST205") faltando?.push("faturas_status");
       setStatusMap(new Map());
@@ -379,12 +403,42 @@ export default function CobrancaPage() {
   }
 
   async function fetchPropostas(faltando?: string[]) {
-    const { data, error } = await supabase
-      .from("proposta")
-      .select("id, nome, telefone1, telefone2, telefone3, plano, valor_plano, vencimento, forma_pagamento, status_venda, data_instalacao, operadora, cpf, dados_customizados, created_at")
-      .order("created_at", { ascending: false });
-    if (error?.code === "PGRST205") faltando?.push("proposta");
-    setPropostas(data || []);
+    // ⚠️ Sem paginação o Supabase devolve no máximo 1000 linhas — com 2k+ vendas
+    //    os clientes mais antigos sumiam da cobrança. Busca TODAS as páginas em paralelo.
+    const PAGE_SIZE = 1000;
+    const COLS = "id, nome, telefone1, telefone2, telefone3, plano, valor_plano, vencimento, forma_pagamento, status_venda, data_instalacao, operadora, cpf, dados_customizados, created_at";
+    try {
+      const { count, error: errCount } = await supabase
+        .from("proposta").select("id", { count: "exact", head: true });
+      if (errCount) {
+        if ((errCount as any)?.code === "PGRST205") faltando?.push("proposta");
+        setPropostas([]);
+        return;
+      }
+      const total = count || 0;
+      const nPaginas = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const reqs = [];
+      for (let i = 0; i < nPaginas; i++) {
+        reqs.push(
+          supabase.from("proposta").select(COLS)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .range(i * PAGE_SIZE, i * PAGE_SIZE + PAGE_SIZE - 1)
+        );
+      }
+      const resultados = await Promise.all(reqs);
+      let lista: any[] = [];
+      for (const r of resultados) {
+        if (r.error) {
+          if ((r.error as any)?.code === "PGRST205") faltando?.push("proposta");
+          continue;
+        }
+        lista = lista.concat(r.data || []);
+      }
+      setPropostas(lista);
+    } catch {
+      setPropostas([]);
+    }
   }
 
   async function fetchCanais(faltando?: string[]) {
