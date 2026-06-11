@@ -161,7 +161,8 @@ function PropostaForm() {
   }, []);
 
   const [form, setForm] = useState<Record<string, any>>({
-    data_proposta: new Date().toISOString().split("T")[0],
+    // ⚠️ data LOCAL — toISOString() é UTC e depois das ~21h jogava a venda pro dia seguinte
+    data_proposta: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
     nome: searchParams.get("nome") || "",
     telefone1: searchParams.get("numero") || "",
     status_venda: "PENDENTE",

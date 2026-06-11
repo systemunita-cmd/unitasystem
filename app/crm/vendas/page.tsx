@@ -595,35 +595,36 @@ export default function Vendas() {
 
   // ═══ FETCH (single-tenant — sem workspace_id) ═══
   const fetchPropostas = async (): Promise<boolean> => {
+    // 🔒 Paginação por KEYSET (id < último id da página anterior): imune a
+    //    inserts/edições acontecendo DURANTE a busca — a paginação por range
+    //    podia perder uma linha na borda da página quando entrava venda nova
+    //    no meio do fetch (o realtime dispara fetch a cada mudança).
     const PAGE_SIZE = 1000;
     const MAX_PAGINAS = 60; // teto de segurança
     let lista: any[] = [];
     try {
-      // Descobre o total e busca todas as páginas EM PARALELO (bem mais rápido que sequencial)
-      const { count, error: errCount } = await supabase
-        .from("proposta").select("id", { count: "exact", head: true });
-      if (errCount) throw errCount;
-      const total = Math.min(count || 0, PAGE_SIZE * MAX_PAGINAS);
-      const nPaginas = Math.ceil(total / PAGE_SIZE);
-      if (nPaginas > 0) {
-        const reqs = [];
-        for (let i = 0; i < nPaginas; i++) {
-          reqs.push(
-            supabase.from("proposta").select("*")
-              .order("created_at", { ascending: false })
-              .order("id", { ascending: false })
-              .range(i * PAGE_SIZE, i * PAGE_SIZE + PAGE_SIZE - 1)
-          );
-        }
-        const resultados = await Promise.all(reqs);
-        for (const r of resultados) {
-          if (r.error) throw r.error;
-          lista = lista.concat(r.data || []);
-        }
+      let ultimoId: number | null = null;
+      for (let i = 0; i < MAX_PAGINAS; i++) {
+        let q = supabase.from("proposta").select("*")
+          .order("id", { ascending: false })
+          .limit(PAGE_SIZE);
+        if (ultimoId != null) q = q.lt("id", ultimoId);
+        const { data, error } = await q;
+        if (error) throw error;
+        const pagina = data || [];
+        lista = lista.concat(pagina);
+        if (pagina.length < PAGE_SIZE) break;
+        ultimoId = pagina[pagina.length - 1].id;
       }
     } catch {
       lista = [];
     }
+    // ⚠️ SEM dedupe nenhum: a tela mostra EXATAMENTE as linhas que o banco devolver.
+    //    Venda lançada 3x = 3 linhas na tela. Só ordena pra exibição (recente primeiro).
+    lista = [...lista].sort((a, b) => {
+      const ca = String(b.created_at || "").localeCompare(String(a.created_at || ""));
+      return ca !== 0 ? ca : (b.id - a.id);
+    });
     let usouMock = false;
     if (lista.length === 0) {
       usouMock = true;
@@ -1021,10 +1022,15 @@ export default function Vendas() {
     .filter(p => !buscaDebounced || p.nome?.toLowerCase().includes(buscaDebounced.toLowerCase()) || p.cpf?.includes(buscaDebounced) || nomeVendedor(p.vendedor).toLowerCase().includes(buscaDebounced.toLowerCase()))
     .filter(p => {
       if (!filtroDataInicio && !filtroDataFim) return true;
-      const dt = p.data_proposta || "";
-      if (filtroDataInicio && dt < filtroDataInicio) return false;
-      if (filtroDataFim && dt > filtroDataFim) return false;
-      return true;
+      // passa se a DATA DA PROPOSTA *ou* a data de CADASTRO (created_at, em hora
+      // local) cair no período — venda que subiu hoje nunca some do "Hoje"
+      const dentro = (d: string) => !!d
+        && (!filtroDataInicio || d >= filtroDataInicio)
+        && (!filtroDataFim || d <= filtroDataFim);
+      const dProp = p.data_proposta || "";
+      let dCad = "";
+      try { if (p.created_at) dCad = isoLocal(new Date(p.created_at)); } catch { dCad = ""; }
+      return dentro(dProp) || dentro(dCad);
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
