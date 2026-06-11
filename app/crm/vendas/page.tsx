@@ -228,8 +228,9 @@ export default function Vendas() {
   //   • veEquipe ("ver vendas da equipe") → vê só os vendedores da PRÓPRIA FILA
   //     (cai pra própria EQUIPE/PDV se o usuário não tiver fila definida).
   //   • Sem nada disso → vê só as próprias.
-  const veTudo = isDono || isSuperAdmin || perfil === "Administrador";
+  const veTudo = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.vendas_todas;
   const veEquipe = !!permissoes?.vendas_equipe;
+  const veFila = !!(permissoes as any)?.vendas_fila;
   // Map e-mail -> usuário (O(1)) — evita varrer a lista de usuários por linha (lento com 7,5k vendas)
   const usuariosMap = useMemo(() => {
     const m = new Map<string, Usuario>();
@@ -808,15 +809,25 @@ export default function Vendas() {
   };
 
   const propostasFiltradas = useMemo(() => propostas
-    // 👁️ Recorte de visibilidade — REGRA ESTRITA:
-    //   • Dono / Super admin / Administrador → veem TODAS as vendas (pra gerenciar).
-    //   • Qualquer outro login (atendente/vendedor) → vê SOMENTE as próprias vendas.
-    //   A comparação de desempenho entre todos fica só no Dashboard, nunca aqui.
+    // 👁️ Recorte de visibilidade — HIERARQUIA:
+    //   • Administrador / Dono / Super / "Ver todas"   → todas as vendas.
+    //   • "Ver vendas do PDV/equipe" (Diretor/Gerente) → vendas do próprio PDV (equipe_id_criador == minha equipe).
+    //   • "Ver vendas da própria fila" (Supervisor)    → vendas cujo VENDEDOR está na mesma fila que a minha.
+    //   • Atendente (nenhuma acima)                    → só as próprias.
+    //   A comparação geral entre todos fica só no Dashboard.
     .filter(p => {
       if (veTudo) return true;
       const minha = (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
         || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase());
-      return !!minha;
+      if (minha) return true; // todo mundo vê pelo menos as próprias
+      if (veEquipe) {
+        return minhaEquipe != null && String(p.equipe_id_criador ?? "") === String(minhaEquipe);
+      }
+      if (veFila) {
+        const rv = regDoVendedor(p.vendedor);
+        return minhaFila != null && !!rv && String(rv.fila_id ?? "") === String(minhaFila);
+      }
+      return false;
     })
     // 🔒 O seletor de equipe (que vem do localStorage) só filtra quem vê tudo.
     // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
@@ -832,7 +843,7 @@ export default function Vendas() {
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
