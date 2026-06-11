@@ -721,6 +721,13 @@ function PropostaForm() {
     return null;
   })();
 
+  // 🔖 A EQUIPE (fila) escolhida é a de "indicador"? (detecta pelo nome da fila conter "indicador")
+  const ehFilaIndicador = (() => {
+    if (!filaSelecionada) return false;
+    const f = filasAuto.find(x => String(x.id) === String(filaSelecionada));
+    return !!f && /indicador/i.test(f.nome || "");
+  })();
+
   // 🔗 PDV + EQUIPE → vendedores: a lista mostra só os vendedores cadastrados na
   //    equipe (PDV) e na equipe/fila escolhida. Sem nada escolhido, mostra todos.
   const vendedoresParaEscolher = usuarios.filter(u => {
@@ -816,6 +823,7 @@ function PropostaForm() {
   // 🔗 Ao trocar o PDV ou a EQUIPE, limpa o vendedor que não pertence mais à equipe
   //    (PDV) e/ou à equipe/fila escolhida. Só pra quem escolhe vendedor.
   useEffect(() => {
+    if (ehFilaIndicador) return; // fila de indicador → vendedor é texto livre, não limpa
     if (!podeEscolherVendedor || (!pdvEquipeSelecionada && !filaSelecionada)) return;
     setForm(prev => {
       if (!prev.vendedor) return prev;
@@ -825,7 +833,7 @@ function PropostaForm() {
       return (v && okEquipe && okFila) ? prev : { ...prev, vendedor: "" };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdvEquipeSelecionada, filaSelecionada, podeEscolherVendedor, usuarios]);
+  }, [ehFilaIndicador, pdvEquipeSelecionada, filaSelecionada, podeEscolherVendedor, usuarios]);
 
   // 🔗 Vendedor → PDV + fila: ao escolher o vendedor, puxa a equipe dele pro PDV
   //    e a fila dele pro campo de fila. As listas (filas/vendedores) se ajustam sozinhas.
@@ -853,6 +861,17 @@ function PropostaForm() {
   const renderCampoVendedor = () => {
     if (carregandoUsuarios) {
       return <input value="⏳ Carregando vendedores..." disabled style={{ ...inputStyleBase, background: "#f3f4f6", color: "#9ca3af", opacity: 0.7 }} />;
+    }
+    // 🔖 Fila de indicador: o vendedor vira texto livre (digita o nome do indicador).
+    if (ehFilaIndicador) {
+      return (
+        <input
+          value={form.vendedor || ""}
+          onChange={(e) => setCampoFixo("vendedor", e.target.value)}
+          placeholder="Digite o nome do indicador..."
+          style={inputStyleBase}
+        />
+      );
     }
     if (podeEscolherVendedor) {
       return (
