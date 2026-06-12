@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { supabase } from "../../lib/supabase";
-import { useTemPermissao } from "../../hooks/useTemPermissao";
+import { supabase } from "../../../lib/supabase";
+import { useTemPermissao } from "../../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💰 COBRANÇA — UnitaSystem
