@@ -3,12 +3,13 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import {
-  BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-} from "recharts";
 import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
+import {
+  type Proposta, type FaturaStatusDB, type Bucket,
+  BUCKET_META, formatNum, pctOf,
+  carregarPropostas, carregarFaturasStatus,
+} from "../../../lib/cobranca_lib";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 DASHBOARD DE COBRANÇA — UnitaSystem
@@ -19,40 +20,6 @@ import { useTemPermissao } from "../../../hooks/useTemPermissao";
 const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
 const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
 const sectionTitle = { color: "#1f2937", fontSize: 15, fontWeight: 700, margin: "0 0 18px 0", display: "flex", alignItems: "center", gap: 8 };
-
-// ─── Tipos e utilidades (antes vinham de lib/cobranca_lib, que não existe no
-//     projeto e quebrava o build — agora é tudo autocontido aqui) ───
-type FaturaStatusDB = { proposta_id: number; numero_referencia: string; status: string };
-type Bucket = "paga" | "pendente" | "inadimplente";
-const BUCKET_META: Record<Bucket, { label: string; cor: string; bg: string; border: string; icone: string }> = {
-  paga:         { label: "Pagas",         cor: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", icone: "✅" },
-  pendente:     { label: "Em vencer",     cor: "#d97706", bg: "#fffbeb", border: "#fde68a", icone: "⏳" },
-  inadimplente: { label: "Inadimplentes", cor: "#dc2626", bg: "#fef2f2", border: "#fecaca", icone: "🚨" },
-};
-const formatNum = (n: number) => (n || 0).toLocaleString("pt-BR");
-const pctOf = (parte: number, total: number) => (total > 0 ? Math.round((parte / total) * 100) : 0);
-
-// Busca TODAS as faturas_status, paginado (o Supabase corta em 1000 por request —
-// sem isso o dashboard mostraria só os primeiros meses, igual aconteceu na Cobrança)
-async function carregarFaturas(): Promise<FaturaStatusDB[]> {
-  const PAGE = 1000;
-  const { count } = await supabase.from("faturas_status").select("proposta_id", { count: "exact", head: true });
-  const paginas = Math.ceil((count || 0) / PAGE);
-  const reqs: Promise<any>[] = [];
-  for (let i = 0; i < paginas; i++) {
-    reqs.push(
-      supabase.from("faturas_status")
-        .select("proposta_id, numero_referencia, status")
-        .order("proposta_id", { ascending: true })
-        .order("numero_referencia", { ascending: true })
-        .range(i * PAGE, i * PAGE + PAGE - 1) as unknown as Promise<any>
-    );
-  }
-  const res = await Promise.all(reqs);
-  const out: FaturaStatusDB[] = [];
-  for (const r of res) if (r.data) out.push(...(r.data as FaturaStatusDB[]));
-  return out;
-}
 
 const bucketDoStatus = (s: string): Bucket | null => {
   if (s === "paga" || s === "paga_atraso") return "paga";
@@ -68,6 +35,96 @@ const mesLabel = (ref: string) => {
   return `${MESES[Number(m[2]) - 1]}/${m[1].slice(2)}`;
 };
 
+// ─── Gráficos em SVG puro (sem recharts — a v3.8 quebra com React 19 no <Bar>) ───
+type Serie = { mes: string; Pagas: number; Pendentes: number; Inadimplentes: number; total: number; pctPago: number };
+
+function GraficoBarras({ data, mobile }: { data: Serie[]; mobile: boolean }) {
+  const H = mobile ? 260 : 330, padL = 34, padB = 26, padT = 10, padR = 8;
+  const W = Math.max(data.length * (mobile ? 38 : 54) + padL + padR, 320);
+  const maxV = Math.max(1, ...data.map(d => d.total));
+  const passos = 4, plotH = H - padT - padB, plotW = W - padL - padR;
+  const bw = Math.min(mobile ? 22 : 34, (plotW / data.length) * 0.6);
+  const y = (v: number) => padT + plotH * (1 - v / maxV);
+  const cores: [keyof Serie, string][] = [["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]];
+  return (
+    <div style={{ width: "100%", overflowX: "auto" }}>
+      <svg width={W} height={H} style={{ minWidth: "100%", display: "block" }}>
+        {Array.from({ length: passos + 1 }).map((_, i) => {
+          const v = (maxV / passos) * i, yy = y(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e5e7eb" strokeDasharray="3 3" />
+              <text x={padL - 6} y={yy + 3} textAnchor="end" fontSize={10} fill="#9ca3af">{Math.round(v)}</text>
+            </g>
+          );
+        })}
+        {data.map((d, i) => {
+          const cx = padL + (plotW / data.length) * (i + 0.5);
+          let acc = 0;
+          return (
+            <g key={d.mes}>
+              {cores.map(([k, cor]) => {
+                const val = d[k] as number;
+                if (!val) return null;
+                const hSeg = (val / maxV) * plotH;
+                const yTop = y(acc + val); acc += val;
+                return <rect key={k} x={cx - bw / 2} y={yTop} width={bw} height={Math.max(hSeg, 0)} fill={cor} rx={2}><title>{`${d.mes} — ${k}: ${val}`}</title></rect>;
+              })}
+              <text x={cx} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="#6b7280">{d.mes}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function GraficoLinha({ data, mobile, series, height, pct }: { data: Serie[]; mobile: boolean; series: [keyof Serie, string][]; height?: number; pct?: boolean }) {
+  const H = height ?? (mobile ? 260 : 330), padL = 36, padB = 26, padT = 10, padR = 10;
+  const W = Math.max(data.length * (mobile ? 40 : 60) + padL + padR, 320);
+  const maxV = pct ? 100 : Math.max(1, ...data.flatMap(d => series.map(([k]) => d[k] as number)));
+  const passos = pct ? 5 : 4, plotH = H - padT - padB, plotW = W - padL - padR;
+  const x = (i: number) => padL + (data.length <= 1 ? plotW / 2 : (plotW * i) / (data.length - 1));
+  const y = (v: number) => padT + plotH * (1 - v / maxV);
+  return (
+    <div style={{ width: "100%", overflowX: "auto" }}>
+      <svg width={W} height={H} style={{ minWidth: "100%", display: "block" }}>
+        {Array.from({ length: passos + 1 }).map((_, i) => {
+          const v = (maxV / passos) * i, yy = y(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e5e7eb" strokeDasharray="3 3" />
+              <text x={padL - 6} y={yy + 3} textAnchor="end" fontSize={10} fill="#9ca3af">{Math.round(v)}{pct ? "%" : ""}</text>
+            </g>
+          );
+        })}
+        {series.map(([k, cor]) => {
+          const pts = data.map((d, i) => `${x(i)},${y(d[k] as number)}`).join(" ");
+          return (
+            <g key={k}>
+              <polyline points={pts} fill="none" stroke={cor} strokeWidth={2.5} />
+              {pct && data.map((d, i) => <circle key={i} cx={x(i)} cy={y(d[k] as number)} r={3} fill={cor}><title>{`${d.mes}: ${d[k]}%`}</title></circle>)}
+            </g>
+          );
+        })}
+        {data.map((d, i) => <text key={d.mes} x={x(i)} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="#6b7280">{d.mes}</text>)}
+      </svg>
+    </div>
+  );
+}
+
+function LegendaSerie({ itens }: { itens: [string, string][] }) {
+  return (
+    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, justifyContent: "center" }}>
+      {itens.map(([l, cor]) => (
+        <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b7280", fontSize: 11.5, fontWeight: 600 }}>
+          <span style={{ width: 12, height: 4, borderRadius: 2, background: cor }} /> {l}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function CobrancaDashboard() {
   const router = useRouter();
   const perm = useTemPermissao();
@@ -75,6 +132,7 @@ export default function CobrancaDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [faturas, setFaturas] = useState<FaturaStatusDB[]>([]);
   const [tipoGrafico, setTipoGrafico] = useState<"barras" | "linha">("barras");
 
@@ -88,7 +146,9 @@ export default function CobrancaDashboard() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      setFaturas(await carregarFaturas());
+      const [rp, rf] = await Promise.all([carregarPropostas(), carregarFaturasStatus()]);
+      setPropostas(rp.propostas);
+      setFaturas(Array.from(rf.statusMap.values()));
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,31 +308,10 @@ export default function CobrancaDashboard() {
               ))}
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={isMobile ? 260 : 330}>
-            {tipoGrafico === "barras" ? (
-              <BarChart data={serieMensal} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="mes" stroke="#6b7280" fontSize={11} />
-                <YAxis stroke="#6b7280" fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} cursor={{ fill: "#f3f4f6" }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Pagas" stackId="a" fill="#16a34a" />
-                <Bar dataKey="Pendentes" stackId="a" fill="#d97706" />
-                <Bar dataKey="Inadimplentes" stackId="a" fill="#dc2626" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            ) : (
-              <LineChart data={serieMensal} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="mes" stroke="#6b7280" fontSize={11} />
-                <YAxis stroke="#6b7280" fontSize={11} allowDecimals={false} />
-                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
-                <Line type="monotone" dataKey="Pagas" stroke="#16a34a" strokeWidth={2.5} dot={false} />
-                <Line type="monotone" dataKey="Pendentes" stroke="#d97706" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="Inadimplentes" stroke="#dc2626" strokeWidth={2} dot={false} />
-              </LineChart>
-            )}
-          </ResponsiveContainer>
+          {tipoGrafico === "barras"
+            ? <GraficoBarras data={serieMensal} mobile={isMobile} />
+            : <GraficoLinha data={serieMensal} mobile={isMobile} series={[["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]]} />}
+          <LegendaSerie itens={[["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]]} />
         </div>
       )}
 
@@ -284,15 +323,7 @@ export default function CobrancaDashboard() {
               <span style={{ width: 28, height: 28, borderRadius: 8, background: "#f0fdf4", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✅</span>
               % de faturas pagas por mês
             </h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={serieMensal} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="mes" stroke="#6b7280" fontSize={10} />
-                <YAxis stroke="#6b7280" fontSize={10} domain={[0, 100]} tickFormatter={(v: any) => `${v}%`} />
-                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} formatter={(v: any) => [`${v}%`, "Pagas"]} />
-                <Line type="monotone" dataKey="pctPago" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 3 }} name="pctPago" />
-              </LineChart>
-            </ResponsiveContainer>
+            <GraficoLinha data={serieMensal} mobile={isMobile} height={200} pct series={[["pctPago", "#16a34a"]]} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {destaques?.melhorPago && (
