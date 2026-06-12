@@ -22,6 +22,8 @@ import {
 //     Identidade visual é AZUL UNITA
 //   • Modo demo: gera 220 propostas mockadas se tabela vazia
 //   • Real-time channel fixo "proposta_rt_unita"
+//   • 🕘 Logs: grava em proposta_logs quem editou/excluiu cada venda
+//     (rodar vendas_logs.sql) e mostra o histórico no modal de visualização
 // ═══════════════════════════════════════════════════════════════════════════
 
 type Proposta = {
@@ -38,6 +40,8 @@ type Proposta = {
   equipe_id?: string | null;
   criado_por?: string | null;
   equipe_id_criador?: number | string | null;
+  updated_at?: string | null;
+  atualizado_por?: string | null;
 };
 type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; filas_acesso?: number[] | null; };
 
@@ -139,6 +143,14 @@ const isoLocal = (d: Date): string =>
 const textoLimpo = (v: string): string =>
   v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
+// 🕘 Valor formatado pros chips do histórico (curto, sem estourar o card)
+const fmtLogVal = (v: any): string => {
+  if (v === null || v === undefined || v === "") return "—";
+  let s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  if (s.length > 48) s = s.slice(0, 45) + "...";
+  return s;
+};
+
 
 export default function Vendas() {
   const router = useRouter();
@@ -157,6 +169,8 @@ export default function Vendas() {
   const [filtroDataInicio, setFiltroDataInicio] = useState(() => isoLocal(new Date()));
   const [filtroDataFim, setFiltroDataFim] = useState(() => isoLocal(new Date()));
   const [rangeRapido, setRangeRapido] = useState<"hoje" | "7d" | "30d" | "90d" | "custom">("hoje");
+  // 🕘 Filtro por data da ÚLTIMA MODIFICAÇÃO (updated_at; venda nunca editada vale o cadastro)
+  const [filtroModif, setFiltroModif] = useState<"qualquer" | "hoje" | "7d" | "30d">("qualquer");
   const [propostaVisualizando, setPropostaVisualizando] = useState<Proposta | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -169,6 +183,11 @@ export default function Vendas() {
   // 🔎 Filtros dinâmicos por coluna (slug → valor)
   const [filtrosColuna, setFiltrosColuna] = useState<Record<string, string>>({});
   const [pagina, setPagina] = useState(1);
+
+  // 🕘 Histórico de alterações da venda aberta no modal de visualização
+  const [logsProposta, setLogsProposta] = useState<any[]>([]);
+  const [carregandoLogs, setCarregandoLogs] = useState(false);
+  const [logsTabelaFalta, setLogsTabelaFalta] = useState(false);
 
   // Aplica um periodo rapido (define inicio/fim). "custom" libera os campos De/Ate.
   const aplicarRange = (r: "hoje" | "7d" | "30d" | "90d" | "custom") => {
@@ -403,6 +422,12 @@ export default function Vendas() {
   const nomePorId = (lista: { id: any; nome: string }[], id: any): string => {
     const item = (lista || []).find(x => String(x.id) === String(id));
     return item?.nome || String(id);
+  };
+
+  // 🕘 Slug → label legível pros chips do histórico (usa o Editor de Proposta)
+  const labelCampoLog = (slug: string): string => {
+    const c = camposUnificados.find(x => x.slug === slug);
+    return c?.label || slug;
   };
 
   // ═══ Renderização dinâmica de cada célula da tabela ═══
@@ -735,6 +760,51 @@ export default function Vendas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, modoDemo]);
 
+  // 🕘 Carrega o histórico de alterações quando abre o modal de visualização.
+  //    Se a tabela proposta_logs ainda não existe (PGRST205), mostra o aviso
+  //    pra rodar o vendas_logs.sql — sem quebrar nada.
+  useEffect(() => {
+    if (!propostaVisualizando || modoDemo) { setLogsProposta([]); setCarregandoLogs(false); return; }
+    let ativo = true;
+    (async () => {
+      setCarregandoLogs(true);
+      try {
+        const { data, error } = await supabase.from("proposta_logs").select("*")
+          .eq("proposta_id", propostaVisualizando.id)
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (!ativo) return;
+        if (error) {
+          setLogsTabelaFalta((error as any)?.code === "PGRST205");
+          setLogsProposta([]);
+        } else {
+          setLogsTabelaFalta(false);
+          setLogsProposta(data || []);
+        }
+      } catch {
+        if (ativo) setLogsProposta([]);
+      }
+      if (ativo) setCarregandoLogs(false);
+    })();
+    return () => { ativo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propostaVisualizando?.id, modoDemo]);
+
+  // 🕘 Grava uma linha de log (não pode travar a operação principal se falhar)
+  const gravarLog = async (propostaId: number, acao: string, detalhes: any) => {
+    try {
+      const { error } = await supabase.from("proposta_logs").insert({
+        proposta_id: propostaId,
+        usuario: userEmail || null,
+        acao,
+        detalhes,
+      });
+      if (error) console.warn("[Vendas] log não gravado (rode vendas_logs.sql?):", error.message);
+    } catch (e) {
+      console.warn("[Vendas] log não gravado:", e);
+    }
+  };
+
   const abrirEditar = (p: Proposta) => {
     if (modoDemo) {
       alert("⚠️ Modo demonstração ativo. Edição desabilitada até a tabela 'proposta' ser criada.");
@@ -764,7 +834,7 @@ export default function Vendas() {
     setSalvando(true);
     try {
       const up = (v: any) => (typeof v === "string" ? textoLimpo(v) : v);
-      const { error } = await supabase.from("proposta").update({
+      const payload: Record<string, any> = {
         data_proposta: form.data_proposta, nome: up(form.nome), cpf: form.cpf, rg: up(form.rg),
         data_nascimento: form.data_nascimento, nome_mae: up(form.nome_mae), email: form.email,
         endereco: up(form.endereco), cep: form.cep, cidade: up(form.cidade), estado: up(form.estado),
@@ -776,9 +846,46 @@ export default function Vendas() {
         data_instalacao: form.data_instalacao, data_cancelamento: form.data_cancelamento,
         operadora: form.operadora,
         dados_customizados: dadosCustomizadosEdit,
-      })
-        .eq("id", propostaEditando.id);
+      };
+
+      // 🕘 Diff pro log: compara o payload com a proposta original, campo a campo
+      const norm = (v: any) => (v === undefined || v === null) ? "" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+      const mudancas: { campo: string; de: any; para: any }[] = [];
+      for (const [k, vNovo] of Object.entries(payload)) {
+        if (k === "dados_customizados") continue;
+        const vAntigo = (propostaEditando as any)[k];
+        if (norm(vAntigo) !== norm(vNovo)) mudancas.push({ campo: k, de: vAntigo ?? null, para: vNovo ?? null });
+      }
+      const antigosCustom: Record<string, any> = propostaEditando.dados_customizados || {};
+      const slugsCustom = new Set([...Object.keys(antigosCustom), ...Object.keys(dadosCustomizadosEdit)]);
+      for (const slug of Array.from(slugsCustom)) {
+        const vA = antigosCustom[slug];
+        const vN = dadosCustomizadosEdit[slug];
+        if (norm(vA) !== norm(vN)) {
+          const ehArquivo = Array.isArray(vA) || Array.isArray(vN);
+          mudancas.push({
+            campo: slug,
+            de: ehArquivo ? `${Array.isArray(vA) ? vA.length : 0} anexo(s)` : (vA ?? null),
+            para: ehArquivo ? `${Array.isArray(vN) ? vN.length : 0} anexo(s)` : (vN ?? null),
+          });
+        }
+      }
+
+      // 🕘 Quem mexeu por último — só manda se as colunas já existem na proposta
+      //    (antes de rodar o vendas_logs.sql, mandar coluna inexistente quebraria o update)
+      if ("atualizado_por" in (propostaEditando as any)) {
+        payload.atualizado_por = userEmail || null;
+        payload.updated_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase.from("proposta").update(payload).eq("id", propostaEditando.id);
       if (error) { alert("Erro ao salvar: " + error.message); setSalvando(false); return; }
+
+      // grava o log só se mudou alguma coisa de fato
+      if (mudancas.length > 0) {
+        await gravarLog(propostaEditando.id, "editou", mudancas.slice(0, 40));
+      }
+
       await fetchPropostas();
       setShowModal(false);
       setPropostaEditando(null);
@@ -797,6 +904,8 @@ export default function Vendas() {
     try {
       const { error } = await supabase.from("proposta").delete().eq("id", p.id);
       if (error) { alert("Erro ao excluir: " + error.message); return; }
+      // 🕘 registra a exclusão (fica no proposta_logs mesmo com a venda apagada)
+      await gravarLog(p.id, "excluiu", [{ campo: "nome", de: p.nome || null, para: "(venda excluída)" }]);
       await fetchPropostas();
       alert("✅ Proposta excluída!");
     } catch (e: any) { alert("Erro: " + e.message); }
@@ -1032,9 +1141,22 @@ export default function Vendas() {
       try { if (p.created_at) dCad = isoLocal(new Date(p.created_at)); } catch { dCad = ""; }
       return dentro(dProp) || dentro(dCad);
     })
+    // 🕘 Filtro por data da ÚLTIMA MODIFICAÇÃO (updated_at; sem edição, vale o cadastro)
+    .filter(p => {
+      if (filtroModif === "qualquer") return true;
+      const ts = p.updated_at || p.created_at;
+      if (!ts) return false;
+      let d = "";
+      try { d = isoLocal(new Date(ts)); } catch { return false; }
+      const hoje = new Date();
+      if (filtroModif === "hoje") return d === isoLocal(hoje);
+      const ini = new Date(hoje);
+      ini.setDate(ini.getDate() - (filtroModif === "7d" ? 6 : 29));
+      return d >= isoLocal(ini) && d <= isoLocal(hoje);
+    })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
@@ -1083,7 +1205,7 @@ export default function Vendas() {
   }, [busca]);
 
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, equipeId]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
@@ -1300,8 +1422,16 @@ export default function Vendas() {
             </div>
           )}
         </div>
-        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || Object.keys(filtrosColuna).length > 0) && (
-          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); aplicarRange("hoje"); }}
+        {/* 🕘 Filtro por DATA DA ÚLTIMA MODIFICAÇÃO (updated_at; sem edição, vale o cadastro) */}
+        <select value={filtroModif} onChange={e => setFiltroModif(e.target.value as "qualquer" | "hoje" | "7d" | "30d")}
+          style={{ ...inputStyle, maxWidth: 250, borderColor: filtroModif !== "qualquer" ? "#bfdbfe" : "#e5e7eb", background: filtroModif !== "qualquer" ? "#eff6ff" : "#ffffff", fontWeight: filtroModif !== "qualquer" ? 700 : 400 }}>
+          <option value="qualquer">🕘 Modificação: qualquer data</option>
+          <option value="hoje">🕘 Modificadas hoje</option>
+          <option value="7d">🕘 Modificadas nos últimos 7 dias</option>
+          <option value="30d">🕘 Modificadas nos últimos 30 dias</option>
+        </select>
+        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || Object.keys(filtrosColuna).length > 0) && (
+          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); aplicarRange("hoje"); }}
             style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 10, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
             ✕ Limpar filtros
           </button>
@@ -1456,7 +1586,7 @@ export default function Vendas() {
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: "#ecfeff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>👁️</div>
                 <div>
                   <h2 style={{ color: "#1f2937", fontSize: 17, fontWeight: 700, margin: 0 }}>Detalhes da Proposta</h2>
-                  <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{propostaVisualizando.nome} <span style={{ color: "#d1d5db" }}>·</span> #{propostaVisualizando.id}{propostaVisualizando.created_at && <> <span style={{ color: "#d1d5db" }}>·</span> <b style={{ color: "#2563eb" }}>⏰ cadastrada {new Date(propostaVisualizando.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</b></>}</p>
+                  <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{propostaVisualizando.nome} <span style={{ color: "#d1d5db" }}>·</span> #{propostaVisualizando.id}{propostaVisualizando.created_at && <> <span style={{ color: "#d1d5db" }}>·</span> <b style={{ color: "#2563eb" }}>⏰ cadastrada {new Date(propostaVisualizando.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</b></>}{propostaVisualizando.updated_at && <> <span style={{ color: "#d1d5db" }}>·</span> <b style={{ color: "#7c3aed" }}>✏️ modificada {new Date(propostaVisualizando.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}{propostaVisualizando.atualizado_por ? ` por ${nomeVendedor(propostaVisualizando.atualizado_por)}` : ""}</b></>}</p>
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -1541,6 +1671,66 @@ export default function Vendas() {
                   </div>
                 );
               })}
+
+              {/* ═══ 🕘 HISTÓRICO DE ALTERAÇÕES (quem mexeu na venda) ═══ */}
+              <div>
+                <h3 style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, margin: "0 0 10px", textTransform: "uppercase", letterSpacing: 0.5 }}>🕘 Histórico de alterações</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {logsTabelaFalta && (
+                    <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", color: "#92400e", fontSize: 12, lineHeight: 1.5 }}>
+                      ⚠️ A tabela <code style={{ background: "#fef3c7", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace", fontSize: 11 }}>proposta_logs</code> ainda não existe no Supabase — rode o <b>vendas_logs.sql</b> pra começar a registrar quem mexeu em cada venda.
+                    </div>
+                  )}
+                  {carregandoLogs ? (
+                    <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>⏳ Carregando histórico...</p>
+                  ) : (
+                    <>
+                      {logsProposta.map((l: any) => {
+                        const quando = l.created_at ? new Date(l.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+                        const dets: any[] = Array.isArray(l.detalhes) ? l.detalhes : [];
+                        const ehExclusao = l.acao === "excluiu";
+                        return (
+                          <div key={l.id} style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderLeft: `3px solid ${ehExclusao ? "#dc2626" : "#2563eb"}`, borderRadius: 10, padding: "10px 14px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span style={{ color: "#1f2937", fontSize: 12.5, fontWeight: 700 }}>
+                                {ehExclusao ? "🗑️" : "✏️"} {nomeVendedor(l.usuario || "")} {ehExclusao ? "excluiu a venda" : "editou a venda"}
+                              </span>
+                              <span style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap" }}>{quando}</span>
+                            </div>
+                            {dets.length > 0 && (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginTop: 6 }}>
+                                {dets.slice(0, 10).map((d: any, di: number) => (
+                                  <div key={di} style={{ fontSize: 11.5, color: "#4b5563", lineHeight: 1.45 }}>
+                                    <b style={{ color: "#374151" }}>{labelCampoLog(String(d?.campo || ""))}:</b>{" "}
+                                    <span style={{ color: "#9ca3af" }}>{fmtLogVal(d?.de)}</span>
+                                    <span style={{ color: "#2563eb", fontWeight: 700 }}> → </span>
+                                    <span style={{ color: "#1f2937", fontWeight: 600 }}>{fmtLogVal(d?.para)}</span>
+                                  </div>
+                                ))}
+                                {dets.length > 10 && (
+                                  <span style={{ color: "#9ca3af", fontSize: 11 }}>+ {dets.length - 10} outra(s) alteração(ões)</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {!logsTabelaFalta && logsProposta.length === 0 && (
+                        <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, fontStyle: "italic" }}>Nenhuma edição registrada — os logs valem pras edições feitas a partir de agora.</p>
+                      )}
+                      {/* 📌 Cadastro da venda (sempre o evento mais antigo) */}
+                      <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderLeft: "3px solid #16a34a", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ color: "#14532d", fontSize: 12.5, fontWeight: 700 }}>
+                          📌 {nomeVendedor(propostaVisualizando.criado_por || propostaVisualizando.vendedor || "")} cadastrou a venda
+                        </span>
+                        <span style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap" }}>
+                          {propostaVisualizando.created_at ? new Date(propostaVisualizando.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
