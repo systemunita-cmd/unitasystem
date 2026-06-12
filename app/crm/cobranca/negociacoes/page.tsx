@@ -648,9 +648,32 @@ export default function CobrancaPage() {
   const todasFaturas = useMemo<Fatura[]>(() => {
     const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase() === "INSTALADA");
     const result: Fatura[] = [];
-    for (const p of instalados) result.push(...gerarFaturasDeProposta(p));
+    for (const p of instalados) {
+      // 🆕 FONTE PRINCIPAL: faturas REAIS importadas da planilha (histPlanilha)
+      const hist = histPlanilha.get(p.id) || [];
+      const refsPlanilha = new Set<string>();
+      for (const r of hist) {
+        if (!r.numero_referencia) continue;
+        refsPlanilha.add(r.numero_referencia);
+        let dv: Date | null = null;
+        if (r.data_vencimento) {
+          const d = new Date(String(r.data_vencimento).slice(0, 10) + "T00:00:00");
+          if (!isNaN(d.getTime())) dv = d;
+        }
+        if (!dv) {
+          const m = String(r.numero_referencia).match(/^(\d{4})-(\d{2})/);
+          if (m) dv = new Date(Number(m[1]), Number(m[2]) - 1, parseInt(String(p.vencimento || "10").replace(/\D/g, ""), 10) || 10);
+        }
+        if (!dv) continue;
+        result.push({ proposta: p, numero_referencia: r.numero_referencia, data_vencimento: dv, valor: p.valor_plano || 0, proporcional: false, dias_cobertos: 30 } as Fatura);
+      }
+      // complemento: faturas geradas pelo CRM só pros meses que NÃO vieram na planilha (ex: mês atual)
+      for (const g of gerarFaturasDeProposta(p)) {
+        if (!refsPlanilha.has(g.numero_referencia)) result.push(g);
+      }
+    }
     return aplicarStatusEAtrasos(result, statusMap);
-  }, [propostas, statusMap]);
+  }, [propostas, statusMap, histPlanilha]);
 
   const faturasFiltradas = useMemo(() => {
     let arr = todasFaturas;
@@ -658,7 +681,8 @@ export default function CobrancaPage() {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
 
-    if (filtroVenc !== "todos") {
+    // 🆕 quando há BUSCA, a janela de vencimento é ignorada (busca acha em tudo)
+    if (filtroVenc !== "todos" && !filtroBusca) {
       arr = arr.filter(f => {
         const dias = f.dias_atraso;
         if (filtroVenc === "hoje") return dias === 0;
