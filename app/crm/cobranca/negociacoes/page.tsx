@@ -94,6 +94,7 @@ type FiltroVenc = "todos" | "hoje" | "vencendo_7d" | "vencidos" | "este_mes";
 const formatBRL = (v: number) =>
   `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const formatNum = (v: number) => (v || 0).toLocaleString("pt-BR");
 const formatBRLCompacto = (v: number): string => {
   v = v || 0;
   if (Math.abs(v) >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
@@ -575,7 +576,7 @@ export default function CobrancaPage() {
   async function fetchCanais(faltando?: string[]) {
     const { data, error } = await supabase
       .from("conexoes")
-      .select("id, nome, tipo, status, waba_id");
+      .select("id, nome, tipo, status");
     if (error?.code === "PGRST205") { faltando?.push("conexoes"); return; }
     setCanais(data || []);
     const primeiro = (data || []).find(c => c.status === "conectado" || c.status === "pronto");
@@ -708,19 +709,33 @@ export default function CobrancaPage() {
   const kpis = useMemo(() => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    let aReceberMes = 0, recebidoMes = 0, atrasado = 0, totalMes = 0, pagasMes = 0, atrasadasCnt = 0;
+    const MS = 86400000;
+    let pagas = 0, aPagar = 0, vence7d = 0, atrasadas = 0;
+    // faturas em aberto que vencem ATÉ tal dia (pra montar o "pague até dia X")
+    const venceEmAberto: { dias: number; data: Date }[] = [];
     for (const f of todasFaturas) {
       const meta = STATUS_META[f.status_visual];
-      const ehDesteMes = f.data_vencimento.getMonth() === hoje.getMonth() && f.data_vencimento.getFullYear() === hoje.getFullYear();
-      if (ehDesteMes) {
-        totalMes++;
-        if (meta?.recebido) { pagasMes++; recebidoMes += f.valor; }
-        if (meta?.pendencia) aReceberMes += f.valor;
-      }
-      if (f.status_visual === "atrasada") { atrasado += f.valor; atrasadasCnt++; }
+      if (meta?.recebido) { pagas++; continue; }
+      // não paga:
+      aPagar++;
+      const dias = Math.round((f.data_vencimento.getTime() - hoje.getTime()) / MS); // >0 = ainda vai vencer
+      if (f.status_visual === "atrasada") atrasadas++;
+      if (dias >= 0 && dias <= 7) vence7d++;
+      if (dias >= 0) venceEmAberto.push({ dias, data: f.data_vencimento });
     }
-    const inadimplencia = totalMes > 0 ? Math.round((atrasadasCnt / totalMes) * 100) : 0;
-    return { aReceberMes, recebidoMes, atrasado, atrasadasCnt, pagasMes, totalMes, inadimplencia };
+    // próxima data de corte: a fatura em aberto mais próxima de vencer
+    venceEmAberto.sort((a, b) => a.dias - b.dias);
+    const prox = venceEmAberto[0] || null;
+    const proxData = prox ? prox.data : null;
+    const proxDias = prox ? prox.dias : null;
+    // quantas faturas vencem exatamente nessa próxima data de corte (viram inadimplentes se não pagar)
+    let viramInad = 0;
+    if (proxData) {
+      for (const v of venceEmAberto) if (v.data.getTime() === proxData.getTime()) viramInad++;
+    }
+    const total = pagas + aPagar;
+    const pctPago = total > 0 ? Math.round((pagas / total) * 100) : 0;
+    return { pagas, aPagar, vence7d, atrasadas, total, pctPago, viramInad, proxData, proxDias };
   }, [todasFaturas]);
 
   const chaveSelecao = (f: Fatura) => `${f.proposta.id}_${f.numero_referencia}`;
@@ -1080,10 +1095,10 @@ export default function CobrancaPage() {
 
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
-        <KPI cor="#2563eb" bg="#eff6ff" icone="📅" label="A receber (mês)" valor={formatBRLCompacto(kpis.aReceberMes)} sub={`${kpis.totalMes - kpis.pagasMes} fatura(s) pendente(s)`} isMobile={isMobile} />
-        <KPI cor="#16a34a" bg="#f0fdf4" icone="💵" label="Recebido (mês)"  valor={formatBRLCompacto(kpis.recebidoMes)} sub={`${kpis.pagasMes} fatura(s) paga(s)`} isMobile={isMobile} />
-        <KPI cor="#dc2626" bg="#fef2f2" icone="🔴" label="Atrasado"         valor={formatBRLCompacto(kpis.atrasado)}    sub={`${kpis.atrasadasCnt} fatura(s) vencida(s)`} isMobile={isMobile} />
-        <KPI cor="#4f46e5" bg="#eef2ff" icone="📊" label="Inadimplência"    valor={`${kpis.inadimplencia}%`}             sub="Atrasadas / total do mês" isMobile={isMobile} />
+        <KPI cor="#16a34a" bg="#f0fdf4" icone="✅" label="Faturas pagas"      valor={formatNum(kpis.pagas)}     sub={`${kpis.pctPago}% do total`} isMobile={isMobile} />
+        <KPI cor="#d97706" bg="#fffbeb" icone="⏳" label="Faturas a pagar"    valor={formatNum(kpis.aPagar)}    sub={`${formatNum(kpis.atrasadas)} já vencida(s)`} isMobile={isMobile} />
+        <KPI cor="#2563eb" bg="#eff6ff" icone="📅" label="Vencem em 7 dias"   valor={formatNum(kpis.vence7d)}   sub="faturas a vencer" isMobile={isMobile} />
+        <KPI cor="#dc2626" bg="#fef2f2" icone="🚨" label={kpis.proxData ? `Pague até ${kpis.proxData.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}` : "Próximo corte"} valor={formatNum(kpis.viramInad)} sub={kpis.proxDias != null ? (kpis.proxDias === 0 ? "viram inadimplentes HOJE" : `viram inadimplentes em ${kpis.proxDias}d`) : "nenhuma a vencer"} isMobile={isMobile} />
       </div>
 
       {/* TABS */}
