@@ -252,6 +252,59 @@ const CAMPOS_PLANILHA = [
   { key: "codigo",   label: "🔖 Código / identificador",  obrigatorio: false },
 ] as const;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 📊 ADIÇÃO: Atualizar faturas pela planilha de status + dashboard
+//    Acha o cliente pela ORDEM DE SERVIÇO (proposta.dados_customizados.os),
+//    puxa o CUSTCODE pela ordem e classifica paga / pendente / inadimplente.
+//    Grava em faturas_status (mesma tabela) — nada do que já existe é alterado.
+// ═══════════════════════════════════════════════════════════════════════════
+type ColFat = "ordem" | "custcode" | "status" | "vencimento" | "pagamento" | "numero_fatura";
+const DETECTAR_FAT: { key: ColFat; label: string; obrig: boolean; testa: (h: string) => boolean }[] = [
+  { key: "ordem",         label: "Número da ordem (cliente)", obrig: true,  testa: h => /ordem/.test(h) },
+  { key: "custcode",      label: "Custcode do cliente",       obrig: true,  testa: h => /custcode/.test(h) && /cliente/.test(h) },
+  { key: "status",        label: "Status do pagamento",       obrig: true,  testa: h => /status/.test(h) && /pagamento|pagto/.test(h) },
+  { key: "vencimento",    label: "Data de vencimento",        obrig: true,  testa: h => /data/.test(h) && /vencimento|venc/.test(h) },
+  { key: "pagamento",     label: "Data de pagamento",         obrig: false, testa: h => /data/.test(h) && /pagamento|pagto/.test(h) },
+  { key: "numero_fatura", label: "Número da fatura",          obrig: false, testa: h => /n[uú]mero/.test(h) && /fatura/.test(h) },
+];
+const parseDataFat = (v: any): Date | null => {
+  if (v == null || v === "") return null;
+  if (v instanceof Date && !isNaN(v.getTime())) return v;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const d = new Date(s); return isNaN(d.getTime()) ? null : d;
+};
+const codigoStatusFat = (txt: string): number | null => {
+  const m = String(txt || "").trim().match(/^\s*0?(\d)/);
+  return m ? Number(m[1]) : null;
+};
+const classificarFat = (statusTxt: string, venc: Date | null, hoje: Date, carencia: number): { status: StatusFatura; bucket: "paga" | "pendente" | "inadimplente"; dias: number } => {
+  const cod = codigoStatusFat(statusTxt);
+  const t = String(statusTxt || "").toLowerCase();
+  const dias = venc ? Math.round((hoje.getTime() - venc.getTime()) / 86400000) : 0;
+  if (cod === 1 || /pagou at[eé] a data/.test(t)) return { status: "paga", bucket: "paga", dias };
+  if (cod === 2 || cod === 3 || cod === 4 || (/pagou/.test(t) && !/n[aã]o pagou/.test(t))) return { status: "paga_atraso", bucket: "paga", dias };
+  if (cod === 5 || /n[aã]o pagou/.test(t)) {
+    if (dias > carencia) return { status: "atrasada", bucket: "inadimplente", dias };
+    return { status: "pendente", bucket: "pendente", dias };
+  }
+  if (venc && dias > carencia) return { status: "atrasada", bucket: "inadimplente", dias };
+  return { status: "pendente", bucket: "pendente", dias };
+};
+const BUCKET_FAT = {
+  paga:         { label: "Pagas",         icone: "✅", cor: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
+  pendente:     { label: "Pendentes",     icone: "⏳", cor: "#d97706", bg: "#fffbeb", border: "#fde68a" },
+  inadimplente: { label: "Inadimplentes", icone: "🔴", cor: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
+} as const;
+type ClienteFat = {
+  ordem: string; custcode: string; proposta?: Proposta; nome: string;
+  faturas: { ref: string; status: StatusFatura; bucket: "paga" | "pendente" | "inadimplente"; venc: Date | null; pag: string | null }[];
+  pagas: number; pendentes: number; inadimplentes: number; matched: boolean; custcodeNovo: boolean;
+};
+
 export default function CobrancaPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string>("");
@@ -361,6 +414,16 @@ export default function CobrancaPage() {
   const [primeiraLinhaCabecalho, setPrimeiraLinhaCabecalho] = useState(true);
   const [selecionadosPlanilha, setSelecionadosPlanilha] = useState<Set<number>>(new Set());
   const inputArquivoRef = useRef<HTMLInputElement>(null);
+
+  // 📊 ADIÇÃO: modo "atualizar faturas" / dashboard dentro da aba planilha
+  const inputFatRef = useRef<HTMLInputElement>(null);
+  const [modoPlanilha, setModoPlanilha] = useState<"disparo" | "faturas">("disparo");
+  const [mapFat, setMapFat] = useState<Record<ColFat, number>>({ ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1 });
+  const [carenciaFat, setCarenciaFat] = useState(0);
+  const [gravandoFat, setGravandoFat] = useState(false);
+  const [buscaFat, setBuscaFat] = useState("");
+  const [filtroFat, setFiltroFat] = useState<"todos" | "paga" | "pendente" | "inadimplente" | "sem_venda">("todos");
+  const [pagFat, setPagFat] = useState(1);
 
   const [showEnvio, setShowEnvio] = useState(false);
   const [envioFonte, setEnvioFonte] = useState<"crm" | "planilha">("crm");
@@ -792,6 +855,10 @@ export default function CobrancaPage() {
           if (idx >= 0) novoMap[campo] = idx;
         }
         setMapeamento(novoMap);
+        // 📊 ADIÇÃO: auto-detecta também as colunas da planilha de STATUS de fatura
+        const novoFat: Record<ColFat, number> = { ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1 };
+        for (const d of DETECTAR_FAT) { const idx = cabec.findIndex(c => d.testa(c)); novoFat[d.key] = idx; }
+        setMapFat(novoFat);
       } catch (err: any) {
         setFeedback({ tipo: "erro", titulo: "Não consegui ler o arquivo", mensagem: err?.message || "Verifique se o arquivo é .csv, .xlsx ou .xls válido." });
       }
@@ -826,6 +893,106 @@ export default function CobrancaPage() {
   const linhasValidas = useMemo(() => {
     return linhasMapeadas.filter(l => normalizarTelefone(l.telefone).length >= 10);
   }, [linhasMapeadas]);
+
+  // ═══ 📊 ADIÇÃO: processamento da planilha de STATUS de fatura ═══
+  const propostaPorOrdem = useMemo(() => {
+    const m = new Map<string, Proposta>();
+    for (const p of propostas) {
+      const os = String(p.dados_customizados?.os || "").toLowerCase().trim();
+      if (os) m.set(os, p);
+    }
+    return m;
+  }, [propostas]);
+
+  const colsFatOk = mapFat.ordem >= 0 && mapFat.custcode >= 0 && mapFat.status >= 0 && mapFat.vencimento >= 0;
+
+  const dadosFat = useMemo(() => {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const porOrdem = new Map<string, ClienteFat>();
+    if (colsFatOk) {
+      for (const linha of planilhaDados) {
+        const ordem = String(linha[mapFat.ordem] || "").trim();
+        if (!ordem) continue;
+        const custcode = String(linha[mapFat.custcode] || "").trim();
+        const statusTxt = String(linha[mapFat.status] || "").trim();
+        const venc = parseDataFat(linha[mapFat.vencimento]);
+        const pag = mapFat.pagamento >= 0 ? parseDataFat(linha[mapFat.pagamento]) : null;
+        const cls = classificarFat(statusTxt, venc, hoje, carenciaFat);
+        let cli = porOrdem.get(ordem);
+        if (!cli) {
+          const prop = propostaPorOrdem.get(ordem.toLowerCase());
+          const custAtual = String(prop?.dados_customizados?.custcode || "").trim();
+          cli = { ordem, custcode, proposta: prop, nome: prop?.nome || "—", faturas: [], pagas: 0, pendentes: 0, inadimplentes: 0, matched: !!prop, custcodeNovo: !!prop && custAtual !== custcode };
+          porOrdem.set(ordem, cli);
+        }
+        if (custcode) cli.custcode = custcode;
+        cli.faturas.push({ ref: venc ? formatNumeroRef(venc) : "", status: cls.status, bucket: cls.bucket, venc, pag: pag ? pag.toISOString().slice(0, 10) : null });
+        if (cls.bucket === "paga") cli.pagas++; else if (cls.bucket === "pendente") cli.pendentes++; else cli.inadimplentes++;
+      }
+    }
+    const arr = Array.from(porOrdem.values());
+    arr.sort((a, b) => b.inadimplentes - a.inadimplentes || b.faturas.length - a.faturas.length);
+    let pg = 0, pe = 0, ina = 0, tot = 0;
+    for (const c of arr) { pg += c.pagas; pe += c.pendentes; ina += c.inadimplentes; tot += c.faturas.length; }
+    const semVenda = arr.filter(c => !c.matched);
+    return {
+      clientes: arr, totFat: tot, semVenda,
+      pagas: pg, pendentes: pe, inadimplentes: ina,
+      totalClientes: arr.length, clientesMatched: arr.length - semVenda.length,
+      custcodesPreencher: arr.filter(c => c.matched && c.custcodeNovo).length,
+      clientesInad: arr.filter(c => c.inadimplentes > 0).length,
+    };
+  }, [colsFatOk, planilhaDados, mapFat, carenciaFat, propostaPorOrdem]);
+
+  const listaFat = useMemo(() => {
+    let arr = dadosFat.clientes;
+    if (filtroFat === "sem_venda") arr = arr.filter(c => !c.matched);
+    else if (filtroFat === "paga") arr = arr.filter(c => c.pagas > 0);
+    else if (filtroFat === "pendente") arr = arr.filter(c => c.pendentes > 0);
+    else if (filtroFat === "inadimplente") arr = arr.filter(c => c.inadimplentes > 0);
+    const b = buscaFat.trim().toLowerCase();
+    if (b) arr = arr.filter(c => c.ordem.toLowerCase().includes(b) || c.custcode.toLowerCase().includes(b) || c.nome.toLowerCase().includes(b));
+    return arr;
+  }, [dadosFat, filtroFat, buscaFat]);
+
+  const totalPagFat = Math.max(1, Math.ceil(listaFat.length / 25));
+  const listaFatPagina = useMemo(() => listaFat.slice((pagFat - 1) * 25, pagFat * 25), [listaFat, pagFat]);
+  useEffect(() => { setPagFat(1); }, [filtroFat, buscaFat, dadosFat.totFat]);
+
+  const gravarFaturas = async () => {
+    if (tabelasFaltando.includes("faturas_status")) { setFeedback({ tipo: "erro", titulo: "Tabela faltando", mensagem: "A tabela faturas_status não existe. Rode o SQL de setup primeiro." }); return; }
+    const matched = dadosFat.clientes.filter(c => c.matched && c.proposta);
+    if (matched.length === 0) { setFeedback({ tipo: "aviso", titulo: "Nada pra gravar", mensagem: "Nenhuma ordem da planilha casou com uma venda do CRM (dados_customizados.os)." }); return; }
+    setGravandoFat(true);
+    try {
+      let custOk = 0;
+      for (const c of matched.filter(x => x.custcodeNovo && x.custcode)) {
+        const novo = { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode };
+        const { error } = await supabase.from("proposta").update({ dados_customizados: novo }).eq("id", c.proposta!.id);
+        if (!error) custOk++;
+      }
+      const payload: any[] = [];
+      for (const c of matched) {
+        const vistos = new Set<string>();
+        for (const f of c.faturas) {
+          if (!f.ref || vistos.has(f.ref)) continue;
+          vistos.add(f.ref);
+          payload.push({ proposta_id: c.proposta!.id, numero_referencia: f.ref, status: f.status, data_pagamento: (f.status === "paga" || f.status === "paga_atraso") ? f.pag : null, atualizado_por: userEmail || null });
+        }
+      }
+      let fatOk = 0;
+      for (let i = 0; i < payload.length; i += 500) {
+        const chunk = payload.slice(i, i + 500);
+        const { error } = await supabase.from("faturas_status").upsert(chunk, { onConflict: "proposta_id,numero_referencia" });
+        if (!error) fatOk += chunk.length;
+      }
+      await fetchStatusFaturas();
+      setFeedback({ tipo: "sucesso", titulo: "Cobrança atualizada!", mensagem: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s).${dadosFat.semVenda.length > 0 ? ` ${dadosFat.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });
+    } catch (e: any) {
+      setFeedback({ tipo: "erro", titulo: "Erro ao gravar", mensagem: e?.message || "Falha inesperada." });
+    }
+    setGravandoFat(false);
+  };
 
   const toggleSelPlanilha = (idx: number) => {
     setSelecionadosPlanilha(prev => {
@@ -1305,6 +1472,192 @@ export default function CobrancaPage() {
           {/* ════════════ ABA: PLANILHA ════════════ */}
           {aba === "planilha" && (
             <>
+              {/* 📊 ADIÇÃO: seletor de modo da aba planilha */}
+              <div style={{ ...cardStyle, padding: 6, display: "flex", gap: 4 }}>
+                {([{ k: "disparo", l: "📤 Disparar cobrança (WhatsApp)" }, { k: "faturas", l: "💳 Atualizar faturas / Dashboard" }] as { k: "disparo" | "faturas"; l: string }[]).map(t => (
+                  <button key={t.k} onClick={() => setModoPlanilha(t.k)} style={{ flex: 1, background: modoPlanilha === t.k ? "linear-gradient(135deg,#2563eb,#1d4ed8)" : "transparent", color: modoPlanilha === t.k ? "#fff" : "#6b7280", border: "none", borderRadius: 10, padding: "10px 14px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>{t.l}</button>
+                ))}
+              </div>
+
+              {/* ════════════ 📊 ADIÇÃO: ATUALIZAR FATURAS PELA PLANILHA + DASHBOARD ════════════ */}
+              {modoPlanilha === "faturas" && (
+                <>
+                  {/* 1. Upload */}
+                  <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
+                    <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>1. Suba a planilha de status das faturas</h3>
+                    <p style={{ color: "#6b7280", fontSize: 12.5, margin: "0 0 12px", lineHeight: 1.5 }}>Acha o cliente pela <b>ordem de serviço</b> e puxa o <b>custcode</b> sozinho. Aceita .xlsx, .xls, .csv.</p>
+                    <input ref={inputFatRef} type="file" accept=".csv,.xlsx,.xls" onChange={onArquivoSelecionado} style={{ display: "none" }} />
+                    <div style={{ border: "2px dashed #93c5fd", borderRadius: 12, padding: 24, textAlign: "center", background: "#eff6ff", cursor: "pointer" }} onClick={() => inputFatRef.current?.click()}>
+                      <div style={{ fontSize: 36, marginBottom: 6 }}>📤</div>
+                      <p style={{ color: "#2563eb", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>{planilhaNomeArquivo || "Clique pra escolher um arquivo"}</p>
+                      <p style={{ color: "#3b82f6", fontSize: 12, margin: 0 }}>{planilhaLinhas.length > 0 ? `${planilhaDados.length.toLocaleString("pt-BR")} linha(s) carregada(s)` : "Aceita .csv, .xlsx, .xls"}</p>
+                    </div>
+                    {planilhaLinhas.length > 0 && (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "#374151", fontSize: 12, cursor: "pointer" }}>
+                        <input type="checkbox" checked={primeiraLinhaCabecalho} onChange={e => setPrimeiraLinhaCabecalho(e.target.checked)} style={{ accentColor: "#2563eb" }} />
+                        Primeira linha é o cabeçalho da planilha
+                      </label>
+                    )}
+                  </div>
+
+                  {/* 2. Mapeamento + carência */}
+                  {planilhaLinhas.length > 0 && (
+                    <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
+                      <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>2. Confira as colunas</h3>
+                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "0 0 16px" }}>Auto-detectei pelo nome. Ajuste se precisar.</p>
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+                        {DETECTAR_FAT.map(d => {
+                          const idx = mapFat[d.key]; const ok = idx >= 0;
+                          return (
+                            <div key={d.key}>
+                              <label style={labelStyle}>{d.label}{d.obrig && <span style={{ color: "#dc2626" }}> *</span>}</label>
+                              <select value={idx} onChange={e => setMapFat(m => ({ ...m, [d.key]: parseInt(e.target.value, 10) }))} style={{ ...inputStyle, borderColor: ok || !d.obrig ? "#e5e7eb" : "#fecaca" }}>
+                                <option value={-1}>— não usar —</option>
+                                {cabecalhoColunas.map((h: string, i: number) => <option key={i} value={i}>{h}</option>)}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+                        <label style={labelStyle}>⏱️ Carência p/ inadimplência</label>
+                        <input type="number" min={0} value={carenciaFat} onChange={e => setCarenciaFat(Math.max(0, parseInt(e.target.value) || 0))} style={{ ...inputStyle, width: 80 }} />
+                        <span style={{ color: "#6b7280", fontSize: 12 }}>dias após vencer (não pagou + venceu há mais que isso = <b style={{ color: "#dc2626" }}>inadimplente</b>; senão = <b style={{ color: "#d97706" }}>pendente</b>)</span>
+                      </div>
+                      {!colsFatOk && <p style={{ color: "#dc2626", fontSize: 12, margin: "12px 0 0", fontWeight: 600 }}>⚠️ Faltam colunas obrigatórias (*). Ajuste o mapeamento.</p>}
+                    </div>
+                  )}
+
+                  {/* 3. Dashboard */}
+                  {colsFatOk && dadosFat.totFat > 0 && (
+                    <>
+                      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, borderLeft: "4px solid #2563eb", background: "linear-gradient(135deg,#f8faff,#ffffff)" }}>
+                        <p style={{ ...labelStyle, marginBottom: 6 }}>📣 Resumo da planilha</p>
+                        <p style={{ color: "#1f2937", fontSize: isMobile ? 14.5 : 16, fontWeight: 600, margin: 0, lineHeight: 1.6 }}>
+                          {`${dadosFat.totalClientes.toLocaleString("pt-BR")} cliente(s) · ${dadosFat.totFat.toLocaleString("pt-BR")} fatura(s). `}
+                          <span style={{ color: "#16a34a" }}>{dadosFat.pagas.toLocaleString("pt-BR")} pagas</span>{", "}
+                          <span style={{ color: "#d97706" }}>{dadosFat.pendentes.toLocaleString("pt-BR")} pendentes</span>{" e "}
+                          <span style={{ color: "#dc2626" }}>{dadosFat.inadimplentes.toLocaleString("pt-BR")} inadimplentes</span>{". "}
+                          {dadosFat.clientesMatched < dadosFat.totalClientes && <span style={{ color: "#dc2626" }}>{`${dadosFat.semVenda.length} ordem(ns) sem venda no CRM.`}</span>}
+                        </p>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? 10 : 14 }}>
+                        {([
+                          { k: "paga" as const, qtd: dadosFat.pagas, sub: `${dadosFat.totFat > 0 ? Math.round(dadosFat.pagas / dadosFat.totFat * 100) : 0}% das faturas` },
+                          { k: "pendente" as const, qtd: dadosFat.pendentes, sub: `${dadosFat.totFat > 0 ? Math.round(dadosFat.pendentes / dadosFat.totFat * 100) : 0}% das faturas` },
+                          { k: "inadimplente" as const, qtd: dadosFat.inadimplentes, sub: `${dadosFat.clientesInad.toLocaleString("pt-BR")} cliente(s) c/ pendência vencida` },
+                        ]).map(c => {
+                          const meta = BUCKET_FAT[c.k];
+                          return (
+                            <div key={c.k} style={{ ...cardStyle, padding: isMobile ? 16 : 20, borderTop: `4px solid ${meta.cor}` }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                                <div style={{ width: 36, height: 36, borderRadius: 10, background: meta.bg, border: `1px solid ${meta.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{meta.icone}</div>
+                                <p style={{ color: "#6b7280", fontSize: 12, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>{meta.label}</p>
+                              </div>
+                              <p style={{ color: meta.cor, fontSize: isMobile ? 28 : 34, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{c.qtd.toLocaleString("pt-BR")}</p>
+                              <p style={{ color: "#9ca3af", fontSize: 12, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20 }}>
+                        <p style={{ ...labelStyle, marginBottom: 10 }}>📊 Proporção das faturas</p>
+                        <div style={{ display: "flex", height: 28, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+                          {([{ q: dadosFat.pagas, cor: "#16a34a" }, { q: dadosFat.pendentes, cor: "#d97706" }, { q: dadosFat.inadimplentes, cor: "#dc2626" }]).map((s, i) => {
+                            const p = dadosFat.totFat > 0 ? Math.round(s.q / dadosFat.totFat * 100) : 0;
+                            return s.q > 0 ? <div key={i} style={{ width: `${p}%`, background: s.cor, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 11, fontWeight: 700 }}>{p >= 8 ? `${p}%` : ""}</div> : null;
+                          })}
+                        </div>
+                      </div>
+
+                      {/* matching + gravar */}
+                      <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 14, alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                          <div>
+                            <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, fontWeight: 600, textTransform: "uppercase" }}>Casaram c/ o CRM</p>
+                            <p style={{ color: "#16a34a", fontSize: 20, fontWeight: 800, margin: "2px 0 0" }}>{dadosFat.clientesMatched.toLocaleString("pt-BR")}<span style={{ color: "#9ca3af", fontSize: 13, fontWeight: 600 }}> / {dadosFat.totalClientes.toLocaleString("pt-BR")}</span></p>
+                          </div>
+                          <div>
+                            <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, fontWeight: 600, textTransform: "uppercase" }}>Custcodes a preencher</p>
+                            <p style={{ color: "#2563eb", fontSize: 20, fontWeight: 800, margin: "2px 0 0" }}>{dadosFat.custcodesPreencher.toLocaleString("pt-BR")}</p>
+                          </div>
+                          {dadosFat.semVenda.length > 0 && (
+                            <div>
+                              <p style={{ color: "#9ca3af", fontSize: 11, margin: 0, fontWeight: 600, textTransform: "uppercase" }}>Ordens sem venda</p>
+                              <p style={{ color: "#dc2626", fontSize: 20, fontWeight: 800, margin: "2px 0 0" }}>{dadosFat.semVenda.length.toLocaleString("pt-BR")}</p>
+                            </div>
+                          )}
+                        </div>
+                        <button onClick={gravarFaturas} disabled={gravandoFat} style={{ ...btnPrimario, opacity: gravandoFat ? 0.6 : 1, cursor: gravandoFat ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>{gravandoFat ? "⏳ Gravando..." : "💾 Atualizar faturas no sistema"}</button>
+                      </div>
+
+                      {/* tabela de clientes c/ nome + CUSTCODE */}
+                      <div style={{ ...cardStyle, overflow: "hidden" }}>
+                        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                          <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>👥 Clientes ({listaFat.length.toLocaleString("pt-BR")})</h3>
+                          <input placeholder="🔍 ordem, custcode ou nome..." value={buscaFat} onChange={e => setBuscaFat(e.target.value)} style={{ ...inputStyle, marginLeft: "auto", padding: "7px 12px", fontSize: 12, borderRadius: 20, width: isMobile ? "100%" : 260 }} />
+                        </div>
+                        <div style={{ padding: "10px 18px", borderBottom: "1px solid #f3f4f6", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {([{ k: "todos", l: "Todos" }, { k: "inadimplente", l: "🔴 Inadimplentes" }, { k: "pendente", l: "⏳ Pendentes" }, { k: "paga", l: "✅ Pagas" }, { k: "sem_venda", l: "❓ Sem venda" }] as { k: typeof filtroFat; l: string }[]).map(f => (
+                            <button key={f.k} onClick={() => setFiltroFat(f.k)} style={{ borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600, border: `1px solid ${filtroFat === f.k ? "#2563eb" : "#e5e7eb"}`, background: filtroFat === f.k ? "#eff6ff" : "#ffffff", color: filtroFat === f.k ? "#2563eb" : "#6b7280" }}>{f.l}</button>
+                          ))}
+                        </div>
+                        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 720 : "auto" }}>
+                            <thead>
+                              <tr style={{ background: "#f9fafb" }}>
+                                {["Cliente", "CUSTCODE", "Ordem de serviço", "Faturas", "✅ Pagas", "⏳ Pend.", "🔴 Inad."].map(h => (
+                                  <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {listaFatPagina.map((c, i) => (
+                                <tr key={c.ordem} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#ffffff" : "#fafbfc" }}>
+                                  <td style={{ padding: "11px 14px", maxWidth: 220 }}>
+                                    <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome}</div>
+                                    {!c.matched && <span style={{ color: "#dc2626", fontSize: 10.5, fontWeight: 600 }}>❓ sem venda no CRM</span>}
+                                  </td>
+                                  <td style={{ padding: "11px 14px" }}>
+                                    <span style={{ fontFamily: "monospace", fontSize: 12.5, color: c.custcode ? "#1f2937" : "#9ca3af", fontWeight: 700, background: c.custcodeNovo ? "#eff6ff" : "transparent", border: c.custcodeNovo ? "1px solid #bfdbfe" : "1px solid transparent", borderRadius: 6, padding: "2px 7px" }}>{c.custcode || "—"}</span>
+                                    {c.custcodeNovo && <span title="vai ser preenchido ao gravar" style={{ color: "#2563eb", fontSize: 10, fontWeight: 700, marginLeft: 4 }}>novo</span>}
+                                  </td>
+                                  <td style={{ padding: "11px 14px", fontFamily: "monospace", fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>{c.ordem}</td>
+                                  <td style={{ padding: "11px 14px", color: "#374151", fontSize: 13, fontWeight: 600 }}>{c.faturas.length}</td>
+                                  <td style={{ padding: "11px 14px" }}>{c.pagas > 0 ? <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", fontSize: 12, padding: "2px 9px", borderRadius: 10, fontWeight: 700 }}>{c.pagas}</span> : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                                  <td style={{ padding: "11px 14px" }}>{c.pendentes > 0 ? <span style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", fontSize: 12, padding: "2px 9px", borderRadius: 10, fontWeight: 700 }}>{c.pendentes}</span> : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                                  <td style={{ padding: "11px 14px" }}>{c.inadimplentes > 0 ? <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: 12, padding: "2px 9px", borderRadius: 10, fontWeight: 700 }}>{c.inadimplentes}</span> : <span style={{ color: "#d1d5db" }}>—</span>}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {totalPagFat > 1 && (
+                          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, padding: 14 }}>
+                            <button onClick={() => setPagFat(p => Math.max(1, p - 1))} disabled={pagFat === 1} style={{ ...btnSecundario, padding: "7px 14px", opacity: pagFat === 1 ? 0.5 : 1 }}>← Anterior</button>
+                            <span style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>Pág. {pagFat} / {totalPagFat}</span>
+                            <button onClick={() => setPagFat(p => Math.min(totalPagFat, p + 1))} disabled={pagFat === totalPagFat} style={{ ...btnSecundario, padding: "7px 14px", opacity: pagFat === totalPagFat ? 0.5 : 1 }}>Próxima →</button>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {planilhaLinhas.length === 0 && (
+                    <div style={{ ...cardStyle, padding: 40, textAlign: "center" }}>
+                      <div style={{ fontSize: 40, marginBottom: 10 }}>📊</div>
+                      <h3 style={{ color: "#1f2937", fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>Suba a planilha pra ver o dashboard</h3>
+                      <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Pagas, pendentes e inadimplentes aparecem aqui assim que você carregar o arquivo.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ════════════ disparo (conteúdo original, intacto) ════════════ */}
+              {modoPlanilha === "disparo" && (
+              <>
               <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
                 <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>1. Suba sua planilha</h3>
                 <input ref={inputArquivoRef} type="file" accept=".csv,.xlsx,.xls" onChange={onArquivoSelecionado} style={{ display: "none" }} />
@@ -1428,6 +1781,8 @@ export default function CobrancaPage() {
                 </div>
               )}
             </>
+            )}
+          </>
           )}
 
           {/* ════════════ ABA: CAMPANHAS ════════════ */}
