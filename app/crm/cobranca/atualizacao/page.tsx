@@ -8,7 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
 import {
   type Proposta, type ColKey, type ClienteCob, type FaturaPlan,
-  DETECTAR, BUCKET_META, formatNum, pctOf, refDe,
+  DETECTAR, BUCKET_META, formatNum, pctOf, refDe, codigoStatusStr, pagouComAtrasoGrave,
   parseData, classificar, calcularProxVenc, rotuloProx,
   carregarPropostas, carregarFaturasStatus, indicePorOrdem,
 } from "../../../lib/cobranca_lib";
@@ -34,7 +34,7 @@ export default function CobrancaAtualizacao() {
   const [linhas, setLinhas] = useState<any[][]>([]);
   const [nomeArquivo, setNomeArquivo] = useState("");
   const [temCabecalho, setTemCabecalho] = useState(true);
-  const [mapCols, setMapCols] = useState<Record<ColKey, number>>({ ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1 });
+  const [mapCols, setMapCols] = useState<Record<ColKey, number>>({ ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1 });
   const [carencia, setCarencia] = useState(0);
 
   const [gravando, setGravando] = useState(false);
@@ -80,7 +80,7 @@ export default function CobrancaAtualizacao() {
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
         setLinhas(rows); setPagina(1);
         const head = (rows[0] || []).map((c: any) => String(c || "").toLowerCase().trim());
-        const novo: Record<ColKey, number> = { ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1 };
+        const novo: Record<ColKey, number> = { ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1 };
         for (const d of DETECTAR) novo[d.key] = head.findIndex(h => d.testa(h));
         setMapCols(novo); setTemCabecalho(true);
       } catch (err: any) {
@@ -113,16 +113,26 @@ export default function CobrancaAtualizacao() {
         const pagD = mapCols.pagamento >= 0 ? parseData(linha[mapCols.pagamento]) : null;
         const cls = classificar(statusTxt, venc, hoje, carencia);
         const diasPag = (cls.bucket === "paga" && venc && pagD) ? Math.round((pagD.getTime() - venc.getTime()) / 86400000) : null;
-        const fat: FaturaPlan = { ref: venc ? refDe(venc) : "", status: cls.status, bucket: cls.bucket, venc, pag: pagD ? pagD.toISOString().slice(0, 10) : null, diasPagamento: diasPag };
+        const numFatRaw = mapCols.numero_fatura >= 0 ? parseInt(String(linha[mapCols.numero_fatura] || "").replace(/\D/g, ""), 10) : NaN;
+        const detalhe = mapCols.detalhamento >= 0 ? String(linha[mapCols.detalhamento] || "").trim() : null;
+        const fat: FaturaPlan = {
+          ref: venc ? refDe(venc) : "", status: cls.status, bucket: cls.bucket, venc,
+          pag: pagD ? pagD.toISOString().slice(0, 10) : null, diasPagamento: diasPag,
+          numeroFatura: Number.isFinite(numFatRaw) ? numFatRaw : null,
+          codigo: codigoStatusStr(statusTxt),
+          statusPlanilha: statusTxt || null,
+          detalhamento: detalhe || null,
+        };
         let c = m.get(ordem);
         if (!c) {
           const prop = porOrdem.get(ordem.toLowerCase());
           const custAtual = String(prop?.dados_customizados?.custcode || "").trim();
-          c = { ordem, custcode, proposta: prop, nome: prop?.nome || "—", faturas: [], pagas: 0, pendentes: 0, inadimplentes: 0, somaDiasPagamento: 0, matched: !!prop, custcodeNovo: !!prop && custAtual !== custcode, prox: { estado: "em_dia", dias: 0, data: null } };
+          c = { ordem, custcode, proposta: prop, nome: prop?.nome || "—", faturas: [], pagas: 0, pendentes: 0, inadimplentes: 0, somaDiasPagamento: 0, matched: !!prop, custcodeNovo: !!prop && custAtual !== custcode, prox: { estado: "em_dia", dias: 0, data: null }, precoce: false };
           m.set(ordem, c);
         }
         if (custcode) c.custcode = custcode;
         c.faturas.push(fat);
+        if (pagouComAtrasoGrave(statusTxt)) c.precoce = true;
         if (fat.bucket === "paga") { c.pagas++; if (diasPag != null) c.somaDiasPagamento += diasPag; }
         else if (fat.bucket === "pendente") c.pendentes++;
         else c.inadimplentes++;
@@ -169,19 +179,32 @@ export default function CobrancaAtualizacao() {
         const { error } = await supabase.from("proposta").update({ dados_customizados: novo }).eq("id", c.proposta!.id);
         if (!error) custOk++;
       }
+      // 🆕 Grava CADA fatura da planilha (1..10), não agrupa mais por mês.
+      //    Chave de upsert agora é (proposta_id, numero_fatura) — ver SQL cobranca_faturas_extra.
       const payload: any[] = [];
       for (const c of matched) {
-        const vistos = new Set<string>();
+        const vistos = new Set<number>();
         for (const f of c.faturas) {
-          if (!f.ref || vistos.has(f.ref)) continue;
-          vistos.add(f.ref);
-          payload.push({ proposta_id: c.proposta!.id, numero_referencia: f.ref, status: f.status, data_pagamento: f.bucket === "paga" ? f.pag : null, atualizado_por: userEmail || null });
+          if (f.numeroFatura == null || vistos.has(f.numeroFatura)) continue; // 1 linha por número de fatura
+          vistos.add(f.numeroFatura);
+          payload.push({
+            proposta_id: c.proposta!.id,
+            numero_fatura: f.numeroFatura,
+            numero_referencia: f.ref || `fat-${f.numeroFatura}`, // mantém a coluna antiga preenchida
+            status: f.status,
+            codigo_status: f.codigo,
+            status_planilha: f.statusPlanilha,
+            detalhamento: f.detalhamento,
+            data_vencimento: f.venc ? f.venc.toISOString().slice(0, 10) : null,
+            data_pagamento: f.pag,
+            atualizado_por: userEmail || null,
+          });
         }
       }
       let fatOk = 0;
       for (let i = 0; i < payload.length; i += 500) {
         const chunk = payload.slice(i, i + 500);
-        const { error } = await supabase.from("faturas_status").upsert(chunk, { onConflict: "proposta_id,numero_referencia" });
+        const { error } = await supabase.from("faturas_status").upsert(chunk, { onConflict: "proposta_id,numero_fatura" });
         if (!error) fatOk += chunk.length;
       }
       setFeedback({ tipo: "ok", titulo: "Cobrança atualizada!", msg: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s).${res.semVenda.length > 0 ? ` ${res.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });

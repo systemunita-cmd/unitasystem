@@ -347,6 +347,8 @@ export default function CobrancaPage() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
+  // 🆕 Histórico REAL da planilha (colunas numero_fatura/codigo_status/detalhamento/datas)
+  const [histPlanilha, setHistPlanilha] = useState<Map<number, any[]>>(new Map());
   const [buscaCliente, setBuscaCliente] = useState("");
 
   const [showStatus, setShowStatus] = useState<Fatura | null>(null);
@@ -510,6 +512,15 @@ export default function CobrancaPage() {
     const m = new Map<string, FaturaStatusDB>();
     for (const r of (data || [])) m.set(`${r.proposta_id}_${r.numero_referencia}`, r);
     setStatusMap(m);
+    // 🆕 Histórico por proposta: só as linhas que vieram da planilha (têm numero_fatura)
+    const h = new Map<number, any[]>();
+    for (const r of (data || [])) {
+      if (r.numero_fatura == null) continue;
+      const arr = h.get(r.proposta_id) || [];
+      arr.push(r); h.set(r.proposta_id, arr);
+    }
+    for (const arr of h.values()) arr.sort((a, b) => (a.numero_fatura || 0) - (b.numero_fatura || 0));
+    setHistPlanilha(h);
   }
 
   async function fetchPropostas(faltando?: string[]) {
@@ -1243,6 +1254,85 @@ export default function CobrancaPage() {
                   );
                 })}
               </div>
+
+              {clienteSel != null && (() => {
+                const hist = histPlanilha.get(clienteSel) || [];
+                if (hist.length === 0) return null;
+                const ult10 = hist.slice(-10);
+                // precoce = pagou após 30 dias (cód 03/04) em alguma fatura
+                const precoce = hist.some(r => r.codigo_status === "03" || r.codigo_status === "04");
+                // dias regressivos: a partir da última fatura COM data (paga ou vencimento) + 1 mês
+                const comData = hist.filter(r => r.data_pagamento || r.data_vencimento);
+                let regressiva: { dias: number; data: Date } | null = null;
+                if (comData.length > 0) {
+                  const ref = comData[comData.length - 1];
+                  const base = new Date((ref.data_pagamento || ref.data_vencimento) + "T00:00:00");
+                  const prox = new Date(base.getFullYear(), base.getMonth() + 1, base.getDate());
+                  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+                  regressiva = { dias: Math.ceil((prox.getTime() - hoje.getTime()) / 86400000), data: prox };
+                }
+                const corCod = (cod: string | null): { bg: string; cor: string; txt: string } => {
+                  if (cod === "01") return { bg: "#f0fdf4", cor: "#16a34a", txt: "Pagou no prazo" };
+                  if (cod === "02") return { bg: "#ecfdf5", cor: "#059669", txt: "Pagou até 30d" };
+                  if (cod === "03") return { bg: "#fffbeb", cor: "#d97706", txt: "Pagou até 60d" };
+                  if (cod === "04") return { bg: "#fef2f2", cor: "#dc2626", txt: "Pagou após 60d" };
+                  if (cod === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "Não pagou" };
+                  return { bg: "#f3f4f6", cor: "#6b7280", txt: "—" };
+                };
+                return (
+                  <div style={{ ...cardStyle, overflow: "hidden", marginBottom: 14 }}>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#1f2937" }}>📑 Histórico de faturas (planilha)</span>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>últimas {ult10.length} de {hist.length}</span>
+                      {precoce && (
+                        <span style={{ marginLeft: "auto", background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999 }}>
+                          ⚠️ INADIMPLÊNCIA PRECOCE
+                        </span>
+                      )}
+                    </div>
+                    {regressiva && (
+                      <div style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: 8 }}>
+                        {regressiva.dias >= 0 ? (
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: regressiva.dias <= 5 ? "#d97706" : "#2563eb" }}>
+                            ⏳ Faltam {regressiva.dias} dia(s) pro próximo vencimento ({regressiva.data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })})
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626" }}>
+                            🔴 Vencido há {-regressiva.dias} dia(s) (limite era {regressiva.data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: "#fafbfc" }}>
+                            {["#", "Status", "Detalhamento", "Vencimento", "Pagamento"].map(h => (
+                              <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#6b7280", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {ult10.map((r, i) => {
+                            const cc = corCod(r.codigo_status);
+                            return (
+                              <tr key={r.numero_fatura ?? i} style={{ borderTop: "1px solid #f3f4f6" }}>
+                                <td style={{ padding: "8px 12px", fontWeight: 800, color: "#1f2937" }}>{r.numero_fatura}</td>
+                                <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                                  <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{r.codigo_status || "—"} · {cc.txt}</span>
+                                </td>
+                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.detalhamento || "—"}</td>
+                                <td style={{ padding: "8px 12px", color: "#6b7280", whiteSpace: "nowrap" }}>{formatData(r.data_vencimento)}</td>
+                                <td style={{ padding: "8px 12px", color: r.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: r.data_pagamento ? 700 : 400, whiteSpace: "nowrap" }}>{formatData(r.data_pagamento)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div style={{ ...cardStyle, overflow: "hidden" }}>
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>

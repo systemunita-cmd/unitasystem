@@ -36,12 +36,17 @@ export type FaturaStatusDB = {
 };
 
 export type FaturaPlan = {
-  ref: string;                 // "YYYY-MM" do vencimento
+  ref: string;                  // "YYYY-MM" do vencimento
   status: StatusFatura;
   bucket: Bucket;
   venc: Date | null;
-  pag: string | null;          // ISO "YYYY-MM-DD"
+  pag: string | null;           // ISO "YYYY-MM-DD"
   diasPagamento: number | null; // pag - venc (dias), só pra pagas
+  // 🆕 dados CRUS da planilha (subimos exatamente o que vem)
+  numeroFatura: number | null;  // NÚMERO FATURA (1..10)
+  codigo: string | null;        // "01".."05" — código bruto do STATUS PAGAMENTO
+  statusPlanilha: string | null;// texto cru: "02 - PAGOU ATÉ 30 DIAS..."
+  detalhamento: string | null;  // "PAGOU APÓS 30 DIAS...", "FRAUDE", etc
 };
 
 export type ProxVenc = {
@@ -63,9 +68,10 @@ export type ClienteCob = {
   matched: boolean;
   custcodeNovo: boolean;
   prox: ProxVenc;
+  precoce: boolean;             // 🆕 pagou após 30 dias (cód 03/04) em ALGUMA fatura
 };
 
-export type ColKey = "ordem" | "custcode" | "status" | "vencimento" | "pagamento" | "numero_fatura";
+export type ColKey = "ordem" | "custcode" | "status" | "vencimento" | "pagamento" | "numero_fatura" | "detalhamento";
 
 // ─── DETECÇÃO DE COLUNAS DA PLANILHA ─────────────────────────────────────────
 export const DETECTAR: { key: ColKey; label: string; obrig: boolean; testa: (h: string) => boolean }[] = [
@@ -75,6 +81,7 @@ export const DETECTAR: { key: ColKey; label: string; obrig: boolean; testa: (h: 
   { key: "vencimento",    label: "Data de vencimento",        obrig: true,  testa: h => /data/.test(h) && /vencimento|venc/.test(h) },
   { key: "pagamento",     label: "Data de pagamento",         obrig: false, testa: h => /data/.test(h) && /pagamento|pagto/.test(h) },
   { key: "numero_fatura", label: "Número da fatura",          obrig: false, testa: h => /n[uú]mero/.test(h) && /fatura/.test(h) },
+  { key: "detalhamento",  label: "Detalhamento da fatura",    obrig: false, testa: h => /detalhamento/.test(h) },
 ];
 
 // ─── HELPERS DE FORMATO ──────────────────────────────────────────────────────
@@ -104,6 +111,16 @@ export function parseData(v: any): Date | null {
 export const codigoStatus = (txt: string): number | null => {
   const m = String(txt || "").trim().match(/^\s*0?(\d)/);
   return m ? Number(m[1]) : null;
+};
+// código como veio ("01".."05") pra gravar cru na planilha
+export const codigoStatusStr = (txt: string): string | null => {
+  const m = String(txt || "").trim().match(/^\s*(\d{1,2})/);
+  return m ? m[1].padStart(2, "0") : null;
+};
+// 🆕 pagou DEPOIS de 30 dias do vencimento? (cód 03 = até 60d, 04 = +60d) → inadimplência precoce
+export const pagouComAtrasoGrave = (txt: string): boolean => {
+  const c = codigoStatus(txt);
+  return c === 3 || c === 4 || /após 30 dias|apos 30 dias|60 dias/i.test(String(txt || ""));
 };
 
 // próximo vencimento = vencimento + 1 mês (+ carência opcional em dias)
