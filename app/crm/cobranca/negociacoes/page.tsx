@@ -1765,7 +1765,7 @@ export default function CobrancaPage() {
 
       {/* MODAL DE ENVIO */}
       {showEnvio && (
-        <div onClick={() => !envioEnviando && setShowEnvio(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+        <div onClick={() => !envioEnviando && setShowEnvio(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: "#ffffff", borderRadius: 16, maxWidth: 720, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
             <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
@@ -1893,7 +1893,7 @@ export default function CobrancaPage() {
         const mostraForma = meta?.recebido;
         const mostraPromessa = novoStatus === "promessa";
         return (
-          <div onClick={() => setShowStatus(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
+          <div onClick={() => setShowStatus(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#ffffff", borderRadius: 16, maxWidth: 560, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
               <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", background: `linear-gradient(135deg, ${meta.bg} 0%, #ffffff 100%)` }}>
                 <h3 style={{ color: meta.color, fontSize: 16, fontWeight: 800, margin: 0 }}>{meta.icone} Mudar status da fatura</h3>
@@ -2003,7 +2003,7 @@ export default function CobrancaPage() {
         }[feedback.tipo];
         const ehConfirm = !!feedback.onConfirmar;
         return (
-          <div onClick={() => !ehConfirm && setFeedback(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 110, padding: 16 }}>
+          <div onClick={() => !ehConfirm && setFeedback(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200, padding: 16 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#ffffff", borderRadius: 16, maxWidth: 520, width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
               <div style={{ background: cores.bg, borderBottom: `1px solid ${cores.border}`, padding: "22px 24px", display: "flex", gap: 14, alignItems: "flex-start" }}>
                 <div style={{ width: 48, height: 48, borderRadius: 14, background: cores.iconBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>{cores.emoji}</div>
