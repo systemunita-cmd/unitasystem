@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 
 // ═══ 🛠️ SUPORTE — clientes INSTALADOS do CRM + chamados ═══
-type Proposta = { id: number; nome?: string | null; cpf?: string | null; telefone1?: string | null; plano?: string | null; valor_plano?: number | null; status_venda?: string | null; dados_customizados?: Record<string, any> | null; created_at: string };
+type Proposta = { id: number; nome?: string | null; cpf?: string | null; telefone1?: string | null; plano?: string | null; valor_plano?: number | null; status_venda?: string | null; data_instalacao?: string | null; dados_customizados?: Record<string, any> | null; created_at: string };
 type Chamado = { id: number; proposta_id: number; observacoes?: string | null; solucao?: string | null; pendencia?: string | null; status: string; criado_por?: string | null; created_at: string };
 
 const STATUS_OPCOES = ["ABERTO", "EM ANDAMENTO", "PENDENTE", "RESOLVIDO"];
@@ -27,7 +27,7 @@ export default function Suporte() {
       setUserEmail(user?.email || "");
       let lista: Proposta[] = []; let ultimoId: number | null = null;
       for (let i = 0; i < 60; i++) {
-        let q = supabase.from("proposta").select("id, nome, cpf, telefone1, plano, valor_plano, status_venda, dados_customizados, created_at").eq("status_venda", "INSTALADA").order("id", { ascending: false }).limit(1000);
+        let q = supabase.from("proposta").select("id, nome, cpf, telefone1, plano, valor_plano, status_venda, data_instalacao, dados_customizados, created_at").eq("status_venda", "INSTALADA").order("id", { ascending: false }).limit(1000);
         if (ultimoId != null) q = q.lt("id", ultimoId);
         const { data, error } = await q; if (error) throw error;
         const pg = data || []; lista = lista.concat(pg);
@@ -41,6 +41,27 @@ export default function Suporte() {
     setLoading(false);
   };
   useEffect(() => { fetchTudo(); }, []);
+  useEffect(() => {
+    const ch = supabase.channel("suporte_rt_unita")
+      .on("postgres_changes", { event: "*", schema: "public", table: "proposta" }, () => fetchTudo())
+      .on("postgres_changes", { event: "*", schema: "public", table: "suporte_chamados" }, () => fetchTudo())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 📅 filtro de período (pela data de instalação; sem data usa o cadastro)
+  const isoL = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [range, setRange] = useState<"todos" | "hoje" | "7d" | "30d" | "custom">("todos");
+  const [dIni, setDIni] = useState(""); const [dFim, setDFim] = useState("");
+  const aplicarRange = (r: typeof range) => {
+    setRange(r); setPagina(1);
+    if (r === "todos" || r === "custom") return;
+    const h = new Date(); const fim = isoL(h); let ini = fim;
+    if (r !== "hoje") { const d = new Date(h); d.setDate(d.getDate() - (r === "7d" ? 6 : 29)); ini = isoL(d); }
+    setDIni(ini); setDFim(fim);
+  };
+  const [pagina, setPagina] = useState(1);
 
   const chamadosPor = useMemo(() => {
     const m = new Map<number, Chamado[]>();
@@ -57,6 +78,21 @@ export default function Suporte() {
       || String(p.dados_customizados?.os || "").toLowerCase().includes(t)
       || String(p.telefone1 || "").includes(busca));
   }, [propostas, busca]);
+
+  const filtradasPeriodo = useMemo(() => {
+    if (range === "todos") return filtradas;
+    return filtradas.filter(p => {
+      const d = p.data_instalacao || (p.created_at || "").slice(0, 10);
+      if (!d) return false;
+      if (dIni && d < dIni) return false;
+      if (dFim && d > dFim) return false;
+      return true;
+    });
+  }, [filtradas, range, dIni, dFim]);
+  const POR_PAG = 30;
+  const totPag = Math.max(1, Math.ceil(filtradasPeriodo.length / POR_PAG));
+  const pagAtual = Math.min(pagina, totPag);
+  const visiveis = filtradasPeriodo.slice((pagAtual - 1) * POR_PAG, pagAtual * POR_PAG);
 
   const salvar = async (p: Proposta) => {
     if (!form.observacoes.trim()) { alert("Preencha as observações (o que o cliente quer)."); return; }
@@ -85,26 +121,39 @@ export default function Suporte() {
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ width: 46, height: 46, borderRadius: 13, background: "linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, boxShadow: "0 8px 20px rgba(13,148,136,0.25)" }}><span style={{ filter: "saturate(0) brightness(2)" }}>🛠️</span></div>
         <div><h1 style={{ margin: 0, color: "#1f2937", fontSize: 22, fontWeight: 800 }}>Suporte</h1>
-          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 12 }}><b style={{ color: "#0d9488" }}>{filtradas.length}</b> cliente(s) instalados · registre o que o cliente pediu, a solução e o status</p></div>
+          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 12 }}><b style={{ color: "#0d9488" }}>{filtradasPeriodo.length}</b> de <b style={{ color: "#0d9488" }}>{propostas.length}</b> cliente(s) instalados · registre o que o cliente pediu, a solução e o status</p></div>
       </div>
       {tabelaFalta && <div style={{ ...card, padding: "12px 16px", borderLeft: "4px solid #f59e0b", color: "#92400e", fontSize: 13, fontWeight: 700 }}>⚠️ Rode o <code>suporte_supabase.sql</code> no Supabase pra criar a tabela de chamados.</div>}
       <div style={{ ...card, padding: 12 }}>
-        <input placeholder="🔍 Nome, CPF, OS ou telefone..." value={busca} onChange={e => setBusca(e.target.value)} style={{ ...inp, maxWidth: 420, borderRadius: 20 }} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input placeholder="🔍 Nome, CPF, OS ou telefone..." value={busca} onChange={e => { setBusca(e.target.value); setPagina(1); }} style={{ ...inp, maxWidth: 360, flex: "1 1 220px", borderRadius: 20 }} />
+          {([["todos", "Todos"], ["hoje", "Hoje"], ["7d", "7 dias"], ["30d", "30 dias"], ["custom", "Personalizado"]] as [typeof range, string][]).map(([k, l]) => (
+            <button key={k} onClick={() => aplicarRange(k)} style={{ background: range === k ? "#0d9488" : "#fff", color: range === k ? "#fff" : "#6b7280", border: `1px solid ${range === k ? "#0d9488" : "#e5e7eb"}`, borderRadius: 20, padding: "7px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
+          ))}
+          {range === "custom" && (<>
+            <input type="date" value={dIni} onChange={e => { setDIni(e.target.value); setPagina(1); }} style={{ ...inp, maxWidth: 150 }} />
+            <input type="date" value={dFim} onChange={e => { setDFim(e.target.value); setPagina(1); }} style={{ ...inp, maxWidth: 150 }} />
+          </>)}
+        </div>
       </div>
       {loading ? <div style={{ ...card, padding: 40, textAlign: "center", color: "#6b7280" }}>⏳ Carregando clientes...</div> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {filtradas.slice(0, 200).map(p => {
+          {visiveis.map(p => {
             const meus = chamadosPor.get(p.id) || [];
             const ultimo = meus[0];
             const ab = aberto === p.id;
             return (
-              <div key={p.id} style={{ ...card, borderLeft: `4px solid ${ultimo ? (corStatus[ultimo.status] || "#6b7280") : "#e5e7eb"}` }}>
+              <div key={p.id}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 14px rgba(13,148,136,0.12)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.boxShadow = "none"; }}
+                style={{ ...card, borderLeft: `4px solid ${ultimo ? (corStatus[ultimo.status] || "#6b7280") : "#99f6e4"}`, transition: "box-shadow 0.15s" }}>
                 <div onClick={() => { setAberto(ab ? null : p.id); if (!ab) setForm({ observacoes: "", solucao: "", pendencia: "", status: "ABERTO" }); }}
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", cursor: "pointer", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 240px", minWidth: 0 }}>
                     <p style={{ margin: 0, color: "#1f2937", fontSize: 13.5, fontWeight: 800 }}>{p.nome}</p>
                     <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11 }}>{p.cpf || ""} {p.dados_customizados?.os ? `· OS ${p.dados_customizados.os}` : ""} · {p.plano || ""}</p>
                   </div>
+                  <span style={{ color: "#0d9488", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>📅 {p.data_instalacao ? new Date(p.data_instalacao + "T00:00:00").toLocaleDateString("pt-BR") : "—"}</span>
                   {ultimo && <span style={{ background: `${corStatus[ultimo.status] || "#6b7280"}15`, color: corStatus[ultimo.status] || "#6b7280", border: `1px solid ${corStatus[ultimo.status] || "#6b7280"}40`, padding: "3px 10px", borderRadius: 10, fontSize: 10.5, fontWeight: 800 }}>{ultimo.status} · {meus.length} chamado(s)</span>}
                   <span style={{ color: "#9ca3af", fontWeight: 700 }}>{ab ? "▾" : "▸"}</span>
                 </div>
@@ -144,7 +193,16 @@ export default function Suporte() {
               </div>
             );
           })}
-          {filtradas.length > 200 && <p style={{ color: "#9ca3af", fontSize: 12, textAlign: "center" }}>Mostrando 200 — use a busca pra achar o cliente.</p>}
+          {filtradasPeriodo.length > POR_PAG && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ color: "#6b7280", fontSize: 12 }}>Mostrando {(pagAtual - 1) * POR_PAG + 1}–{Math.min(pagAtual * POR_PAG, filtradasPeriodo.length)} de {filtradasPeriodo.length.toLocaleString("pt-BR")}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setPagina(x => Math.max(1, x - 1))} disabled={pagAtual === 1} style={{ background: "#fff", color: pagAtual === 1 ? "#9ca3af" : "#0d9488", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: pagAtual === 1 ? "default" : "pointer" }}>‹ Anterior</button>
+                <span style={{ color: "#1f2937", fontSize: 12, fontWeight: 700, padding: "6px 8px" }}>{pagAtual}/{totPag}</span>
+                <button onClick={() => setPagina(x => Math.min(totPag, x + 1))} disabled={pagAtual === totPag} style={{ background: "#fff", color: pagAtual === totPag ? "#9ca3af" : "#0d9488", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: pagAtual === totPag ? "default" : "pointer" }}>Próxima ›</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
