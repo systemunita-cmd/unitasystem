@@ -85,7 +85,7 @@ type Fatura = {
   dias_atraso: number;
 };
 
-type AbaKey = "do_crm" | "planilha" | "campanhas";
+type AbaKey = "do_crm" | "planilha" | "campanhas" | "atendimentos";
 type FiltroVenc = "todos" | "hoje" | "vencendo_7d" | "vencidos" | "este_mes";
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
@@ -278,6 +278,65 @@ export default function CobrancaPage() {
   const [canais, setCanais] = useState<Canal[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+
+  // 💬 ATENDIMENTOS DA COBRANÇA — leads que RESPONDERAM os disparos
+  const [respostasCob, setRespostasCob] = useState<any[]>([]);
+  const [carregandoResp, setCarregandoResp] = useState(false);
+  const [convAberta, setConvAberta] = useState<string | null>(null);
+  const [msgsConv, setMsgsConv] = useState<any[]>([]);
+
+  const so8 = (t: any) => String(t || "").replace(/\D/g, "").slice(-8);
+
+  const fetchRespostasCobranca = async () => {
+    setCarregandoResp(true);
+    try {
+      // 1. desde quando vale: o PRIMEIRO disparo de cobrança
+      const { data: disp } = await supabase.from("disparos")
+        .select("created_at").eq("origem", "cobranca")
+        .order("created_at", { ascending: true }).limit(1);
+      const desde = disp && disp[0] ? disp[0].created_at : null;
+      if (!desde) { setRespostasCob([]); setCarregandoResp(false); return; }
+      // 2. mapa telefone(8 últimos dígitos) -> proposta (clientes da cobrança)
+      const mapaTel = new Map<string, Proposta>();
+      for (const pr of propostas) {
+        if ((pr.status_venda || "").toUpperCase() !== "INSTALADA") continue;
+        for (const t of [pr.telefone1, pr.telefone2, pr.telefone3]) {
+          const k = so8(t);
+          if (k.length === 8 && !mapaTel.has(k)) mapaTel.set(k, pr);
+        }
+      }
+      // 3. atendimentos mexidos depois do disparo, casados com cliente da cobrança
+      const { data: ats } = await supabase.from("atendimentos").select("*")
+        .gte("updated_at", desde)
+        .order("updated_at", { ascending: false })
+        .limit(1000);
+      const lista = (ats || [])
+        .map((a: any) => ({ a, cli: mapaTel.get(so8(a.numero)) }))
+        .filter((x: any) => !!x.cli);
+      setRespostasCob(lista);
+    } catch (e) {
+      console.error("[Cobrança] respostas:", e);
+      setRespostasCob([]);
+    }
+    setCarregandoResp(false);
+  };
+
+  const abrirConversaCob = async (numero: string) => {
+    if (convAberta === numero) { setConvAberta(null); setMsgsConv([]); return; }
+    setConvAberta(numero);
+    setMsgsConv([]);
+    try {
+      const { data } = await supabase.from("mensagens").select("*")
+        .eq("numero", numero)
+        .order("created_at", { ascending: false }).limit(60);
+      setMsgsConv((data || []).reverse());
+    } catch { setMsgsConv([]); }
+  };
+
+  useEffect(() => {
+    if (aba === "atendimentos") fetchRespostasCobranca();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, propostas.length]);
   const [statusMap, setStatusMap] = useState<Map<string, FaturaStatusDB>>(new Map());
 
   const [filtroVenc, setFiltroVenc] = useState<FiltroVenc>("vencendo_7d");
@@ -944,6 +1003,7 @@ export default function CobrancaPage() {
           { key: "do_crm",    label: "📅 Do CRM",   color: "#dc2626" },
           { key: "planilha",  label: "📤 Planilha", color: "#a855f7" },
           { key: "campanhas", label: "📊 Campanhas", color: "#2563eb" },
+          { key: "atendimentos", label: "💬 Atendimentos", color: "#16a34a" },
         ] as { key: AbaKey; label: string; color: string }[]).map(t => {
           const at = aba === t.key;
           return (
@@ -953,17 +1013,78 @@ export default function CobrancaPage() {
             </button>
           );
         })}
-        <button onClick={() => router.push("/crm/cobranca/atendimentos")}
-          title="Atendimentos WhatsApp exclusivos da cobrança"
-          style={{ background: "transparent", color: "#16a34a", border: "1px dashed #86efac", borderRadius: 10, padding: "9px 16px", fontSize: 12, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}>
-          💬 Atendimentos
-        </button>
       </div>
 
       {loading ? (
         <div style={{ ...cardStyle, padding: 48, textAlign: "center", color: "#6b7280" }}>Carregando...</div>
       ) : (
         <>
+          {/* ════════════ ABA: ATENDIMENTOS (retornos do disparo) ════════════ */}
+          {aba === "atendimentos" && (
+            <div style={{ ...cardStyle, padding: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                <div>
+                  <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Leads que responderam a cobrança</h2>
+                  <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Clientes da cobrança com conversa movimentada após o 1º disparo · {respostasCob.length} encontrado(s)</p>
+                </div>
+                <button onClick={fetchRespostasCobranca} disabled={carregandoResp}
+                  style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  {carregandoResp ? "⏳ Buscando..." : "🔄 Atualizar"}
+                </button>
+              </div>
+              {carregandoResp ? (
+                <p style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: 24 }}>⏳ Cruzando disparos com os atendimentos...</p>
+              ) : respostasCob.length === 0 ? (
+                <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno ainda — dispare uma cobrança e os clientes que responderem aparecem aqui.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {respostasCob.map(({ a, cli }: any) => (
+                    <div key={a.id} style={{ border: "1px solid #e5e7eb", borderLeft: "4px solid #16a34a", borderRadius: 12, background: "#ffffff" }}>
+                      <div onClick={() => abrirConversaCob(a.numero)}
+                        style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", cursor: "pointer", flexWrap: "wrap" }}>
+                        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                          <p style={{ margin: 0, color: "#1f2937", fontSize: 13.5, fontWeight: 800 }}>{cli.nome || a.nome || a.numero}</p>
+                          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💬 {a.mensagem || "(sem prévia)"}</p>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <p style={{ margin: 0, color: "#16a34a", fontSize: 12.5, fontWeight: 800 }}>R$ {Number(cli.valor_plano || 0).toFixed(2).replace(".", ",")}</p>
+                          <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: 10.5 }}>{cli.plano || ""}</p>
+                        </div>
+                        <div style={{ textAlign: "right", minWidth: 110 }}>
+                          <p style={{ margin: 0, color: "#374151", fontSize: 11, fontWeight: 700 }}>{a.updated_at ? new Date(a.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+                          <p style={{ margin: "2px 0 0", color: a.status === "resolvido" ? "#16a34a" : "#d97706", fontSize: 10.5, fontWeight: 700 }}>{a.status || ""}{a.atendente ? ` · ${String(a.atendente).split("@")[0]}` : ""}</p>
+                        </div>
+                        <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>{convAberta === a.numero ? "▾" : "▸"}</span>
+                      </div>
+                      {convAberta === a.numero && (
+                        <div style={{ borderTop: "1px solid #f3f4f6", background: "#f8fafc", padding: 12 }}>
+                          {msgsConv.length === 0 ? (
+                            <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, textAlign: "center" }}>⏳ Carregando conversa...</p>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
+                              {msgsConv.map((m: any, i: number) => {
+                                const doCliente = m.de === "cliente";
+                                return (
+                                  <div key={m.id || i} style={{ alignSelf: doCliente ? "flex-start" : "flex-end", maxWidth: "78%", background: doCliente ? "#ffffff" : "#dcfce7", border: "1px solid " + (doCliente ? "#e5e7eb" : "#bbf7d0"), borderRadius: 10, padding: "7px 11px" }}>
+                                    <p style={{ margin: 0, color: "#1f2937", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.mensagem}</p>
+                                    <p style={{ margin: "3px 0 0", color: "#9ca3af", fontSize: 9.5, textAlign: "right" }}>{doCliente ? "cliente" : m.de} · {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
+                            <a href="/chatbot" style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "#fff", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>↩️ Responder no Atendimento</a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ════════════ ABA: DO CRM ════════════ */}
           {aba === "do_crm" && (
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr", gap: 14, alignItems: "start" }}>
