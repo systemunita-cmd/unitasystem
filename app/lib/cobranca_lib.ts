@@ -126,6 +126,29 @@ export function parseData(v: any): Date | null {
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  // 🆕 mês abreviado em português: "jan/26", "mai/26", "set/25", "dez/2025"
+  //    (o XLSX no navegador entrega a coluna MÊS GROSS nesse formato)
+  const MESES_PT: Record<string, number> = {
+    jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5,
+    jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11,
+  };
+  m = s.toLowerCase().match(/^([a-zç]{3,})[\/\-\s.]+(\d{2,4})$/);
+  if (m) {
+    const mesAbrev = m[1].slice(0, 3);
+    if (mesAbrev in MESES_PT) {
+      let ano = Number(m[2]);
+      if (ano < 100) ano += 2000; // "26" -> 2026
+      return new Date(ano, MESES_PT[mesAbrev], 1);
+    }
+  }
+  // "01/26" ou "01/2026" (mês/ano numérico, sem dia)
+  m = s.match(/^(\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let ano = Number(m[2]);
+    if (ano < 100) ano += 2000;
+    const mes = Number(m[1]);
+    if (mes >= 1 && mes <= 12) return new Date(ano, mes - 1, 1);
+  }
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }

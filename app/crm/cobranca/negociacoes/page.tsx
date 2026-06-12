@@ -609,7 +609,17 @@ export default function CobrancaPage() {
 
     const parseDataBR = (v: any): Date | null => {
       if (!v) return null;
-      const d = new Date(String(v).slice(0, 10) + "T00:00:00");
+      const s = String(v).trim();
+      // ISO completa (formato do banco): 2026-01-01
+      let d = new Date(s.slice(0, 10) + "T00:00:00");
+      if (!isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(s)) return d;
+      // mês abreviado PT (defensivo): jan/26, mai/26, set/25
+      const MESES: Record<string, number> = { jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5, jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11 };
+      const m = s.toLowerCase().match(/^([a-zç]{3,})[\/\-\s.]+(\d{2,4})$/);
+      if (m && m[1].slice(0, 3) in MESES) {
+        let ano = Number(m[2]); if (ano < 100) ano += 2000;
+        return new Date(ano, MESES[m[1].slice(0, 3)], 1);
+      }
       return isNaN(d.getTime()) ? null : d;
     };
 
