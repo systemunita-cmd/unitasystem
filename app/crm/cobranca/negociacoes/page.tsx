@@ -121,66 +121,10 @@ const formatData = (d: Date | string | null | undefined) => {
   return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
 };
 
-const formatNumeroRef = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
 const formatMesExtenso = (numRef: string): string => {
   const [ano, mes] = numRef.split("-");
   const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
   return `${meses[parseInt(mes, 10) - 1]}/${ano.slice(2)}`;
-};
-
-const calcularPrimeiraFatura = (dataInstalacao: Date, diaVencimento: number) => {
-  if (isNaN(dataInstalacao.getTime())) return null;
-  if (diaVencimento < 1 || diaVencimento > 31) return null;
-  const trintaDiasDepois = new Date(dataInstalacao);
-  trintaDiasDepois.setDate(trintaDiasDepois.getDate() + 30);
-  let venc = new Date(trintaDiasDepois.getFullYear(), trintaDiasDepois.getMonth(), diaVencimento);
-  if (venc.getTime() < trintaDiasDepois.getTime()) {
-    venc = new Date(trintaDiasDepois.getFullYear(), trintaDiasDepois.getMonth() + 1, diaVencimento);
-  }
-  const diasProp = Math.round((venc.getTime() - trintaDiasDepois.getTime()) / 86400000);
-  return { vencimento: venc, diasCobertos: 30 + diasProp, proporcional: diasProp };
-};
-
-const gerarFaturasDeProposta = (p: Proposta, ateMeses: number = 2): Fatura[] => {
-  if (!p.data_instalacao || !p.vencimento || !p.valor_plano) return [];
-  const diaVenc = parseInt(String(p.vencimento).replace(/\D/g, ""), 10);
-  if (isNaN(diaVenc)) return [];
-  const inst = new Date(p.data_instalacao + (p.data_instalacao.length === 10 ? "T00:00:00" : ""));
-  if (isNaN(inst.getTime())) return [];
-  const valorMensal = p.valor_plano;
-  const primeira = calcularPrimeiraFatura(inst, diaVenc);
-  if (!primeira) return [];
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const limite = new Date(hoje.getFullYear(), hoje.getMonth() + ateMeses, diaVenc);
-
-  type FaturaBase = Omit<Fatura, "proposta" | "status" | "status_visual" | "dias_atraso" | "data_pagamento" | "observacoes">;
-  const faturas: FaturaBase[] = [];
-  const valorPrimeira = valorMensal + (valorMensal / 30) * primeira.proporcional;
-  faturas.push({
-    numero_referencia: formatNumeroRef(primeira.vencimento),
-    data_vencimento: primeira.vencimento,
-    valor: Math.round(valorPrimeira * 100) / 100,
-    proporcional: primeira.proporcional > 0,
-    dias_cobertos: primeira.diasCobertos,
-  });
-  let proxVenc = new Date(primeira.vencimento);
-  while (true) {
-    proxVenc = new Date(proxVenc.getFullYear(), proxVenc.getMonth() + 1, diaVenc);
-    if (proxVenc.getTime() > limite.getTime()) break;
-    faturas.push({
-      numero_referencia: formatNumeroRef(proxVenc),
-      data_vencimento: new Date(proxVenc),
-      valor: valorMensal, proporcional: false, dias_cobertos: 30,
-    });
-  }
-  return faturas.map(f => ({
-    ...f, proposta: p,
-    status: "pendente" as StatusFatura, status_visual: "pendente" as StatusFatura,
-    dias_atraso: 0, data_pagamento: null, observacoes: null,
-  }));
 };
 
 const aplicarStatusEAtrasos = (faturas: Fatura[], statusMap: Map<string, FaturaStatusDB>): Fatura[] => {
@@ -660,10 +604,8 @@ export default function CobrancaPage() {
       // 🆕 FONTE PRINCIPAL: cada LINHA REAL da planilha (histPlanilha) vira uma fatura.
       //    Aqui carregamos TODOS os campos crus, então a tabela já mostra tudo preenchido.
       const hist = histPlanilha.get(p.id) || [];
-      const refsPlanilha = new Set<string>();
       for (const r of hist) {
-        if (!r.numero_referencia) continue;
-        refsPlanilha.add(r.numero_referencia);
+        if (r.numero_fatura == null) continue;
         let dv: Date | null = null;
         if (r.data_vencimento) {
           const d = new Date(String(r.data_vencimento).slice(0, 10) + "T00:00:00");
@@ -702,10 +644,9 @@ export default function CobrancaPage() {
           daPlanilha: true,
         } as Fatura);
       }
-      // complemento: faturas geradas pelo CRM só pros meses que NÃO vieram na planilha (ex: mês atual)
-      for (const g of gerarFaturasDeProposta(p)) {
-        if (!refsPlanilha.has(g.numero_referencia)) result.push({ ...g, daPlanilha: false });
-      }
+      // ⛔ NÃO geramos mais faturas automáticas pelo CRM. A planilha de status é a
+      //    ÚNICA fonte da verdade: se a planilha traz 4 faturas, são 4 — sem inventar
+      //    meses entre a instalação e hoje (isso criava faturas fantasma sem dados).
     }
     return aplicarStatusEAtrasos(result, statusMap);
   }, [propostas, statusMap, histPlanilha]);
@@ -860,7 +801,7 @@ export default function CobrancaPage() {
     return { pagas, aPagar, vence7d, atrasadas, total, pctPago, viramInad, proxData, proxDias };
   }, [todasFaturas]);
 
-  const chaveSelecao = (f: Fatura) => `${f.proposta.id}_${f.numero_referencia}`;
+  const chaveSelecao = (f: Fatura) => `${f.proposta.id}_${f.numero_fatura ?? f.numero_referencia}`;
   const toggleSelFat = (k: string) => {
     setSelecionadasFat(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };

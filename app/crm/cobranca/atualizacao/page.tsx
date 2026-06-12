@@ -189,10 +189,20 @@ export default function CobrancaAtualizacao() {
     setGravando(true);
     try {
       let custOk = 0;
-      for (const c of matched.filter(x => x.custcodeNovo && x.custcode)) {
-        const novo = { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode };
-        const { error } = await supabase.from("proposta").update({ dados_customizados: novo }).eq("id", c.proposta!.id);
-        if (!error) custOk++;
+      let instOk = 0;
+      for (const c of matched) {
+        // 🆕 mês gross do cliente (1º válido das faturas) → data de instalação (dia 1)
+        const mg = c.faturas.map(f => f.mesGross).find(Boolean) || null;
+        const instCorreta = mg ? `${String(mg).slice(0, 7)}-01` : null;
+        const instAtual = String(c.proposta!.data_instalacao || "").slice(0, 10);
+        const mudaCust = c.custcodeNovo && c.custcode;
+        const mudaInst = instCorreta && instCorreta !== instAtual;
+        if (!mudaCust && !mudaInst) continue;
+        const update: any = {};
+        if (mudaCust) update.dados_customizados = { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode };
+        if (mudaInst) update.data_instalacao = instCorreta;
+        const { error } = await supabase.from("proposta").update(update).eq("id", c.proposta!.id);
+        if (!error) { if (mudaCust) custOk++; if (mudaInst) instOk++; }
       }
 
       // 🆕 Grava CADA fatura da planilha (1..10), não agrupa mais por mês.
@@ -253,7 +263,7 @@ export default function CobrancaAtualizacao() {
         return;
       }
 
-      setFeedback({ tipo: "ok", titulo: "Cobrança atualizada!", msg: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s).${semNumero > 0 ? ` ${semNumero} linha(s) sem número de fatura ignorada(s).` : ""}${res.semVenda.length > 0 ? ` ${res.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });
+      setFeedback({ tipo: "ok", titulo: "Cobrança atualizada!", msg: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s). ${instOk} data(s) de instalação corrigida(s).${semNumero > 0 ? ` ${semNumero} linha(s) sem número de fatura ignorada(s).` : ""}${res.semVenda.length > 0 ? ` ${res.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });
     } catch (e: any) {
       setFeedback({ tipo: "erro", titulo: "Erro ao gravar", msg: e?.message || "Falha inesperada." });
     }
