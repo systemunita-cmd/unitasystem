@@ -30,7 +30,6 @@ export function Softphone() {
     return () => clearInterval(t);
   }, []);
   const chamadaAtiva = chamada && chamada.status !== "ocioso";
-  if (!rota.startsWith("/crm/telefonia") && !chamadaAtiva) return null;
   const [numeroDigitado, setNumeroDigitado] = useState("");
   const [modoTeclado, setModoTeclado] = useState(true);
 
@@ -41,6 +40,12 @@ export function Softphone() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // 📞 Bolha só aparece dentro da Telefonia (ou com chamada ativa em qualquer
+  //    rota). ⚠️ Este return PRECISA vir depois de TODOS os hooks acima —
+  //    return condicional antes de hook quebra a regra do React e derrubava
+  //    a página /crm/telefonia inteira (React error #310).
+  if (!rota.startsWith("/crm/telefonia") && !chamadaAtiva) return null;
 
   const temChamada = chamada && chamada.status !== "ocioso";
 
