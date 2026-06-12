@@ -127,8 +127,16 @@ export default function ConexoesVoipSection() {
         <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 8px 20px rgba(22,163,74,0.25)" }}><span style={{ filter: "saturate(0) brightness(2)" }}>📞</span></div>
         <div>
           <h1 style={{ color: "#1f2937", fontSize: 24, fontWeight: 700, margin: 0 }}>Telefonia VOIP</h1>
-          <p style={{ color: "#6b7280", fontSize: 13, margin: "2px 0 0" }}>Conecte Twilio ou Zenvia pra fazer ligações pelo sistema.</p>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: "2px 0 0" }}>Conecte um provedor VOIP (Twilio ou Zenvia) pra fazer ligações pelo sistema.</p>
         </div>
+      </div>
+
+      {/* ═══ AVISO LGPD ═══ */}
+      <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderLeft: "4px solid #f59e0b", borderRadius: 12, padding: "14px 18px" }}>
+        <p style={{ color: "#92400e", fontSize: 12, margin: 0, lineHeight: 1.6 }}>
+          <b>⚠️ Importante:</b> ligação em massa pra quem não autorizou é proibido no Brasil (LGPD + Anatel).
+          Avise o cliente quando a ligação for gravada.
+        </p>
       </div>
       {tabelaFalta && <div style={{ ...card, padding: "12px 16px", borderLeft: "4px solid #f59e0b", color: "#92400e", fontSize: 13, fontWeight: 700 }}>⚠️ A tabela <code>conexoes_voip</code> ainda não existe no Supabase — me peça o SQL de criação.</div>}
       {loading ? <p style={{ color: "#6b7280", textAlign: "center", padding: 40 }}>Carregando...</p>
