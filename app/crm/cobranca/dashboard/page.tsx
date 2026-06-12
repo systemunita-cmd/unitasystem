@@ -9,11 +9,6 @@ import {
 } from "recharts";
 import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
-import {
-  type Proposta, type FaturaStatusDB, type Bucket,
-  BUCKET_META, formatNum, pctOf,
-  carregarPropostas, carregarFaturasStatus,
-} from "../../../lib/cobranca_lib";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 📊 DASHBOARD DE COBRANÇA — UnitaSystem
@@ -24,6 +19,40 @@ import {
 const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
 const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
 const sectionTitle = { color: "#1f2937", fontSize: 15, fontWeight: 700, margin: "0 0 18px 0", display: "flex", alignItems: "center", gap: 8 };
+
+// ─── Tipos e utilidades (antes vinham de lib/cobranca_lib, que não existe no
+//     projeto e quebrava o build — agora é tudo autocontido aqui) ───
+type FaturaStatusDB = { proposta_id: number; numero_referencia: string; status: string };
+type Bucket = "paga" | "pendente" | "inadimplente";
+const BUCKET_META: Record<Bucket, { label: string; cor: string; bg: string; border: string; icone: string }> = {
+  paga:         { label: "Pagas",         cor: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", icone: "✅" },
+  pendente:     { label: "Em vencer",     cor: "#d97706", bg: "#fffbeb", border: "#fde68a", icone: "⏳" },
+  inadimplente: { label: "Inadimplentes", cor: "#dc2626", bg: "#fef2f2", border: "#fecaca", icone: "🚨" },
+};
+const formatNum = (n: number) => (n || 0).toLocaleString("pt-BR");
+const pctOf = (parte: number, total: number) => (total > 0 ? Math.round((parte / total) * 100) : 0);
+
+// Busca TODAS as faturas_status, paginado (o Supabase corta em 1000 por request —
+// sem isso o dashboard mostraria só os primeiros meses, igual aconteceu na Cobrança)
+async function carregarFaturas(): Promise<FaturaStatusDB[]> {
+  const PAGE = 1000;
+  const { count } = await supabase.from("faturas_status").select("proposta_id", { count: "exact", head: true });
+  const paginas = Math.ceil((count || 0) / PAGE);
+  const reqs: Promise<any>[] = [];
+  for (let i = 0; i < paginas; i++) {
+    reqs.push(
+      supabase.from("faturas_status")
+        .select("proposta_id, numero_referencia, status")
+        .order("proposta_id", { ascending: true })
+        .order("numero_referencia", { ascending: true })
+        .range(i * PAGE, i * PAGE + PAGE - 1) as unknown as Promise<any>
+    );
+  }
+  const res = await Promise.all(reqs);
+  const out: FaturaStatusDB[] = [];
+  for (const r of res) if (r.data) out.push(...(r.data as FaturaStatusDB[]));
+  return out;
+}
 
 const bucketDoStatus = (s: string): Bucket | null => {
   if (s === "paga" || s === "paga_atraso") return "paga";
@@ -46,7 +75,6 @@ export default function CobrancaDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
-  const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [faturas, setFaturas] = useState<FaturaStatusDB[]>([]);
   const [tipoGrafico, setTipoGrafico] = useState<"barras" | "linha">("barras");
 
@@ -60,9 +88,7 @@ export default function CobrancaDashboard() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
-      const [rp, rf] = await Promise.all([carregarPropostas(), carregarFaturasStatus()]);
-      setPropostas(rp.propostas);
-      setFaturas(Array.from(rf.statusMap.values()));
+      setFaturas(await carregarFaturas());
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
