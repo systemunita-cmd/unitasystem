@@ -143,7 +143,9 @@ export function ConexoesSection() {
 
   const fetchFilas = async () => {
     try {
-      const { data } = await supabase.from("filas").select("id, nome, conexao, equipe_id").order("nome", { ascending: true });
+      // ⚠️ UNITA: a tabela filas NÃO tem coluna "conexao" (era do Wolf) — pedir coluna
+      // inexistente fazia o Supabase retornar erro e a lista vinha VAZIA ("Nenhuma fila").
+      const { data } = await supabase.from("filas").select("id, nome, equipe_id").eq("ativo", true).order("nome", { ascending: true });
       setFilasBanco(data || []);
     } catch (e) { console.error("Erro ao buscar filas:", e); setFilasBanco([]); }
   };

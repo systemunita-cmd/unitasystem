@@ -56,6 +56,24 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rota = searchParams.get("rota") || "status";
+
+  // 📎 UPLOAD (multipart/form-data: enviar-audio / enviar-midia) — repassa o
+  // FormData inteiro pro UnitaZAP. NÃO setar Content-Type manualmente: o fetch
+  // gera o boundary correto sozinho.
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) {
+    try {
+      const fd = await req.formData();
+      const resp = await fetch(`${UNITAZAP_URL}/${rota}`, { method: "POST", headers: headersBase(), body: fd });
+      const text = await resp.text();
+      try { return NextResponse.json(JSON.parse(text)); }
+      catch { return NextResponse.json({ success: false, error: "UnitaZAP não-JSON: " + text.slice(0, 200) }, { status: 200 }); }
+    } catch (error: any) {
+      console.error(`[proxy POST multipart] ${rota} catch:`, error.message);
+      return NextResponse.json({ success: false, error: "UnitaZAP offline: " + error.message }, { status: 200 });
+    }
+  }
+
   const body = await req.json().catch(() => ({}));
 
   try {

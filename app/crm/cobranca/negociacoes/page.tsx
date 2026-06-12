@@ -1154,11 +1154,14 @@ export default function CobrancaPage() {
                         style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: selc ? "#eff6ff" : "#ffffff", cursor: "pointer" }}>
                         <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flexWrap: "wrap" }}>
-                            <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{c.proposta.nome || "—"}</span>
-                            {c.proposta.dados_customizados?.os && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>OS {c.proposta.dados_customizados.os}</span>}
-                            {c.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{c.proposta.dados_customizados.custcode}</span>}
-                            <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", padding: "0 2px" }}>✏️</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                            <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
+                            <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", flexShrink: 0 }}>✏️</span>
+                          </div>
+                          <div style={{ fontFamily: "monospace", fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <span style={{ color: c.proposta.dados_customizados?.os ? "#7c3aed" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.os || "sem OS"}</span>
+                            <span style={{ color: "#d1d5db" }}> · </span>
+                            <span style={{ color: c.proposta.dados_customizados?.custcode ? "#2563eb" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.custcode || "sem custcode"}</span>
                           </div>
                           <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
                         </div>
@@ -1251,7 +1254,7 @@ export default function CobrancaPage() {
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
                           <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          {["Cliente", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
+                          {["Cliente", "OS", "Custcode", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
                             <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
@@ -1267,14 +1270,22 @@ export default function CobrancaPage() {
                               <td style={{ padding: "12px", textAlign: "center" }}>
                                 <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
                               </td>
-                              <td style={{ padding: "12px", maxWidth: 260, overflow: "hidden" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-                                  <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>{f.proposta.nome || "—"}</span>
-                                  {f.proposta.dados_customizados?.os && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>OS {f.proposta.dados_customizados.os}</span>}
-                                  {f.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{f.proposta.dados_customizados.custcode}</span>}
-                                  <button onClick={() => abrirEdicaoCliente(f.proposta)} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
-                                </div>
+                              <td style={{ padding: "12px", maxWidth: 200, overflow: "hidden" }}>
+                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.proposta.nome || "—"}</div>
                                 <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
+                              </td>
+                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
+                                {f.proposta.dados_customizados?.os
+                                  ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#7c3aed", fontWeight: 700 }}>{f.proposta.dados_customizados.os}</span>
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                              </td>
+                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                  {f.proposta.dados_customizados?.custcode
+                                    ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#2563eb", fontWeight: 700 }}>{f.proposta.dados_customizados.custcode}</span>
+                                    : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                  <button onClick={() => abrirEdicaoCliente(f.proposta)} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
+                                </span>
                               </td>
                               <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
                                 <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 700 }}>{formatMesExtenso(f.numero_referencia)}</div>

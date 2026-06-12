@@ -1287,7 +1287,7 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
     // 🆕 Filas cadastradas no sistema — antes a lista era derivada só dos atendimentos,
     // então fila sem atendimento nunca aparecia no filtro nem no "Encaminhar para fila".
     try {
-      const { data: fl } = await supabase.from("filas").select("nome").order("nome", { ascending: true });
+      const { data: fl } = await supabase.from("filas").select("nome").eq("ativo", true).order("nome", { ascending: true });
       setFilasBanco(((fl || []) as { nome: string | null }[]).map(f => f.nome || "").filter(Boolean));
     } catch { setFilasBanco([]); }
     if (user?.email) {
@@ -2030,11 +2030,13 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
         else { cancelarEnvioArquivo(); }
       } else {
         const fd = new FormData();
-        fd.append("arquivo", arquivoSelecionado);
+        fd.append("midia", arquivoSelecionado); // ⚠️ backend espera o campo "midia" (upload.single("midia"))
         fd.append("numero", atendimentoAtivo.numero);
         fd.append("canalId", String(atendimentoAtivo.canal_id));
         if (legendaArquivo) fd.append("legenda", legendaArquivo);
-        const resp = await fetch(`${WA_BASE}/enviar-midia`, { method: "POST", body: fd });
+        // Via proxy /api/whatsapp: injeta o X-Unita-Token no servidor e evita
+        // mixed content (página https chamando VPS http — o navegador bloquearia).
+        const resp = await fetch(`/api/whatsapp?rota=enviar-midia`, { method: "POST", body: fd });
         const data = await resp.json();
         if (!data.success) { notify(traduzirErro(data.error || "Erro ao enviar arquivo"), "erro"); }
         else { cancelarEnvioArquivo(); }
@@ -2153,7 +2155,7 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
         form.append("audio", blob);
         form.append("numero", atendimentoAtivo.numero);
         form.append("canalId", String(atendimentoAtivo.canal_id));
-        const resp = await fetch(`${WA_BASE}/enviar-audio`, { method: "POST", body: form });
+        const resp = await fetch(`/api/whatsapp?rota=enviar-audio`, { method: "POST", body: form });
         const data = await resp.json();
         if (!data.success) notify(traduzirErro(data.error || "Erro ao enviar áudio"), "erro");
       }
