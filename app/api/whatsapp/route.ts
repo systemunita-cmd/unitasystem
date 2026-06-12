@@ -9,7 +9,20 @@ import { NextRequest, NextResponse } from "next/server";
 // em produção).
 // ═══════════════════════════════════════════════════════════════════════
 
-const UNITAZAP_URL = process.env.NEXT_PUBLIC_UNITAZAP_URL || "http://localhost:3001";
+// URL e token ficam em variáveis SERVER-SIDE (sem NEXT_PUBLIC_) — nunca chegam
+// no navegador. Configure no Vercel: UNITAZAP_URL e UNITAZAP_SHARED_TOKEN.
+const UNITAZAP_URL =
+  process.env.UNITAZAP_URL ||
+  process.env.NEXT_PUBLIC_UNITAZAP_URL ||
+  "http://localhost:3001";
+const UNITAZAP_TOKEN = process.env.UNITAZAP_SHARED_TOKEN || "";
+
+// Headers padrão de toda chamada pro UnitaZAP (inclui o X-Unita-Token)
+function headersBase(extra?: Record<string, string>) {
+  const h: Record<string, string> = { "ngrok-skip-browser-warning": "true", ...extra };
+  if (UNITAZAP_TOKEN) h["X-Unita-Token"] = UNITAZAP_TOKEN;
+  return h;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -21,7 +34,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const resp = await fetch(url, {
-      headers: { "ngrok-skip-browser-warning": "true" },
+      headers: headersBase(),
+      cache: "no-store",
     });
     const text = await resp.text();
     if (!resp.ok) {
@@ -47,7 +61,7 @@ export async function POST(req: NextRequest) {
   try {
     const resp = await fetch(`${UNITAZAP_URL}/${rota}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "true" },
+      headers: headersBase({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
     const text = await resp.text();
