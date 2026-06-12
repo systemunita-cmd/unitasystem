@@ -425,6 +425,8 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
   const audioStreamRef = useRef<MediaStream | null>(null);
 
   const [usuariosWs, setUsuariosWs] = useState<UsuarioWs[]>([]);
+  // 🆕 Filas CADASTRADAS no sistema (tabela `filas`) — não só as derivadas de atendimentos
+  const [filasBanco, setFilasBanco] = useState<string[]>([]);
   const [meuNome, setMeuNome] = useState("");
 
   const [showPainelContato, setShowPainelContato] = useState(false);
@@ -1277,10 +1279,17 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
     const subs: UsuarioWs[] = [];
     // 🆕 Traz fila também — necessário pra regra de visibilidade multi-fila funcionar.
     // Frontend filtra atendimento por: usuario.fila contém a fila do atendimento (CSV).
-    const { data } = await supabase.from("usuarios_workspace").select("email, nome, fila");
+    // ⚠️ UNITA: a tabela é `usuarios` (usuarios_workspace é do Wolf e NÃO existe aqui)
+    const { data } = await supabase.from("usuarios").select("email, nome, fila").eq("ativo", true);
     if (data) subs.push(...data);
     if (workspace?.owner_email) { subs.push({ email: workspace.owner_email, nome: workspace.nome || "Dono" }); }
     setUsuariosWs(subs);
+    // 🆕 Filas cadastradas no sistema — antes a lista era derivada só dos atendimentos,
+    // então fila sem atendimento nunca aparecia no filtro nem no "Encaminhar para fila".
+    try {
+      const { data: fl } = await supabase.from("filas").select("nome").order("nome", { ascending: true });
+      setFilasBanco(((fl || []) as { nome: string | null }[]).map(f => f.nome || "").filter(Boolean));
+    } catch { setFilasBanco([]); }
     if (user?.email) {
       const eu = subs.find(s => s.email?.toLowerCase() === user.email?.toLowerCase());
       if (eu?.nome) setMeuNome(eu.nome);
@@ -1476,7 +1485,8 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
     const ch = supabase.channel("atendimentos_chat_rt_" + wsId)
       .on("postgres_changes", { event: "*", schema: "public", table: "atendimentos"}, () => fetchAtendimentos())
       .on("postgres_changes", { event: "*", schema: "public", table: "etiquetas"}, () => fetchEtiquetasWorkspace())
-      .on("postgres_changes", { event: "*", schema: "public", table: "usuarios_workspace"}, () => fetchUsuariosWorkspace())
+      .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, () => fetchUsuariosWorkspace())
+      .on("postgres_changes", { event: "*", schema: "public", table: "filas" }, () => fetchUsuariosWorkspace())
       .on("postgres_changes", { event: "*", schema: "public", table: "conexoes"}, () => fetchCanais())
       // 🆕 Atualiza em tempo real se o dono ligar/desligar a roleta
       .on("postgres_changes", { event: "*", schema: "public", table: "roleta_config"}, () => fetchRoleta())
@@ -1715,7 +1725,7 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
     setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   };
 
-  const filas = [...new Set(atendimentos.map(a => a.fila))].filter(Boolean);
+  const filas = [...new Set([...filasBanco, ...atendimentos.map(a => a.fila)])].filter(Boolean);
   const atendentesEmails = [...new Set(atendimentos.map(a => a.atendente))].filter(Boolean);
   const podeVerTudo = isDono || permissoes.chat_todos;
 
@@ -2739,7 +2749,7 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
                     <p style={{ color: "#f59e0b", fontSize: 10, fontWeight: "bold", textTransform: "uppercase", margin: "0 0 8px", letterSpacing: 0.5 }}>👥 Encaminhar para atendente</p>
                     {(() => {
                       const outrosAtendentes = usuariosWs.filter(u => u.email && u.email.toLowerCase() !== user?.email?.toLowerCase());
-                      if (outrosAtendentes.length === 0) { return <p style={{ color: "#6b7280", fontSize: 11, fontStyle: "italic", margin: "0 0 8px" }}>Nenhum outro atendente no workspace.</p>; }
+                      if (outrosAtendentes.length === 0) { return <p style={{ color: "#6b7280", fontSize: 11, fontStyle: "italic", margin: "0 0 8px" }}>Nenhum outro atendente cadastrado.</p>; }
                       return outrosAtendentes.map((u, idx) => (
                         <button key={"user-" + u.email + idx} onClick={() => transferirParaAtendente(u.email, u.nome || u.email.split("@")[0])}
                           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: "#ffffff", border: "1px solid #2a3942", borderRadius: 6, padding: "8px 12px", color: "#1f2937", fontSize: 12, cursor: "pointer", textAlign: "left", marginBottom: 4 }}>
