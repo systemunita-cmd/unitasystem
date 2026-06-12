@@ -604,54 +604,85 @@ export default function CobrancaPage() {
     const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase() === "INSTALADA");
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
+    const CICLO = 10; // 10 faturas por cliente a partir do mês gross
     const result: Fatura[] = [];
+
+    const parseDataBR = (v: any): Date | null => {
+      if (!v) return null;
+      const d = new Date(String(v).slice(0, 10) + "T00:00:00");
+      return isNaN(d.getTime()) ? null : d;
+    };
+
     for (const p of instalados) {
-      // 🆕 FONTE PRINCIPAL: cada LINHA REAL da planilha (histPlanilha) vira uma fatura.
-      //    Aqui carregamos TODOS os campos crus, então a tabela já mostra tudo preenchido.
       const hist = histPlanilha.get(p.id) || [];
+      // 1) indexa as faturas REAIS da planilha por numero_fatura
+      const porNum = new Map<number, any>();
       for (const r of hist) {
         if (r.numero_fatura == null) continue;
-        let dv: Date | null = null;
-        if (r.data_vencimento) {
-          const d = new Date(String(r.data_vencimento).slice(0, 10) + "T00:00:00");
-          if (!isNaN(d.getTime())) dv = d;
-        }
-        if (!dv) {
-          const m = String(r.numero_referencia).match(/^(\d{4})-(\d{2})/);
-          if (m) dv = new Date(Number(m[1]), Number(m[2]) - 1, parseInt(String(p.vencimento || "10").replace(/\D/g, ""), 10) || 10);
-        }
-        if (!dv) continue;
-        const sv = statusVisualDoCodigo(r.codigo_status, dv, hoje);
-        const diasAtraso = Math.round((hoje.getTime() - dv.getTime()) / 86400000);
-        result.push({
-          proposta: p,
-          numero_referencia: r.numero_referencia,
-          data_vencimento: dv,
-          valor: p.valor_plano || 0,
-          proporcional: false,
-          dias_cobertos: 30,
-          status: sv,
-          status_visual: sv,
-          data_pagamento: r.data_pagamento || null,
-          observacoes: r.observacao || null,
-          dias_atraso: diasAtraso,
-          // crus da planilha
-          numero_fatura: r.numero_fatura ?? null,
-          codigo_status: r.codigo_status || null,
-          status_planilha: r.status_planilha || null,
-          detalhamento: r.detalhamento || null,
-          mes_gross: r.mes_gross || null,
-          nome_banco: r.nome_banco || null,
-          opcao_pagamento: r.opcao_pagamento || null,
-          suspensao_fraude: r.suspensao_fraude ?? null,
-          churn: r.churn ?? null,
-          insucesso_dacc: r.insucesso_dacc ?? null,
-          daPlanilha: true,
-        } as Fatura);
+        porNum.set(Number(r.numero_fatura), r);
       }
-      // ⛔ NÃO geramos mais faturas automáticas pelo CRM. A planilha de status é a
-      //    ÚNICA fonte da verdade: se a planilha traz 4 faturas, são 4 — sem inventar
-      //    meses entre a instalação e hoje (isso criava faturas fantasma sem dados).
+
+      // 2) descobre o MÊS GROSS e o DIA DE VENCIMENTO do cliente (a partir da planilha)
+      let mesGrossDate: Date | null = null;
+      const diasVenc: number[] = [];
+      for (const r of hist) {
+        const mg = parseDataBR(r.mes_gross);
+        if (mg && !mesGrossDate) mesGrossDate = mg;
+        const dv = parseDataBR(r.data_vencimento);
+        if (dv) diasVenc.push(dv.getDate());
+      }
+      // dia de vencimento = o mais comum da planilha; fallback no cadastro do CRM; senão 10
+      let diaVenc = parseInt(String(p.vencimento || "").replace(/\D/g, ""), 10);
+      if (diasVenc.length > 0) {
+        const cont = new Map<number, number>();
+        for (const d of diasVenc) cont.set(d, (cont.get(d) || 0) + 1);
+        diaVenc = [...cont.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      }
+      if (!diaVenc || diaVenc < 1 || diaVenc > 31) diaVenc = 10;
+
+      // se não tem mês gross nenhum (cliente sem planilha), não há ciclo a gerar
+      if (!mesGrossDate) continue;
+
+      // 3) gera o CICLO de 10 faturas: fatura N vence (mês gross + N meses) no dia de venc.
+      for (let n = 1; n <= CICLO; n++) {
+        const r = porNum.get(n);
+        // data de vencimento da fatura N
+        let dv: Date | null = r ? parseDataBR(r.data_vencimento) : null;
+        if (!dv) dv = new Date(mesGrossDate.getFullYear(), mesGrossDate.getMonth() + n, diaVenc);
+        const diasAtraso = Math.round((hoje.getTime() - dv.getTime()) / 86400000);
+
+        if (r) {
+          // FATURA REAL da planilha — usa os dados crus
+          const sv = statusVisualDoCodigo(r.codigo_status, dv, hoje);
+          result.push({
+            proposta: p,
+            numero_referencia: r.numero_referencia || `${dv.getFullYear()}-${String(dv.getMonth() + 1).padStart(2, "0")}`,
+            data_vencimento: dv, valor: p.valor_plano || 0, proporcional: false, dias_cobertos: 30,
+            status: sv, status_visual: sv,
+            data_pagamento: r.data_pagamento || null, observacoes: r.observacao || null, dias_atraso: diasAtraso,
+            numero_fatura: n, codigo_status: r.codigo_status || null, status_planilha: r.status_planilha || null,
+            detalhamento: r.detalhamento || null, mes_gross: r.mes_gross || null,
+            nome_banco: r.nome_banco || null, opcao_pagamento: r.opcao_pagamento || null,
+            suspensao_fraude: r.suspensao_fraude ?? null, churn: r.churn ?? null, insucesso_dacc: r.insucesso_dacc ?? null,
+            daPlanilha: true,
+          } as Fatura);
+        } else {
+          // FATURA GERADA (não veio na planilha) — a vencer ou em aberto conforme a data
+          const sv: StatusFatura = diasAtraso > 0 ? "atrasada" : "pendente";
+          result.push({
+            proposta: p,
+            numero_referencia: `${dv.getFullYear()}-${String(dv.getMonth() + 1).padStart(2, "0")}`,
+            data_vencimento: dv, valor: p.valor_plano || 0, proporcional: false, dias_cobertos: 30,
+            status: sv, status_visual: sv,
+            data_pagamento: null, observacoes: null, dias_atraso: diasAtraso,
+            numero_fatura: n, codigo_status: null, status_planilha: null,
+            detalhamento: null, mes_gross: mesGrossDate ? `${mesGrossDate.getFullYear()}-${String(mesGrossDate.getMonth() + 1).padStart(2, "0")}-01` : null,
+            nome_banco: null, opcao_pagamento: null,
+            suspensao_fraude: null, churn: null, insucesso_dacc: null,
+            daPlanilha: false,
+          } as Fatura);
+        }
+      }
     }
     return aplicarStatusEAtrasos(result, statusMap);
   }, [propostas, statusMap, histPlanilha]);
