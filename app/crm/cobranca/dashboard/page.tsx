@@ -3,25 +3,40 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import {
+  BarChart, Bar, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
 import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
 import {
-  type Proposta, type FaturaStatusDB, type ClienteCob, type FaturaPlan, type Bucket,
+  type Proposta, type FaturaStatusDB, type Bucket,
   BUCKET_META, formatNum, pctOf,
-  calcularProxVenc, rotuloProx, diaVencimento,
   carregarPropostas, carregarFaturasStatus,
 } from "../../../lib/cobranca_lib";
 
-const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" };
-const input = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", color: "#1f2937", fontSize: 13, outline: "none", boxSizing: "border-box" as const };
-const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
+// ═══════════════════════════════════════════════════════════════════════════
+// 📊 DASHBOARD DE COBRANÇA — UnitaSystem
+// Contagem de pagas / pendentes / inadimplentes + evolução mês a mês.
+// Lê de faturas_status (populada pela página de Atualização).
+// ═══════════════════════════════════════════════════════════════════════════
 
-// status do banco → bucket
+const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
+const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
+const sectionTitle = { color: "#1f2937", fontSize: 15, fontWeight: 700, margin: "0 0 18px 0", display: "flex", alignItems: "center", gap: 8 };
+
 const bucketDoStatus = (s: string): Bucket | null => {
   if (s === "paga" || s === "paga_atraso") return "paga";
   if (s === "pendente") return "pendente";
   if (s === "atrasada") return "inadimplente";
-  return null; // promessa/acordo/negociacao/cancelada/etc. não entram na contagem de cobrança
+  return null; // promessa/acordo/negociação/cancelada ficam fora da contagem
+};
+
+const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const mesLabel = (ref: string) => {
+  const m = (ref || "").match(/^(\d{4})-(\d{2})/);
+  if (!m) return ref;
+  return `${MESES[Number(m[2]) - 1]}/${m[1].slice(2)}`;
 };
 
 export default function CobrancaDashboard() {
@@ -32,13 +47,8 @@ export default function CobrancaDashboard() {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
-  const [statusMap, setStatusMap] = useState<Map<string, FaturaStatusDB>>(new Map());
-  const [vazio, setVazio] = useState(false);
-
-  const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | "paga" | "pendente" | "inadimplente">("todos");
-  const [pagina, setPagina] = useState(1);
-  const SIZE = 25;
+  const [faturas, setFaturas] = useState<FaturaStatusDB[]>([]);
+  const [tipoGrafico, setTipoGrafico] = useState<"barras" | "linha">("barras");
 
   useEffect(() => {
     const ck = () => setIsMobile(window.innerWidth < 768);
@@ -52,193 +62,241 @@ export default function CobrancaDashboard() {
       if (!user) { router.push("/login"); return; }
       const [rp, rf] = await Promise.all([carregarPropostas(), carregarFaturasStatus()]);
       setPropostas(rp.propostas);
-      setStatusMap(rf.statusMap);
-      setVazio(rf.statusMap.size === 0);
+      setFaturas(Array.from(rf.statusMap.values()));
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // monta clientes a partir do que está GRAVADO em faturas_status
-  const res = useMemo(() => {
-    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-    const propById = new Map<number, Proposta>();
-    for (const p of propostas) propById.set(p.id, p);
-
-    const m = new Map<number, ClienteCob>();
-    for (const fs of statusMap.values()) {
-      const bucket = bucketDoStatus(fs.status);
-      if (!bucket) continue;
-      const prop = propById.get(fs.proposta_id);
-      // reconstrói o vencimento: mês de numero_referencia + dia de vencimento da proposta
-      let venc: Date | null = null;
-      const mref = (fs.numero_referencia || "").match(/^(\d{4})-(\d{2})/);
-      if (mref) venc = new Date(Number(mref[1]), Number(mref[2]) - 1, diaVencimento(prop));
-      const pag = fs.data_pagamento || null;
-      const diasPag = (bucket === "paga" && venc && pag) ? Math.round((new Date(pag + "T00:00:00").getTime() - venc.getTime()) / 86400000) : null;
-
-      let c = m.get(fs.proposta_id);
-      if (!c) {
-        c = {
-          ordem: String(prop?.dados_customizados?.os || ""),
-          custcode: String(prop?.dados_customizados?.custcode || ""),
-          proposta: prop, nome: prop?.nome || `Proposta #${fs.proposta_id}`,
-          faturas: [], pagas: 0, pendentes: 0, inadimplentes: 0, somaDiasPagamento: 0,
-          matched: !!prop, custcodeNovo: false, prox: { estado: "em_dia", dias: 0, data: null },
-        };
-        m.set(fs.proposta_id, c);
-      }
-      const fat: FaturaPlan = { ref: fs.numero_referencia, status: fs.status, bucket, venc, pag, diasPagamento: diasPag };
-      c.faturas.push(fat);
-      if (bucket === "paga") { c.pagas++; if (diasPag != null) c.somaDiasPagamento += diasPag; }
-      else if (bucket === "pendente") c.pendentes++;
-      else c.inadimplentes++;
+  // ─── KPIs (contagem) ────────────────────────────────────────────────────────
+  const kpis = useMemo(() => {
+    let pagas = 0, pendentes = 0, inadimplentes = 0;
+    const clientesInad = new Set<number>();
+    const clientesTot = new Set<number>();
+    for (const f of faturas) {
+      const b = bucketDoStatus(f.status);
+      if (!b) continue;
+      clientesTot.add(f.proposta_id);
+      if (b === "paga") pagas++;
+      else if (b === "pendente") pendentes++;
+      else { inadimplentes++; clientesInad.add(f.proposta_id); }
     }
+    const total = pagas + pendentes + inadimplentes;
+    return { pagas, pendentes, inadimplentes, total, clientesInad: clientesInad.size, clientesTot: clientesTot.size, pctInad: pctOf(inadimplentes, total) };
+  }, [faturas]);
 
-    const arr = Array.from(m.values());
-    for (const c of arr) c.prox = calcularProxVenc(c.faturas, hoje, 0);
-    arr.sort((a, b) => b.inadimplentes - a.inadimplentes || a.prox.dias - b.prox.dias);
-    let pg = 0, pe = 0, ina = 0, tot = 0, soma = 0, qPag = 0;
-    for (const c of arr) { pg += c.pagas; pe += c.pendentes; ina += c.inadimplentes; tot += c.faturas.length; soma += c.somaDiasPagamento; qPag += c.pagas; }
-    return {
-      clientes: arr, totFat: tot, pagas: pg, pendentes: pe, inadimplentes: ina,
-      totalClientes: arr.length, clientesInad: arr.filter(c => c.inadimplentes > 0).length,
-      somaDiasPagamento: soma, mediaDiasPagamento: qPag > 0 ? Math.round(soma / qPag) : 0,
-      aVencer7: arr.filter(c => c.prox.estado === "a_vencer" && c.prox.dias <= 7).length,
-    };
-  }, [propostas, statusMap]);
+  // ─── EVOLUÇÃO MÊS A MÊS ─────────────────────────────────────────────────────
+  const serieMensal = useMemo(() => {
+    const porMes = new Map<string, { pagas: number; pendentes: number; inadimplentes: number }>();
+    for (const f of faturas) {
+      const b = bucketDoStatus(f.status);
+      if (!b) continue;
+      const ref = (f.numero_referencia || "").slice(0, 7); // "YYYY-MM"
+      if (!/^\d{4}-\d{2}$/.test(ref)) continue;
+      let r = porMes.get(ref);
+      if (!r) { r = { pagas: 0, pendentes: 0, inadimplentes: 0 }; porMes.set(ref, r); }
+      if (b === "paga") r.pagas++;
+      else if (b === "pendente") r.pendentes++;
+      else r.inadimplentes++;
+    }
+    return Array.from(porMes.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([ref, v]) => ({
+        mes: mesLabel(ref), ref,
+        Pagas: v.pagas, Pendentes: v.pendentes, Inadimplentes: v.inadimplentes,
+        total: v.pagas + v.pendentes + v.inadimplentes,
+        pctPago: pctOf(v.pagas, v.pagas + v.pendentes + v.inadimplentes),
+      }));
+  }, [faturas]);
 
-  const lista = useMemo(() => {
-    let arr = res.clientes;
-    if (filtro === "paga") arr = arr.filter(c => c.pagas > 0);
-    else if (filtro === "pendente") arr = arr.filter(c => c.pendentes > 0);
-    else if (filtro === "inadimplente") arr = arr.filter(c => c.inadimplentes > 0);
-    const b = busca.trim().toLowerCase();
-    if (b) arr = arr.filter(c => c.nome.toLowerCase().includes(b) || c.custcode.toLowerCase().includes(b) || c.ordem.toLowerCase().includes(b));
-    return arr;
-  }, [res, filtro, busca]);
-  const totalPag = Math.max(1, Math.ceil(lista.length / SIZE));
-  const listaPag = useMemo(() => lista.slice((pagina - 1) * SIZE, pagina * SIZE), [lista, pagina]);
-  useEffect(() => { setPagina(1); }, [filtro, busca]);
+  // top meses com mais inadimplência + melhor mês de pagamento
+  const destaques = useMemo(() => {
+    if (serieMensal.length === 0) return null;
+    const piorInad = [...serieMensal].sort((a, b) => b.Inadimplentes - a.Inadimplentes)[0];
+    const melhorPago = [...serieMensal].filter(m => m.total >= 5).sort((a, b) => b.pctPago - a.pctPago)[0];
+    return { piorInad, melhorPago };
+  }, [serieMensal]);
 
   if (permitido === null || loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "#6b7280" }}>Carregando dashboard...</div>;
-  if (!permitido) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}><div style={{ ...card, padding: 48, textAlign: "center" }}><div style={{ fontSize: 40 }}>🔒</div><h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700 }}>Acesso restrito</h1></div></div>;
+  if (!permitido) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
+      <div style={{ ...card, padding: 48, textAlign: "center", maxWidth: 460 }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>🔒</div>
+        <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Acesso restrito</h1>
+        <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Você não tem permissão para ver a Cobrança.</p>
+      </div>
+    </div>
+  );
+
+  const vazio = kpis.total === 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
-      {/* header */}
+
+      {/* ═══ HEADER ═══ */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg,#2563eb,#1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}><span style={{ filter: "saturate(0) brightness(2)" }}>📊</span></div>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>
+            <span style={{ filter: "saturate(0) brightness(2)" }}>📊</span>
+          </div>
           <div>
-            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>Dashboard de Cobrança</h1>
-            <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}><b style={{ color: "#2563eb" }}>{formatNum(res.totFat)}</b> faturas · <b style={{ color: "#16a34a" }}>{formatNum(res.pagas)}</b> pagas · <b style={{ color: "#dc2626" }}>{formatNum(res.inadimplentes)}</b> inadimplentes</p>
+            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>Dashboard de Cobrança</h1>
+            <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
+              <b style={{ color: "#2563eb" }}>{formatNum(kpis.total)}</b> faturas · <b style={{ color: "#16a34a" }}>{formatNum(kpis.pagas)}</b> pagas · <b style={{ color: "#dc2626" }}>{formatNum(kpis.inadimplentes)}</b> inadimplentes
+            </p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={btnSec}>📤 Atualizar planilha</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => router.push("/crm/cobranca/negociacoes")} style={btnSec}>🤝 Negociações</button>
+          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={btnSec}>📤 Atualizar planilha</button>
         </div>
       </div>
 
       {vazio && (
-        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderLeft: "4px solid #2563eb", borderRadius: 12, padding: "12px 18px" }}>
-          <p style={{ color: "#1e40af", fontSize: 13, margin: 0, fontWeight: 700 }}>Ainda não há faturas com status gravado</p>
-          <p style={{ color: "#3b82f6", fontSize: 12, margin: "2px 0 0" }}>Suba a planilha de pagamento em <b>Atualizar planilha</b> pra popular o dashboard.</p>
+        <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border: "1px solid #bfdbfe", borderLeft: "4px solid #2563eb", borderRadius: 12, padding: "12px 18px" }}>
+          <p style={{ color: "#1e40af", fontSize: 13, margin: 0, fontWeight: 700 }}>💡 Ainda não há faturas com status gravado</p>
+          <p style={{ color: "#3b82f6", fontSize: 12, margin: "2px 0 0" }}>Suba a planilha de pagamento em <b>📤 Atualizar planilha</b> — o dashboard popula sozinho.</p>
         </div>
       )}
 
-      {/* cards */}
+      {/* ═══ CARDS DE CONTAGEM ═══ */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
-        {([{ k: "paga" as const, qtd: res.pagas }, { k: "pendente" as const, qtd: res.pendentes }, { k: "inadimplente" as const, qtd: res.inadimplentes }]).map(c => {
+        {([
+          { k: "pendente" as const, qtd: kpis.pendentes, sub: `${pctOf(kpis.pendentes, kpis.total)}% das faturas` },
+          { k: "inadimplente" as const, qtd: kpis.inadimplentes, sub: `${formatNum(kpis.clientesInad)} cliente(s) inadimplente(s)` },
+          { k: "paga" as const, qtd: kpis.pagas, sub: `${pctOf(kpis.pagas, kpis.total)}% das faturas` },
+        ]).map(c => {
           const meta = BUCKET_META[c.k];
           return (
             <div key={c.k} style={{ ...card, padding: isMobile ? 14 : 18, borderTop: `4px solid ${meta.cor}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 9, background: meta.bg, border: `1px solid ${meta.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{meta.icone}</div>
-                <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, margin: 0, textTransform: "uppercase" }}>{meta.label}</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: meta.bg, border: `1px solid ${meta.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{meta.icone}</div>
+                <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>{c.k === "pendente" ? "Pendentes de pagamento" : meta.label}</p>
               </div>
-              <p style={{ color: meta.cor, fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0 }}>{formatNum(c.qtd)}</p>
-              <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{pctOf(c.qtd, res.totFat)}% das faturas</p>
+              <p style={{ color: meta.cor, fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{formatNum(c.qtd)}</p>
+              <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
             </div>
           );
         })}
-        <div style={{ ...card, padding: isMobile ? 14 : 18, borderTop: "4px solid #6366f1" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9, background: "#eef2ff", border: "1px solid #c7d2fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>📆</div>
-            <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, margin: 0, textTransform: "uppercase" }}>Dias p/ pagar</p>
+        <div style={{ ...card, padding: isMobile ? 14 : 18, borderTop: "4px solid #4f46e5" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: "#eef2ff", border: "1px solid #c7d2fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>📉</div>
+            <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>Inadimplência</p>
           </div>
-          <p style={{ color: "#6366f1", fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0 }}>{formatNum(res.mediaDiasPagamento)}</p>
-          <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>média · soma {formatNum(res.somaDiasPagamento)}d</p>
+          <p style={{ color: "#4f46e5", fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{kpis.pctInad}%</p>
+          <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>inadimplentes / total de faturas</p>
         </div>
       </div>
 
-      {/* proporção + destaque a vencer */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 14 }}>
+      {/* ═══ BARRA DE PROPORÇÃO ═══ */}
+      {!vazio && (
         <div style={{ ...card, padding: isMobile ? 16 : 20 }}>
           <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>📊 Proporção das faturas</p>
           <div style={{ display: "flex", height: 28, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
-            {([{ q: res.pagas, cor: "#16a34a" }, { q: res.pendentes, cor: "#d97706" }, { q: res.inadimplentes, cor: "#dc2626" }]).map((s, i) => {
-              const p = pctOf(s.q, res.totFat);
+            {([{ q: kpis.pagas, cor: "#16a34a" }, { q: kpis.pendentes, cor: "#d97706" }, { q: kpis.inadimplentes, cor: "#dc2626" }]).map((s, i) => {
+              const p = pctOf(s.q, kpis.total);
               return s.q > 0 ? <div key={i} style={{ width: `${p}%`, background: s.cor, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>{p >= 8 ? `${p}%` : ""}</div> : null;
             })}
           </div>
-        </div>
-        <div style={{ ...card, padding: isMobile ? 16 : 20, display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 12, background: "#fffbeb", border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>⏰</div>
-          <div>
-            <p style={{ color: "#d97706", fontSize: 22, fontWeight: 800, margin: 0 }}>{formatNum(res.aVencer7)}</p>
-            <p style={{ color: "#6b7280", fontSize: 12, margin: 0, fontWeight: 600 }}>cliente(s) vencem em ≤7 dias</p>
+          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
+            {([{ l: "Pagas", cor: "#16a34a" }, { l: "Pendentes", cor: "#d97706" }, { l: "Inadimplentes", cor: "#dc2626" }]).map(x => (
+              <span key={x.l} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b7280", fontSize: 11.5, fontWeight: 600 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: x.cor }} /> {x.l}
+              </span>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* tabela: nome | custcode | próximo vencimento */}
-      <div style={{ ...card, overflow: "hidden" }}>
-        <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>👥 Clientes ({formatNum(lista.length)})</h3>
-          <input placeholder="🔍 nome, custcode ou ordem..." value={busca} onChange={e => setBusca(e.target.value)} style={{ ...input, marginLeft: "auto", padding: "7px 12px", fontSize: 12, borderRadius: 20, width: isMobile ? "100%" : 260 }} />
-        </div>
-        <div style={{ padding: "10px 18px", borderBottom: "1px solid #f3f4f6", display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {([{ k: "todos", l: "Todos" }, { k: "inadimplente", l: "🔴 Inadimplentes" }, { k: "pendente", l: "⏳ Pendentes" }, { k: "paga", l: "✅ Pagas" }] as { k: typeof filtro; l: string }[]).map(f => (
-            <button key={f.k} onClick={() => setFiltro(f.k)} style={{ borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600, border: `1px solid ${filtro === f.k ? "#2563eb" : "#e5e7eb"}`, background: filtro === f.k ? "#eff6ff" : "#fff", color: filtro === f.k ? "#2563eb" : "#6b7280" }}>{f.l}</button>
-          ))}
-        </div>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 760 : "auto" }}>
-            <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                {["Cliente", "CUSTCODE", "Próximo vencimento", "Fat.", "✅", "⏳", "🔴"].map(h => (
-                  <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {listaPag.map((c, i) => {
-                const rp = rotuloProx(c.prox);
-                return (
-                  <tr key={c.proposta?.id ?? c.nome + i} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#fff" : "#fafbfc" }}>
-                    <td style={{ padding: "11px 14px", color: "#1f2937", fontSize: 13, fontWeight: 700, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.nome}</td>
-                    <td style={{ padding: "11px 14px" }}><span style={{ fontFamily: "monospace", fontSize: 12.5, color: c.custcode ? "#1f2937" : "#9ca3af", fontWeight: 700 }}>{c.custcode || "—"}</span></td>
-                    <td style={{ padding: "11px 14px" }}><span style={{ background: rp.bg, color: rp.cor, border: `1px solid ${rp.border}`, fontSize: 12, padding: "3px 10px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{rp.texto}</span></td>
-                    <td style={{ padding: "11px 14px", color: "#374151", fontSize: 13, fontWeight: 600 }}>{c.faturas.length}</td>
-                    <td style={{ padding: "11px 14px", color: c.pagas > 0 ? "#16a34a" : "#d1d5db", fontSize: 13, fontWeight: 700 }}>{c.pagas || "—"}</td>
-                    <td style={{ padding: "11px 14px", color: c.pendentes > 0 ? "#d97706" : "#d1d5db", fontSize: 13, fontWeight: 700 }}>{c.pendentes || "—"}</td>
-                    <td style={{ padding: "11px 14px", color: c.inadimplentes > 0 ? "#dc2626" : "#d1d5db", fontSize: 13, fontWeight: 700 }}>{c.inadimplentes || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {totalPag > 1 && (
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, padding: 14 }}>
-            <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={pagina === 1} style={{ ...btnSec, padding: "7px 14px", opacity: pagina === 1 ? 0.5 : 1 }}>← Anterior</button>
-            <span style={{ color: "#6b7280", fontSize: 13, fontWeight: 600 }}>Pág. {pagina} / {totalPag}</span>
-            <button onClick={() => setPagina(p => Math.min(totalPag, p + 1))} disabled={pagina === totalPag} style={{ ...btnSec, padding: "7px 14px", opacity: pagina === totalPag ? 0.5 : 1 }}>Próxima →</button>
+      {/* ═══ GRÁFICO: EVOLUÇÃO DOS PAGAMENTOS MÊS A MÊS ═══ */}
+      {serieMensal.length > 0 && (
+        <div style={{ ...card, padding: isMobile ? 16 : 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+            <h3 style={{ ...sectionTitle, margin: 0 }}>
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: "#eff6ff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>📈</span>
+              Evolução dos pagamentos mês a mês
+            </h3>
+            <div style={{ display: "flex", gap: 4 }}>
+              {(["barras", "linha"] as const).map(t => (
+                <button key={t} onClick={() => setTipoGrafico(t)} style={{ borderRadius: 20, padding: "6px 13px", fontSize: 12, cursor: "pointer", fontWeight: tipoGrafico === t ? 700 : 600, border: `1px solid ${tipoGrafico === t ? "#2563eb" : "#e5e7eb"}`, background: tipoGrafico === t ? "#eff6ff" : "#fff", color: tipoGrafico === t ? "#2563eb" : "#6b7280" }}>{t === "barras" ? "📊 Barras" : "📈 Linha"}</button>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+          <ResponsiveContainer width="100%" height={isMobile ? 260 : 330}>
+            {tipoGrafico === "barras" ? (
+              <BarChart data={serieMensal} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="mes" stroke="#6b7280" fontSize={11} />
+                <YAxis stroke="#6b7280" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} cursor={{ fill: "#f3f4f6" }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Pagas" stackId="a" fill="#16a34a" />
+                <Bar dataKey="Pendentes" stackId="a" fill="#d97706" />
+                <Bar dataKey="Inadimplentes" stackId="a" fill="#dc2626" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            ) : (
+              <LineChart data={serieMensal} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="mes" stroke="#6b7280" fontSize={11} />
+                <YAxis stroke="#6b7280" fontSize={11} allowDecimals={false} />
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" />
+                <Line type="monotone" dataKey="Pagas" stroke="#16a34a" strokeWidth={2.5} dot={false} />
+                <Line type="monotone" dataKey="Pendentes" stroke="#d97706" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="Inadimplentes" stroke="#dc2626" strokeWidth={2} dot={false} />
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* ═══ % PAGO POR MÊS + DESTAQUES ═══ */}
+      {serieMensal.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 14 }}>
+          <div style={{ ...card, padding: isMobile ? 16 : 24 }}>
+            <h3 style={{ ...sectionTitle, fontSize: 14 }}>
+              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#f0fdf4", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✅</span>
+              % de faturas pagas por mês
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={serieMensal} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="mes" stroke="#6b7280" fontSize={10} />
+                <YAxis stroke="#6b7280" fontSize={10} domain={[0, 100]} tickFormatter={(v: any) => `${v}%`} />
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 12 }} formatter={(v: any) => [`${v}%`, "Pagas"]} />
+                <Line type="monotone" dataKey="pctPago" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 3 }} name="pctPago" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {destaques?.melhorPago && (
+              <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #16a34a" }}>
+                <div style={{ fontSize: 26 }}>🏆</div>
+                <div>
+                  <p style={{ color: "#16a34a", fontSize: 16, fontWeight: 800, margin: 0 }}>{destaques.melhorPago.mes} · {destaques.melhorPago.pctPago}% pago</p>
+                  <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>melhor mês de pagamento</p>
+                </div>
+              </div>
+            )}
+            {destaques?.piorInad && destaques.piorInad.Inadimplentes > 0 && (
+              <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #dc2626" }}>
+                <div style={{ fontSize: 26 }}>🚨</div>
+                <div>
+                  <p style={{ color: "#dc2626", fontSize: 16, fontWeight: 800, margin: 0 }}>{destaques.piorInad.mes} · {formatNum(destaques.piorInad.Inadimplentes)} inadimplentes</p>
+                  <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>mês com mais inadimplência</p>
+                </div>
+              </div>
+            )}
+            <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #2563eb" }}>
+              <div style={{ fontSize: 26 }}>👥</div>
+              <div>
+                <p style={{ color: "#2563eb", fontSize: 16, fontWeight: 800, margin: 0 }}>{formatNum(kpis.clientesTot)} cliente(s)</p>
+                <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>com faturas acompanhadas</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
