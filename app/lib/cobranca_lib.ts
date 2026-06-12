@@ -46,7 +46,14 @@ export type FaturaPlan = {
   numeroFatura: number | null;  // NÚMERO FATURA (1..10)
   codigo: string | null;        // "01".."05" — código bruto do STATUS PAGAMENTO
   statusPlanilha: string | null;// texto cru: "02 - PAGOU ATÉ 30 DIAS..."
-  detalhamento: string | null;  // "PAGOU APÓS 30 DIAS...", "FRAUDE", etc
+  detalhamento: string | null;  // DETALHAMENTO FATURA
+  mesGross: string | null;      // MÊS GROSS (mês da instalação) ISO "YYYY-MM-DD"
+  observacao: string | null;    // RETORNO INSUCESSO DACC (motivo)
+  suspensaoFraude: boolean | null;
+  churn: boolean | null;
+  insucessoDacc: boolean | null;
+  nomeBanco: string | null;
+  opcaoPagamento: string | null;// BOLETO / DACC
 };
 
 export type ProxVenc = {
@@ -71,7 +78,7 @@ export type ClienteCob = {
   precoce: boolean;             // 🆕 pagou após 30 dias (cód 03/04) em ALGUMA fatura
 };
 
-export type ColKey = "ordem" | "custcode" | "status" | "vencimento" | "pagamento" | "numero_fatura" | "detalhamento";
+export type ColKey = "ordem" | "custcode" | "status" | "vencimento" | "pagamento" | "numero_fatura" | "detalhamento" | "mes_gross" | "observacao" | "suspensao_fraude" | "churn" | "insucesso_dacc" | "nome_banco" | "opcao_pagamento";
 
 // ─── DETECÇÃO DE COLUNAS DA PLANILHA ─────────────────────────────────────────
 export const DETECTAR: { key: ColKey; label: string; obrig: boolean; testa: (h: string) => boolean }[] = [
@@ -81,8 +88,23 @@ export const DETECTAR: { key: ColKey; label: string; obrig: boolean; testa: (h: 
   { key: "vencimento",    label: "Data de vencimento",        obrig: true,  testa: h => /data/.test(h) && /vencimento|venc/.test(h) },
   { key: "pagamento",     label: "Data de pagamento",         obrig: false, testa: h => /data/.test(h) && /pagamento|pagto/.test(h) },
   { key: "numero_fatura", label: "Número da fatura",          obrig: false, testa: h => /n[uú]mero/.test(h) && /fatura/.test(h) },
-  { key: "detalhamento",  label: "Detalhamento da fatura",    obrig: false, testa: h => /detalhamento/.test(h) },
+  { key: "detalhamento",     label: "Detalhamento da fatura",  obrig: false, testa: h => /detalhamento/.test(h) },
+  { key: "mes_gross",        label: "Mês gross (instalação)",  obrig: false, testa: h => /m[eê]s/.test(h) && /gross/.test(h) },
+  { key: "observacao",       label: "Observação (retorno DACC)", obrig: false, testa: h => /retorno/.test(h) && /dacc|insucesso/.test(h) },
+  { key: "suspensao_fraude", label: "Suspensão de fraude",     obrig: false, testa: h => /suspens/.test(h) && /fraude/.test(h) },
+  { key: "churn",            label: "Churn",                   obrig: false, testa: h => /^churn$/.test(h.trim()) },
+  { key: "insucesso_dacc",   label: "Insucesso DACC",          obrig: false, testa: h => /insucesso/.test(h) && /dacc/.test(h) && !/retorno/.test(h) },
+  { key: "nome_banco",       label: "Nome do banco",           obrig: false, testa: h => /nome/.test(h) && /banco/.test(h) },
+  { key: "opcao_pagamento",  label: "Opção de pagamento",      obrig: false, testa: h => /op[cç][aã]o/.test(h) && /pagamento/.test(h) },
 ];
+
+// "Sim"/"Não" da planilha -> boolean
+export const simNao = (v: any): boolean | null => {
+  const t = String(v || "").trim().toLowerCase();
+  if (t === "sim") return true;
+  if (t === "não" || t === "nao") return false;
+  return null;
+};
 
 // ─── HELPERS DE FORMATO ──────────────────────────────────────────────────────
 export const formatNum = (v: number) => (v || 0).toLocaleString("pt-BR");

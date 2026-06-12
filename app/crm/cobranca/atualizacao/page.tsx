@@ -8,7 +8,7 @@ import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
 import {
   type Proposta, type ColKey, type ClienteCob, type FaturaPlan,
-  DETECTAR, BUCKET_META, formatNum, pctOf, refDe, codigoStatusStr, pagouComAtrasoGrave,
+  DETECTAR, BUCKET_META, formatNum, pctOf, refDe, codigoStatusStr, pagouComAtrasoGrave, simNao,
   parseData, classificar, calcularProxVenc, rotuloProx,
   carregarPropostas, carregarFaturasStatus, indicePorOrdem,
 } from "../../../lib/cobranca_lib";
@@ -34,7 +34,7 @@ export default function CobrancaAtualizacao() {
   const [linhas, setLinhas] = useState<any[][]>([]);
   const [nomeArquivo, setNomeArquivo] = useState("");
   const [temCabecalho, setTemCabecalho] = useState(true);
-  const [mapCols, setMapCols] = useState<Record<ColKey, number>>({ ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1 });
+  const [mapCols, setMapCols] = useState<Record<ColKey, number>>({ ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1, mes_gross: -1, observacao: -1, suspensao_fraude: -1, churn: -1, insucesso_dacc: -1, nome_banco: -1, opcao_pagamento: -1 });
   const [carencia, setCarencia] = useState(0);
 
   const [gravando, setGravando] = useState(false);
@@ -80,7 +80,7 @@ export default function CobrancaAtualizacao() {
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
         setLinhas(rows); setPagina(1);
         const head = (rows[0] || []).map((c: any) => String(c || "").toLowerCase().trim());
-        const novo: Record<ColKey, number> = { ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1 };
+        const novo: Record<ColKey, number> = { ordem: -1, custcode: -1, status: -1, vencimento: -1, pagamento: -1, numero_fatura: -1, detalhamento: -1, mes_gross: -1, observacao: -1, suspensao_fraude: -1, churn: -1, insucesso_dacc: -1, nome_banco: -1, opcao_pagamento: -1 };
         for (const d of DETECTAR) novo[d.key] = head.findIndex(h => d.testa(h));
         setMapCols(novo); setTemCabecalho(true);
       } catch (err: any) {
@@ -122,6 +122,13 @@ export default function CobrancaAtualizacao() {
           codigo: codigoStatusStr(statusTxt),
           statusPlanilha: statusTxt || null,
           detalhamento: detalhe || null,
+          mesGross: mapCols.mes_gross >= 0 ? (parseData(linha[mapCols.mes_gross])?.toISOString().slice(0, 10) || null) : null,
+          observacao: mapCols.observacao >= 0 ? (String(linha[mapCols.observacao] || "").trim() || null) : null,
+          suspensaoFraude: mapCols.suspensao_fraude >= 0 ? simNao(linha[mapCols.suspensao_fraude]) : null,
+          churn: mapCols.churn >= 0 ? simNao(linha[mapCols.churn]) : null,
+          insucessoDacc: mapCols.insucesso_dacc >= 0 ? simNao(linha[mapCols.insucesso_dacc]) : null,
+          nomeBanco: mapCols.nome_banco >= 0 ? (String(linha[mapCols.nome_banco] || "").trim() || null) : null,
+          opcaoPagamento: mapCols.opcao_pagamento >= 0 ? (String(linha[mapCols.opcao_pagamento] || "").trim() || null) : null,
         };
         let c = m.get(ordem);
         if (!c) {
@@ -197,6 +204,13 @@ export default function CobrancaAtualizacao() {
             detalhamento: f.detalhamento,
             data_vencimento: f.venc ? f.venc.toISOString().slice(0, 10) : null,
             data_pagamento: f.pag,
+            mes_gross: f.mesGross,
+            observacao: f.observacao,
+            suspensao_fraude: f.suspensaoFraude,
+            churn: f.churn,
+            insucesso_dacc: f.insucessoDacc,
+            nome_banco: f.nomeBanco,
+            opcao_pagamento: f.opcaoPagamento,
             atualizado_por: userEmail || null,
           });
         }

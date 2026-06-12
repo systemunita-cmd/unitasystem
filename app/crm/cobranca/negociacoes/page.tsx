@@ -345,6 +345,16 @@ export default function CobrancaPage() {
   const [filtroBusca, setFiltroBusca] = useState("");
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
+  // 🆕 intervalo personalizado de vencimento (de–até)
+  const [vencDe, setVencDe] = useState("");
+  const [vencAte, setVencAte] = useState("");
+  // 🆕 filtros por coluna (cabeçalho da tabela)
+  const [colNome, setColNome] = useState("");
+  const [colOs, setColOs] = useState("");
+  const [colCust, setColCust] = useState("");
+  const [colFat, setColFat] = useState("");
+  const [colVenc, setColVenc] = useState("");
+  const [colValor, setColValor] = useState("");
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
   // 🆕 Histórico REAL da planilha (colunas numero_fatura/codigo_status/detalhamento/datas)
@@ -641,6 +651,19 @@ export default function CobrancaPage() {
       arr = arr.filter(f => buscaMatch(f.proposta, filtroBusca));
     }
 
+    // 🆕 intervalo personalizado por data de vencimento
+    if (vencDe) { const d = new Date(vencDe + "T00:00:00"); arr = arr.filter(f => f.data_vencimento >= d); }
+    if (vencAte) { const d = new Date(vencAte + "T23:59:59"); arr = arr.filter(f => f.data_vencimento <= d); }
+
+    // 🆕 filtros por coluna
+    const inc = (v: any, q: string) => String(v ?? "").toLowerCase().includes(q.toLowerCase());
+    if (colNome) arr = arr.filter(f => inc(f.proposta.nome, colNome));
+    if (colOs)   arr = arr.filter(f => inc(f.proposta.dados_customizados?.os, colOs));
+    if (colCust) arr = arr.filter(f => inc(f.proposta.dados_customizados?.custcode, colCust));
+    if (colFat)  arr = arr.filter(f => inc(formatMesExtenso(f.numero_referencia), colFat));
+    if (colVenc) arr = arr.filter(f => inc(formatData(f.data_vencimento), colVenc));
+    if (colValor) arr = arr.filter(f => String(f.valor).includes(colValor.replace(",", ".")));
+
     return [...arr].sort((a, b) => {
       const ordem = { atrasada: 0, pendente: 1, paga: 2 };
       const oa = ordem[a.status_visual as keyof typeof ordem] ?? 3;
@@ -648,7 +671,7 @@ export default function CobrancaPage() {
       if (oa !== ob) return oa - ob;
       return a.data_vencimento.getTime() - b.data_vencimento.getTime();
     });
-  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel]);
+  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, vencDe, vencAte, colNome, colOs, colCust, colFat, colVenc, colValor]);
 
   // 🆕 Lista de clientes do lado: agrupa faturas por cliente e calcula situação.
   const clientes = useMemo<any[]>(() => {
@@ -1236,6 +1259,17 @@ export default function CobrancaPage() {
                   style={{ ...inputStyle, flex: 1, minWidth: 180, padding: "7px 12px" }} />
               </div>
 
+              {/* 🆕 INTERVALO PERSONALIZADO POR DATA DE VENCIMENTO */}
+              <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>📅 Vencimento de:</span>
+                <input type="date" value={vencDe} onChange={e => { setVencDe(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                <span style={{ color: "#9ca3af", fontSize: 12 }}>até</span>
+                <input type="date" value={vencAte} onChange={e => { setVencAte(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                {(vencDe || vencAte) && (
+                  <button onClick={() => { setVencDe(""); setVencAte(""); }} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar período</button>
+                )}
+              </div>
+
               <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 4 }}>Status:</span>
                 {([
@@ -1307,7 +1341,7 @@ export default function CobrancaPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                         <thead>
                           <tr style={{ background: "#fafbfc" }}>
-                            {["#", "Status", "Detalhamento", "Vencimento", "Pagamento"].map(h => (
+                            {["#", "Status", "Detalhamento", "Instalação", "Vencimento", "Pagamento", "Banco / Obs."].map(h => (
                               <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#6b7280", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
@@ -1321,9 +1355,17 @@ export default function CobrancaPage() {
                                 <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
                                   <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{r.codigo_status || "—"} · {cc.txt}</span>
                                 </td>
-                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.detalhamento || "—"}</td>
-                                <td style={{ padding: "8px 12px", color: "#6b7280", whiteSpace: "nowrap" }}>{formatData(r.data_vencimento)}</td>
+                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {r.detalhamento || "—"}
+                                  {r.suspensao_fraude && <span style={{ marginLeft: 6, background: "#fef2f2", color: "#b91c1c", fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>FRAUDE</span>}
+                                  {r.churn && <span style={{ marginLeft: 6, background: "#fff7ed", color: "#c2410c", fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>CHURN</span>}
+                                </td>
+                                <td style={{ padding: "8px 12px", color: "#6b7280", whiteSpace: "nowrap" }}>{r.mes_gross ? formatData(r.mes_gross) : "—"}</td>
+                                <td style={{ padding: "8px 12px", color: "#1f2937", fontWeight: 600, whiteSpace: "nowrap" }}>{formatData(r.data_vencimento)}</td>
                                 <td style={{ padding: "8px 12px", color: r.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: r.data_pagamento ? 700 : 400, whiteSpace: "nowrap" }}>{formatData(r.data_pagamento)}</td>
+                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
+                                  {r.nome_banco || ""}{r.nome_banco && r.observacao ? " · " : ""}{r.observacao || (!r.nome_banco ? "—" : "")}
+                                </td>
                               </tr>
                             );
                           })}
@@ -1369,6 +1411,29 @@ export default function CobrancaPage() {
                           {["Cliente", "OS", "Custcode", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
                             <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
+                        </tr>
+                        {/* 🆕 linha de filtros por coluna */}
+                        <tr style={{ background: "#fff" }}>
+                          <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>
+                          {([
+                            { v: colNome, set: setColNome, ph: "filtrar nome" },
+                            { v: colOs, set: setColOs, ph: "OS" },
+                            { v: colCust, set: setColCust, ph: "custcode" },
+                            { v: colFat, set: setColFat, ph: "ex: Mar/26" },
+                            { v: colVenc, set: setColVenc, ph: "dd/mm" },
+                            { v: colValor, set: setColValor, ph: "valor" },
+                          ] as { v: string; set: (s: string) => void; ph: string }[]).map((c, i) => (
+                            <th key={i} style={{ padding: "4px 8px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                              <input value={c.v} onChange={e => { c.set(e.target.value); setSelecionadasFat(new Set()); }} placeholder={c.ph}
+                                style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                            </th>
+                          ))}
+                          <th style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 8px" }}>
+                            {(colNome || colOs || colCust || colFat || colVenc || colValor) && (
+                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
+                                title="Limpar filtros" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕</button>
+                            )}
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
