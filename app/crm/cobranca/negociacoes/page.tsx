@@ -364,23 +364,45 @@ export default function CobrancaPage() {
   const [selecionadosPlanilha, setSelecionadosPlanilha] = useState<Set<number>>(new Set());
   const inputArquivoRef = useRef<HTMLInputElement>(null);
 
-  // ✏️ ADIÇÃO: edição manual de OS / custcode do cliente (igual nas vendas)
+  // ✏️ ADIÇÃO: edição COMPLETA do cliente (igual nas vendas)
   const [editCliente, setEditCliente] = useState<Proposta | null>(null);
-  const [editOs, setEditOs] = useState("");
-  const [editCust, setEditCust] = useState("");
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [salvandoEdit, setSalvandoEdit] = useState(false);
   const abrirEdicaoCliente = (p: Proposta) => {
     setEditCliente(p);
-    setEditOs(String(p.dados_customizados?.os || ""));
-    setEditCust(String(p.dados_customizados?.custcode || ""));
+    setEditForm({
+      nome: String(p.nome || ""),
+      cpf: String(p.cpf || ""),
+      telefone1: String(p.telefone1 || ""),
+      plano: String(p.plano || ""),
+      operadora: String((p as any).operadora || ""),
+      valor_plano: p.valor_plano != null ? String(p.valor_plano) : "",
+      vencimento: String(p.vencimento || ""),
+      forma_pagamento: String(p.forma_pagamento || ""),
+      data_instalacao: String(p.data_instalacao || "").slice(0, 10),
+      os: String(p.dados_customizados?.os || ""),
+      custcode: String(p.dados_customizados?.custcode || ""),
+    });
   };
   const salvarEdicaoCliente = async () => {
     if (!editCliente) return;
     setSalvandoEdit(true);
     const novoDados = { ...(editCliente.dados_customizados || {}) } as Record<string, any>;
-    if (editOs.trim()) novoDados.os = editOs.trim(); else delete novoDados.os;
-    if (editCust.trim()) novoDados.custcode = editCust.trim(); else delete novoDados.custcode;
-    const { error } = await supabase.from("proposta").update({ dados_customizados: novoDados }).eq("id", editCliente.id);
+    if (editForm.os.trim()) novoDados.os = editForm.os.trim(); else delete novoDados.os;
+    if (editForm.custcode.trim()) novoDados.custcode = editForm.custcode.trim(); else delete novoDados.custcode;
+    const payload: Record<string, any> = {
+      nome: editForm.nome.trim() || null,
+      cpf: editForm.cpf.trim() || null,
+      telefone1: editForm.telefone1.trim() || null,
+      plano: editForm.plano.trim() || null,
+      operadora: editForm.operadora.trim() || null,
+      valor_plano: editForm.valor_plano.trim() !== "" ? parseFloat(editForm.valor_plano.replace(",", ".")) || null : null,
+      vencimento: editForm.vencimento.trim() || null,
+      forma_pagamento: editForm.forma_pagamento.trim() || null,
+      data_instalacao: editForm.data_instalacao.trim() || null,
+      dados_customizados: novoDados,
+    };
+    const { error } = await supabase.from("proposta").update(payload).eq("id", editCliente.id);
     setSalvandoEdit(false);
     if (error) {
       setFeedback({ tipo: "erro", titulo: "Não foi possível salvar", mensagem: error.message });
@@ -388,7 +410,7 @@ export default function CobrancaPage() {
     }
     setEditCliente(null);
     await fetchPropostas();
-    setFeedback({ tipo: "sucesso", titulo: "Cliente atualizado", mensagem: `OS e custcode de ${editCliente.nome || "—"} salvos.` });
+    setFeedback({ tipo: "sucesso", titulo: "Cliente atualizado", mensagem: `Dados de ${editForm.nome || "—"} salvos.` });
   };
 
   const [showEnvio, setShowEnvio] = useState(false);
@@ -1657,29 +1679,65 @@ export default function CobrancaPage() {
         );
       })()}
 
-      {/* ✏️ ADIÇÃO: MODAL — editar OS / custcode do cliente */}
+      {/* ✏️ ADIÇÃO: MODAL — edição completa do cliente */}
       {editCliente && (
-        <div onClick={() => setEditCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
-          <div onClick={ev => ev.stopPropagation()} style={{ ...cardStyle, width: "100%", maxWidth: 440, padding: 24 }}>
+        <div onClick={() => setEditCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16, overflowY: "auto" }}>
+          <div onClick={ev => ev.stopPropagation()} style={{ ...cardStyle, width: "100%", maxWidth: 620, padding: 24, maxHeight: "92vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
               <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>✏️ Editar cliente</h3>
               <button onClick={() => setEditCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>✕</button>
             </div>
-            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 16px", fontWeight: 600 }}>{editCliente.nome || "—"}</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 16px" }}>Alterações salvam direto na venda do CRM.</p>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+              <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
+                <label style={labelStyle}>👤 Nome do cliente</label>
+                <input value={editForm.nome || ""} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>🪪 CPF</label>
+                <input value={editForm.cpf || ""} onChange={e => setEditForm(f => ({ ...f, cpf: e.target.value }))} style={{ ...inputStyle, fontFamily: "monospace" }} />
+              </div>
+              <div>
+                <label style={labelStyle}>📱 Telefone</label>
+                <input value={editForm.telefone1 || ""} onChange={e => setEditForm(f => ({ ...f, telefone1: e.target.value }))} style={{ ...inputStyle, fontFamily: "monospace" }} />
+              </div>
+              <div>
+                <label style={labelStyle}>📦 Plano</label>
+                <input value={editForm.plano || ""} onChange={e => setEditForm(f => ({ ...f, plano: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>📡 Operadora</label>
+                <input value={editForm.operadora || ""} onChange={e => setEditForm(f => ({ ...f, operadora: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>💰 Valor do plano (R$)</label>
+                <input value={editForm.valor_plano || ""} onChange={e => setEditForm(f => ({ ...f, valor_plano: e.target.value }))} placeholder="ex: 119.99" style={{ ...inputStyle, fontFamily: "monospace" }} />
+              </div>
+              <div>
+                <label style={labelStyle}>📅 Vencimento (dia)</label>
+                <input value={editForm.vencimento || ""} onChange={e => setEditForm(f => ({ ...f, vencimento: e.target.value }))} placeholder="ex: 10" style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>💳 Forma de pagamento</label>
+                <input value={editForm.forma_pagamento || ""} onChange={e => setEditForm(f => ({ ...f, forma_pagamento: e.target.value }))} placeholder="BOLETO / DACC..." style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>🛠️ Data de instalação</label>
+                <input type="date" value={editForm.data_instalacao || ""} onChange={e => setEditForm(f => ({ ...f, data_instalacao: e.target.value }))} style={inputStyle} />
+              </div>
               <div>
                 <label style={labelStyle}>🔖 Ordem de serviço (OS)</label>
-                <input value={editOs} onChange={e => setEditOs(e.target.value)} placeholder="ex: 1-1688493179641" style={{ ...inputStyle, fontFamily: "monospace" }} />
+                <input value={editForm.os || ""} onChange={e => setEditForm(f => ({ ...f, os: e.target.value }))} placeholder="ex: 1-1688493179641" style={{ ...inputStyle, fontFamily: "monospace", borderColor: "#ddd6fe" }} />
               </div>
               <div>
                 <label style={labelStyle}>🏷️ Custcode</label>
-                <input value={editCust} onChange={e => setEditCust(e.target.value)} placeholder="ex: 1.347330633" style={{ ...inputStyle, fontFamily: "monospace" }} />
+                <input value={editForm.custcode || ""} onChange={e => setEditForm(f => ({ ...f, custcode: e.target.value }))} placeholder="ex: 1.347330633" style={{ ...inputStyle, fontFamily: "monospace", borderColor: "#bfdbfe" }} />
               </div>
             </div>
-            <p style={{ color: "#9ca3af", fontSize: 11, margin: "12px 0 0", lineHeight: 1.5 }}>A OS é como a planilha de pagamento acha esse cliente. O custcode é preenchido sozinho pela Atualização, mas pode ser ajustado aqui.</p>
+            <p style={{ color: "#9ca3af", fontSize: 11, margin: "14px 0 0", lineHeight: 1.5 }}>💡 A <b>OS</b> é como a planilha de pagamento acha esse cliente. O <b>custcode</b> preenche sozinho quando você sobe a planilha na Atualização — aqui é só pra ajuste manual.</p>
             <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
               <button onClick={() => setEditCliente(null)} style={btnSecundario}>Cancelar</button>
-              <button onClick={salvarEdicaoCliente} disabled={salvandoEdit} style={{ ...btnPrimario, opacity: salvandoEdit ? 0.6 : 1 }}>{salvandoEdit ? "⏳ Salvando..." : "💾 Salvar"}</button>
+              <button onClick={salvarEdicaoCliente} disabled={salvandoEdit} style={{ ...btnPrimario, opacity: salvandoEdit ? 0.6 : 1 }}>{salvandoEdit ? "⏳ Salvando..." : "💾 Salvar alterações"}</button>
             </div>
           </div>
         </div>
