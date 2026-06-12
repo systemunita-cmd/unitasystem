@@ -2,7 +2,7 @@
 // Rota: /crm/telefonia
 // O componente ConexoesVoipSection fica em app/components/ConexoesVoipSection.tsx
 "use client";
-import ConexoesVoipSection from "../../components/ConexoesVoipSection";
+import ConexoesVoipSection from "../../components/conexoesvoipsection";
 import { useModulos, ModuloBloqueado } from "../../hooks/useModulos";
 import { usePermissao } from "../../hooks/usePermissao";
 
