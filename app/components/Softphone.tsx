@@ -20,6 +20,17 @@ const SOFTPHONE_RIGHT_MOBILE = 12;
 
 export function Softphone() {
   const { chamada, aberto, setAberto, iniciarChamada, encerrarChamada, toggleMudo, enviarDTMF, segundosConectado } = useSoftphone();
+  // 📞 Bolha só aparece DENTRO da Telefonia — exceto se houver chamada ativa
+  // (aí segue visível em qualquer rota, senão você perderia o controle da ligação).
+  const [rota, setRota] = useState<string>("");
+  useEffect(() => {
+    const atualizar = () => setRota(window.location.pathname || "");
+    atualizar();
+    const t = setInterval(atualizar, 800); // cobre navegação client-side do App Router
+    return () => clearInterval(t);
+  }, []);
+  const chamadaAtiva = chamada && chamada.status !== "ocioso";
+  if (!rota.startsWith("/crm/telefonia") && !chamadaAtiva) return null;
   const [numeroDigitado, setNumeroDigitado] = useState("");
   const [modoTeclado, setModoTeclado] = useState(true);
 
