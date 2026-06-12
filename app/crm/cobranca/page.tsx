@@ -953,6 +953,11 @@ export default function CobrancaPage() {
             </button>
           );
         })}
+        <button onClick={() => router.push("/crm/cobranca/atendimentos")}
+          title="Atendimentos WhatsApp exclusivos da cobrança"
+          style={{ background: "transparent", color: "#16a34a", border: "1px dashed #86efac", borderRadius: 10, padding: "9px 16px", fontSize: 12, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, marginLeft: "auto" }}>
+          💬 Atendimentos
+        </button>
       </div>
 
       {loading ? (

@@ -232,7 +232,7 @@ function AudioPlayer({ src, isOwn }: { src: string; isOwn: boolean }) {
   );
 }
 
-export function ChatSection() {
+export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean } = {}) {
   // useWorkspace removido (single-tenant Unita)
   // Substituído por auth direto do Supabase pra preservar `user.email` em fluxos
   const workspace = null as any;
@@ -363,6 +363,55 @@ export function ChatSection() {
   const [historico, setHistorico] = useState<Mensagem[]>([]);
   const [enviandoMsg, setEnviandoMsg] = useState(false);
   const [canais, setCanais] = useState<CanalInfo[]>([]);
+
+  // ══════════ 💰 MODO COBRANÇA ══════════
+  // Atendimento "da cobrança" = fila com COBRAN* OU conexão cujo nome tenha COBRAN*.
+  const normCob = (x: any) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const ehAtendimentoCobranca = (a: Atendimento): boolean => {
+    if (normCob(a.fila).includes("COBRAN")) return true;
+    const c = canais.find(cx => String(cx.id) === String((a as any).canal_id));
+    return !!c && normCob((c as any).nome).includes("COBRAN");
+  };
+  // Painel com os dados do cliente (proposta + faturas) casado pelo telefone
+  const [clienteCob, setClienteCob] = useState<any | null>(null);
+  const [faturasCob, setFaturasCob] = useState<any[]>([]);
+  const [painelCobAberto, setPainelCobAberto] = useState(true);
+  useEffect(() => {
+    if (!modoCobranca || !atendimentoAtivo?.numero) { setClienteCob(null); setFaturasCob([]); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const dig = String(atendimentoAtivo.numero).replace(/\D/g, "");
+        const suf4 = dig.slice(-4);
+        if (suf4.length < 4) { if (alive) { setClienteCob(null); setFaturasCob([]); } return; }
+        // pré-filtra no banco pelos 4 últimos dígitos (telefone gravado com máscara
+        // termina em dígitos) e confirma no cliente comparando só os números
+        const { data } = await supabase.from("proposta")
+          .select("id, nome, cpf, plano, valor_plano, vencimento, status_venda, data_instalacao, telefone1, telefone2, telefone3, dados_customizados, created_at")
+          .or(`telefone1.ilike.%${suf4},telefone2.ilike.%${suf4},telefone3.ilike.%${suf4}`)
+          .order("created_at", { ascending: false })
+          .limit(25);
+        const alvo = dig.slice(-8);
+        const cli = (data || []).find((pp: any) => [pp.telefone1, pp.telefone2, pp.telefone3].some((t: any) => {
+          const td = String(t || "").replace(/\D/g, "");
+          return td.length >= 8 && (td.endsWith(alvo) || alvo.endsWith(td.slice(-8)));
+        })) || null;
+        if (!alive) return;
+        setClienteCob(cli);
+        if (cli) {
+          const { data: fs } = await supabase.from("faturas_status").select("*")
+            .eq("proposta_id", cli.id)
+            .order("numero_referencia", { ascending: false })
+            .limit(24);
+          if (alive) setFaturasCob(fs || []);
+        } else {
+          setFaturasCob([]);
+        }
+      } catch { if (alive) { setClienteCob(null); setFaturasCob([]); } }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoCobranca, atendimentoAtivo?.id]);
   const [filtroCanal, setFiltroCanal] = useState<string>("todos");
 
   const [mostrarTodosFinalizados, setMostrarTodosFinalizados] = useState(false);
@@ -1792,6 +1841,7 @@ export function ChatSection() {
       }
       return false;
     })
+    .filter(a => !modoCobranca || ehAtendimentoCobranca(a))
     .filter(a => filtroFila === "todas" || a.fila === filtroFila)
     .filter(a => filtroAtendente === "todos" || a.atendente === filtroAtendente)
     .filter(a => filtroCanal === "todos" || String(a.canal_id) === filtroCanal)
@@ -3345,6 +3395,76 @@ export function ChatSection() {
       )}
 
       {/* 🔔 TOAST CONTAINER */}
+      {/* ══════════ 💰 PAINEL DO CLIENTE — MODO COBRANÇA ══════════ */}
+      {modoCobranca && atendimentoAtivo && (
+        <div style={{ position: "fixed", top: 86, right: 14, zIndex: 1200, width: 300, maxHeight: "72vh", overflowY: "auto", background: "#ffffff", border: "1px solid #e5e7eb", borderTop: "3px solid #dc2626", borderRadius: 14, boxShadow: "0 14px 36px rgba(0,0,0,0.16)" }}>
+          <div onClick={() => setPainelCobAberto(v => !v)}
+            style={{ padding: "11px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", borderBottom: painelCobAberto ? "1px solid #f3f4f6" : "none" }}>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: "#dc2626" }}>💰 Cliente na Cobrança</span>
+            <span style={{ color: "#9ca3af", fontSize: 13, fontWeight: 700 }}>{painelCobAberto ? "▾" : "▸"}</span>
+          </div>
+          {painelCobAberto && (
+            !clienteCob ? (
+              <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, padding: "14px", fontStyle: "italic" }}>
+                Nenhum cliente do CRM com esse telefone.
+              </p>
+            ) : (
+              <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div>
+                  <p style={{ margin: 0, color: "#1f2937", fontSize: 13, fontWeight: 800 }}>{clienteCob.nome}</p>
+                  <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11, fontFamily: "monospace" }}>{clienteCob.cpf || "sem CPF"}</p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 11 }}>
+                  <div style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "6px 8px" }}>
+                    <span style={{ color: "#9ca3af", fontWeight: 700, fontSize: 9, textTransform: "uppercase", display: "block" }}>Plano</span>
+                    <span style={{ color: "#1f2937", fontWeight: 700 }}>{clienteCob.plano || "—"}</span>
+                  </div>
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "6px 8px" }}>
+                    <span style={{ color: "#15803d", fontWeight: 700, fontSize: 9, textTransform: "uppercase", display: "block" }}>Valor</span>
+                    <span style={{ color: "#16a34a", fontWeight: 800 }}>R$ {Number(clienteCob.valor_plano || 0).toFixed(2).replace(".", ",")}</span>
+                  </div>
+                  <div style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "6px 8px" }}>
+                    <span style={{ color: "#9ca3af", fontWeight: 700, fontSize: 9, textTransform: "uppercase", display: "block" }}>Vencimento</span>
+                    <span style={{ color: "#1f2937", fontWeight: 700 }}>{clienteCob.vencimento ? `Dia ${clienteCob.vencimento}` : "—"}</span>
+                  </div>
+                  <div style={{ background: "#f9fafb", border: "1px solid #f3f4f6", borderRadius: 8, padding: "6px 8px" }}>
+                    <span style={{ color: "#9ca3af", fontWeight: 700, fontSize: 9, textTransform: "uppercase", display: "block" }}>OS</span>
+                    <span style={{ color: "#1f2937", fontWeight: 700, fontSize: 10 }}>{clienteCob.dados_customizados?.os || "—"}</span>
+                  </div>
+                </div>
+                <div>
+                  <p style={{ margin: "2px 0 5px", color: "#6b7280", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>Faturas marcadas</p>
+                  {faturasCob.length === 0 ? (
+                    <p style={{ margin: 0, color: "#9ca3af", fontSize: 11, fontStyle: "italic" }}>Nenhum status de fatura registrado ainda.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {faturasCob.map((f: any, i: number) => {
+                        const st = normCob(f.status);
+                        const paga = st.includes("PAGA");
+                        const neg = st.includes("NEGOC");
+                        const cor = paga ? "#16a34a" : neg ? "#7c3aed" : "#dc2626";
+                        return (
+                          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: `${cor}0d`, border: `1px solid ${cor}30`, borderRadius: 7, padding: "5px 8px" }}>
+                            <span style={{ color: "#374151", fontSize: 11, fontWeight: 700 }}>{f.numero_referencia}</span>
+                            <span style={{ color: cor, fontSize: 10.5, fontWeight: 800 }}>
+                              {paga ? "✅ Paga" : neg ? "📞 Negociação" : "🔴 Em aberto"}
+                              {f.valor_pago ? ` · R$ ${Number(f.valor_pago).toFixed(2).replace(".", ",")}` : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <a href="/crm/cobranca" style={{ display: "block", textAlign: "center", background: "linear-gradient(135deg, #dc2626 0%, #ef4444 100%)", color: "#ffffff", borderRadius: 9, padding: "8px 10px", fontSize: 11.5, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 12px rgba(220,38,38,0.3)" }}>
+                  💰 Abrir na Cobrança
+                </a>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
       <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 99999, display: "flex", flexDirection: "column", gap: 10, pointerEvents: "none" }}>
         {toasts.map(t => {
           const cores = {
