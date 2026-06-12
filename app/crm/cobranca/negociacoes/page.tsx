@@ -398,6 +398,11 @@ export default function CobrancaPage() {
   const [envioCanalId, setEnvioCanalId] = useState<number | null>(null);
   const [envioTipo, setEnvioTipo] = useState<"webjs" | "waba">("webjs");
   const [envioTemplateId, setEnvioTemplateId] = useState<number | null>(null);
+  // 🆕 seleção de CLIENTES na tabela principal + modo de disparo (por cliente ou por fatura)
+  const [clientesSel, setClientesSel] = useState<Set<number>>(new Set());
+  const [envioModo, setEnvioModo] = useState<"cliente" | "fatura">("cliente");
+  const [envioModoTrocavel, setEnvioModoTrocavel] = useState(true); // origem permite trocar o modo?
+  const [envioOrigemClientes, setEnvioOrigemClientes] = useState<any[]>([]); // clientes que originaram o disparo
   const [envioMensagem, setEnvioMensagem] = useState(
     "Olá {{nome}}! 👋\n\nLembrete: sua fatura referente a {{mes_referencia}} no valor de {{valor}} vence em {{vencimento}}.\n\nPara evitar atrasos, faça o pagamento até o vencimento.\n\nQualquer dúvida, estou à disposição!\n\nGrupo Unita"
   );
@@ -816,6 +821,21 @@ export default function CobrancaPage() {
     });
   };
 
+  // 🆕 seleção de CLIENTES na tabela principal
+  const toggleSelCliente = (id: number) => {
+    setClientesSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  };
+  const selecionarTodosClientesPagina = () => {
+    const ids = clientesPagina.map(c => c.proposta.id);
+    const todosSel = ids.length > 0 && ids.every(id => clientesSel.has(id));
+    setClientesSel(prev => {
+      const n = new Set(prev);
+      if (todosSel) ids.forEach(id => n.delete(id));
+      else ids.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
   const abrirStatus = (f: Fatura, statusInicial: StatusFatura = "paga") => {
     setNovoStatus(statusInicial);
     setStatusData(new Date().toISOString().slice(0, 10));
@@ -925,8 +945,78 @@ export default function CobrancaPage() {
       return;
     }
     setEnvioFonte("crm");
+    setEnvioModoTrocavel(false);   // veio de faturas específicas → modo fixo "fatura"
+    setEnvioModo("fatura");
     setEnvioContatos(contatos);
     setEnvioNomeCampanha(`Cobrança CRM ${new Date().toLocaleDateString("pt-BR")} (${contatos.length} faturas)`);
+    setShowEnvio(true);
+  };
+
+  // 🆕 monta os contatos de uma lista de CLIENTES, conforme o modo escolhido.
+  //    modo "cliente" = 1 mensagem por cliente (resumo das faturas em aberto)
+  //    modo "fatura"  = 1 mensagem por fatura em aberto
+  const montarContatosClientes = (lista: any[], modo: "cliente" | "fatura") => {
+    const contatos: { nome: string; telefone: string; vars: Record<string, string> }[] = [];
+    for (const c of lista) {
+      const p = c.proposta;
+      const tel = normalizarTelefone(p.telefone1) || normalizarTelefone(p.telefone2) || normalizarTelefone(p.telefone3);
+      if (tel.length < 10) continue;
+      // faturas em aberto do cliente (não pagas)
+      const abertas = (c.faturas as Fatura[]).filter(f => !STATUS_META[f.status_visual]?.recebido);
+      const base = abertas.length > 0 ? abertas : (c.faturas as Fatura[]);
+      if (modo === "fatura") {
+        for (const f of abertas) {
+          contatos.push({
+            nome: p.nome || "Cliente", telefone: tel,
+            vars: {
+              nome: p.nome || "Cliente", telefone: tel, plano: p.plano || "",
+              valor: formatBRL(f.valor), vencimento: formatData(f.data_vencimento),
+              mes_referencia: formatMesExtenso(f.numero_referencia),
+              dias_atraso: f.dias_atraso > 0 ? String(f.dias_atraso) : "0",
+              operadora: p.operadora || "",
+              qtd_faturas: "1", total_aberto: formatBRL(f.valor),
+            },
+          });
+        }
+      } else {
+        // 1 mensagem por cliente: resumo. Usa a fatura em aberto mais antiga como referência.
+        const ref = [...base].sort((a, b) => a.data_vencimento.getTime() - b.data_vencimento.getTime())[0];
+        const totalAberto = abertas.reduce((s, f) => s + f.valor, 0);
+        contatos.push({
+          nome: p.nome || "Cliente", telefone: tel,
+          vars: {
+            nome: p.nome || "Cliente", telefone: tel, plano: p.plano || "",
+            valor: formatBRL(totalAberto || ref?.valor || 0),
+            vencimento: ref ? formatData(ref.data_vencimento) : "",
+            mes_referencia: ref ? formatMesExtenso(ref.numero_referencia) : "",
+            dias_atraso: ref && ref.dias_atraso > 0 ? String(ref.dias_atraso) : "0",
+            operadora: p.operadora || "",
+            qtd_faturas: String(abertas.length || base.length),
+            total_aberto: formatBRL(totalAberto),
+          },
+        });
+      }
+    }
+    return contatos;
+  };
+
+  // 🆕 abre o disparo a partir de uma lista de CLIENTES (tabela ou modal). Modo trocável.
+  const abrirEnvioClientes = (lista: any[], modoInicial: "cliente" | "fatura" = "cliente") => {
+    if (lista.length === 0) {
+      setFeedback({ tipo: "aviso", titulo: "Nenhum cliente selecionado", mensagem: "Marque ao menos um cliente pra disparar a cobrança." });
+      return;
+    }
+    const contatos = montarContatosClientes(lista, modoInicial);
+    if (contatos.length === 0) {
+      setFeedback({ tipo: "aviso", titulo: "Nenhum telefone válido", mensagem: "Os clientes selecionados não têm telefone com 10+ dígitos, ou não têm fatura em aberto." });
+      return;
+    }
+    setEnvioFonte("crm");
+    setEnvioOrigemClientes(lista);
+    setEnvioModoTrocavel(true);
+    setEnvioModo(modoInicial);
+    setEnvioContatos(contatos);
+    setEnvioNomeCampanha(`Cobrança CRM ${new Date().toLocaleDateString("pt-BR")} (${lista.length} cliente${lista.length > 1 ? "s" : ""})`);
     setShowEnvio(true);
   };
 
@@ -1071,6 +1161,7 @@ export default function CobrancaPage() {
       if (data.success) {
         setShowEnvio(false);
         setSelecionadasFat(new Set());
+        setClientesSel(new Set());
         setSelecionadosPlanilha(new Set());
         setFeedback({
           tipo: "sucesso",
@@ -1351,12 +1442,22 @@ export default function CobrancaPage() {
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                   <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 600 }}>
                     {clientesTabela.length > 0 ? (
-                      <>Mostrando {(paginaSegura - 1) * TAM_PAGINA + 1}–{Math.min(paginaSegura * TAM_PAGINA, clientesTabela.length)} de {formatNum(clientesTabela.length)} cliente(s)</>
+                      <>Mostrando {(paginaSegura - 1) * TAM_PAGINA + 1}–{Math.min(paginaSegura * TAM_PAGINA, clientesTabela.length)} de {formatNum(clientesTabela.length)} cliente(s){clientesSel.size > 0 ? ` · ${clientesSel.size} selecionado(s)` : ""}</>
                     ) : (
                       <>0 cliente(s)</>
                     )}
                   </div>
-                  <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 600 }}>👆 Clique no cliente pra ver as faturas</div>
+                  {podeDisparar && clientesSel.size > 0 ? (
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <button onClick={() => setClientesSel(new Set())} style={{ ...btnSecundario, padding: "7px 12px" }}>✕ Limpar seleção</button>
+                      <button onClick={() => abrirEnvioClientes(clientes.filter(c => clientesSel.has(c.proposta.id)), "cliente")}
+                        style={{ ...btnPrimario, padding: "8px 16px" }}>
+                        📤 Cobrar {clientesSel.size} cliente(s)
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 600 }}>👆 Clique no cliente pra ver as faturas{podeDisparar ? " · marque pra cobrar em lote" : ""}</div>
+                  )}
                 </div>
 
                 {clientesTabela.length === 0 ? (
@@ -1377,12 +1478,20 @@ export default function CobrancaPage() {
                     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 820 : "auto" }}>
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
+                          {podeDisparar && (
+                            <th style={{ width: 36, padding: "11px 12px", borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>
+                              <input type="checkbox" title="Selecionar página"
+                                checked={clientesPagina.length > 0 && clientesPagina.every(c => clientesSel.has(c.proposta.id))}
+                                onChange={selecionarTodosClientesPagina} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
+                            </th>
+                          )}
                           {["Cliente", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
                             <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
                         {/* linha de filtros por coluna (nome / OS / custcode) */}
                         <tr style={{ background: "#fff" }}>
+                          {podeDisparar && <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>}
                           {([
                             { v: colNome, set: setColNome, ph: "filtrar nome" },
                             { v: colOs, set: setColOs, ph: "OS" },
@@ -1406,9 +1515,15 @@ export default function CobrancaPage() {
                           const inad = c.situacao === "inadimplente";
                           return (
                             <tr key={c.proposta.id} onClick={() => setModalCliente(c.proposta.id)}
-                              style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#ffffff" : "#fafbfc", cursor: "pointer" }}
+                              style={{ borderTop: "1px solid #f3f4f6", background: clientesSel.has(c.proposta.id) ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc"), cursor: "pointer" }}
                               onMouseEnter={e => (e.currentTarget.style.background = "#eff6ff")}
-                              onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#fafbfc")}>
+                              onMouseLeave={e => (e.currentTarget.style.background = clientesSel.has(c.proposta.id) ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc"))}>
+                              {podeDisparar && (
+                                <td onClick={e => e.stopPropagation()} style={{ padding: "12px", textAlign: "center" }}>
+                                  <input type="checkbox" checked={clientesSel.has(c.proposta.id)} onChange={() => toggleSelCliente(c.proposta.id)}
+                                    style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
+                                </td>
+                              )}
                               <td style={{ padding: "12px 14px", maxWidth: 240, borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}` }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                   <span style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
@@ -1624,6 +1739,28 @@ export default function CobrancaPage() {
                 <label style={labelStyle}>Nome da campanha</label>
                 <input value={envioNomeCampanha} onChange={e => setEnvioNomeCampanha(e.target.value)} style={inputStyle} placeholder="Ex: Cobrança Janeiro" />
               </div>
+
+              {/* 🆕 MODO DE DISPARO — escolha na hora (só quando veio de seleção de clientes) */}
+              {envioModoTrocavel && (
+                <div>
+                  <label style={labelStyle}>Como disparar</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {([
+                      { v: "cliente", l: "👤 1 mensagem por cliente", sub: "resumo das faturas em aberto" },
+                      { v: "fatura",  l: "📄 1 mensagem por fatura", sub: "uma msg para cada fatura em aberto" },
+                    ] as { v: "cliente" | "fatura"; l: string; sub: string }[]).map(o => (
+                      <button key={o.v} onClick={() => { setEnvioModo(o.v); setEnvioContatos(montarContatosClientes(envioOrigemClientes, o.v)); }}
+                        style={{ flex: 1, padding: "10px 12px", borderRadius: 10, textAlign: "left", border: envioModo === o.v ? "2px solid #2563eb" : "1px solid #e5e7eb", background: envioModo === o.v ? "#eff6ff" : "#ffffff", color: envioModo === o.v ? "#2563eb" : "#6b7280", cursor: "pointer" }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.l}</div>
+                        <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 2 }}>{o.sub}</div>
+                      </button>
+                    ))}
+                  </div>
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
+                    💡 No modo por cliente use <code>{"{{qtd_faturas}}"}</code> e <code>{"{{total_aberto}}"}</code> na mensagem.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label style={labelStyle}>Tipo de envio</label>
@@ -2000,6 +2137,10 @@ export default function CobrancaPage() {
                 <button onClick={() => { abrirEdicaoCliente(c.proposta); }} style={{ ...btnSecundario, padding: "8px 14px" }}>✏️ Editar cliente</button>
                 {podeDisparar && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button onClick={() => abrirEnvioClientes([c], "cliente")}
+                      style={{ ...btnSecundario, padding: "8px 14px", borderColor: "#bfdbfe", color: "#2563eb" }}>
+                      📨 Cobrar cliente
+                    </button>
                     <button onClick={selecionarTodasDoModal} style={{ ...btnSecundario, padding: "8px 14px" }}>
                       {faturasCli.every((f: Fatura) => selecionadasFat.has(chaveSelecao(f))) ? "✗ Desmarcar todas" : "✓ Selecionar todas"}
                     </button>

@@ -188,21 +188,32 @@ export default function CobrancaAtualizacao() {
 
     setGravando(true);
     try {
+      // 🆕 monta a lista de UPDATEs necessários (custcode novo e/ou data_instalacao = mês gross)
       let custOk = 0;
       let instOk = 0;
+      const updates: { id: number; update: any; mudaCust: boolean; mudaInst: boolean }[] = [];
       for (const c of matched) {
-        // 🆕 mês gross do cliente (1º válido das faturas) → data de instalação (dia 1)
         const mg = c.faturas.map(f => f.mesGross).find(Boolean) || null;
         const instCorreta = mg ? `${String(mg).slice(0, 7)}-01` : null;
         const instAtual = String(c.proposta!.data_instalacao || "").slice(0, 10);
-        const mudaCust = c.custcodeNovo && c.custcode;
-        const mudaInst = instCorreta && instCorreta !== instAtual;
+        const mudaCust = !!(c.custcodeNovo && c.custcode);
+        const mudaInst = !!(instCorreta && instCorreta !== instAtual);
         if (!mudaCust && !mudaInst) continue;
         const update: any = {};
         if (mudaCust) update.dados_customizados = { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode };
         if (mudaInst) update.data_instalacao = instCorreta;
-        const { error } = await supabase.from("proposta").update(update).eq("id", c.proposta!.id);
-        if (!error) { if (mudaCust) custOk++; if (mudaInst) instOk++; }
+        updates.push({ id: c.proposta!.id, update, mudaCust, mudaInst });
+      }
+      // ⚡ roda em lotes PARALELOS (25 por vez) — sequencial travava com 2k+ clientes
+      const LOTE_PROP = 25;
+      for (let i = 0; i < updates.length; i += LOTE_PROP) {
+        const lote = updates.slice(i, i + LOTE_PROP);
+        const resultados = await Promise.all(
+          lote.map(u => supabase.from("proposta").update(u.update).eq("id", u.id).then(r => ({ r, u })))
+        );
+        for (const { r, u } of resultados) {
+          if (!r.error) { if (u.mudaCust) custOk++; if (u.mudaInst) instOk++; }
+        }
       }
 
       // 🆕 Grava CADA fatura da planilha (1..10), não agrupa mais por mês.
