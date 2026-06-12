@@ -101,6 +101,9 @@ const CATEGORIAS_PERMISSAO = [
   { nome: "💰 Cobrança", cor: "#dc2626", permissoes: [
     { key: "cobranca", label: "Acessar a Cobrança" },
   ]},
+  { nome: "🛠️ Suporte", cor: "#0d9488", permissoes: [
+    { key: "suporte", label: "Acessar o Suporte" },
+  ]},
   { nome: "🧑‍💼 RH", cor: "#4f46e5", permissoes: [
     { key: "rh", label: "Acessar o RH" },
   ]},

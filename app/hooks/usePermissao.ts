@@ -34,6 +34,7 @@ export type Permissoes = {
   // 🧩 Módulos do sistema (gate de acesso por usuário)
   crm_acessar: boolean; telefonia_acessar: boolean; chatbot_acessar: boolean;
   cobranca: boolean; rh: boolean; financeiro_acessar: boolean; bater_ponto: boolean;
+  suporte: boolean;
 };
 
 const PERMISSOES_ADMIN: Permissoes = {
@@ -49,6 +50,7 @@ const PERMISSOES_ADMIN: Permissoes = {
   config_proprio: true, administrador: true,
   crm_acessar: true, telefonia_acessar: true, chatbot_acessar: true,
   cobranca: true, rh: true, financeiro_acessar: true, bater_ponto: true,
+  suporte: true,
 };
 
 const PERMISSOES_SUPERVISOR: Permissoes = {
@@ -71,6 +73,7 @@ const PERMISSOES_ATENDENTE: Permissoes = {
   config_proprio: true, administrador: false,
   crm_acessar: true, telefonia_acessar: true, chatbot_acessar: false,
   cobranca: false, rh: false, financeiro_acessar: false, bater_ponto: true,
+  suporte: false,
 };
 
 export const PERMISSOES_ZERO: Permissoes = Object.keys(PERMISSOES_ADMIN).reduce((acc, k) => {
@@ -142,6 +145,7 @@ function derivarPermissoesDoGrupo(mapa: Record<string, string>): Permissoes {
     rh: escopoVivo("mod_rh.acessar"),
     financeiro_acessar: escopoVivo("mod_financeiro.acessar"),
     bater_ponto: escopoVivo("mod_bater_ponto.acessar"),
+    suporte: escopoVivo("mod_suporte.acessar"),
   };
 }
 

@@ -122,6 +122,8 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const podeVerChatbot = veTudo || permissoes.chatbot_acessar;
   const podeVerTelefonia = veTudo || permissoes.telefonia_acessar;
   const podeVerCobranca = veTudo || permissoes.cobranca;
+  // 🛠️ Suporte: permissão própria; cobranca mantém acesso (retrocompatível)
+  const podeVerSuporte = veTudo || (permissoes as any).suporte || permissoes.cobranca;
   const podeVerFinanceiro = veTudo || permissoes.financeiro_acessar;
   const podeVerRH = veTudo || permissoes.rh;
 
@@ -577,7 +579,7 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
               { cond: podeVerChatbot, path: "/chatbot", icon: "\uD83D\uDCAC", label: "Chatbot", bg: "#eff6ff", bgA: "#dbeafe", bd: "#bfdbfe", bdA: "#3b82f6", color: "#3b82f6" },
               { cond: podeVerTelefonia, path: "/crm/telefonia", icon: "\uD83D\uDCDE", label: "Telefonia", bg: "#f0fdfa", bgA: "#ccfbf1", bd: "#99f6e4", bdA: "#0d9488", color: "#0d9488" },
               { cond: podeVerCobranca, path: "/crm/cobranca", icon: "\uD83D\uDCB0", label: "Cobrança", bg: "#fef2f2", bgA: "#fee2e2", bd: "#fecaca", bdA: "#dc2626", color: "#dc2626" },
-              { cond: podeVerCobranca, path: "/crm/suporte", icon: "\uD83D\uDEE0\uFE0F", label: "Suporte", bg: "#f0fdfa", bgA: "#ccfbf1", bd: "#99f6e4", bdA: "#0d9488", color: "#0d9488" },
+              { cond: podeVerSuporte, path: "/crm/suporte", icon: "\uD83D\uDEE0\uFE0F", label: "Suporte", bg: "#f0fdfa", bgA: "#ccfbf1", bd: "#99f6e4", bdA: "#0d9488", color: "#0d9488" },
               { cond: podeVerRH, path: "/crm/rh", icon: "\uD83E\uDDD1\u200D\uD83D\uDCBC", label: "RH", bg: "#eef2ff", bgA: "#e0e7ff", bd: "#c7d2fe", bdA: "#4f46e5", color: "#4f46e5" },
               { cond: podeBaterPonto, path: "/crm/ponto", icon: "\uD83D\uDD50", label: "Bater Ponto", bg: "#fdf2f8", bgA: "#fce7f3", bd: "#f9a8d4", bdA: "#db2777", color: "#db2777" },
               { cond: podeVerFinanceiro, path: "/crm/financeiro", icon: "\uD83D\uDCB5", label: "Financeiro", bg: "#fffbeb", bgA: "#fef3c7", bd: "#fcd34d", bdA: "#d97706", color: "#d97706" },

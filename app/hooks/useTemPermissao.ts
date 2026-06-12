@@ -117,6 +117,7 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   if (b.rh) { on("mod_rh.acessar", "all"); on("rh.acessar", "all"); }
   if (b.financeiro_acessar) { on("mod_financeiro.acessar", "all"); on("financeiro.acessar", "all"); }
   if (b.bater_ponto) { on("mod_bater_ponto.acessar", "all"); on("ponto.bater"); }
+  if (b.suporte) { on("mod_suporte.acessar", "all"); on("suporte.acessar", "all"); }
   if (b.voip_usar) on("voip.usar");
 
   return m as MapaPermissoes;
@@ -133,6 +134,7 @@ const PREFIXO_PARA_BOOLEANO: Record<string, string> = {
   telefonia: "telefonia_acessar", mod_telefonia: "telefonia_acessar",
   chatbot: "chatbot_acessar", mod_chatbot: "chatbot_acessar",
   ponto: "bater_ponto", mod_bater_ponto: "bater_ponto",
+  suporte: "suporte", mod_suporte: "suporte",
 };
 
 function escopoPorPrefixo(slug: string, boolMap: Record<string, boolean>): ValorEscopo | null {
