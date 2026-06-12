@@ -375,11 +375,11 @@ export default function CobrancaPage() {
   const [colNome, setColNome] = useState("");
   const [colOs, setColOs] = useState("");
   const [colCust, setColCust] = useState("");
-  const [colFat, setColFat] = useState("");
-  const [colVenc, setColVenc] = useState("");
-  const [colValor, setColValor] = useState("");
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
+  // 🆕 paginação da tabela principal (10 por página pra não pesar)
+  const [pagina, setPagina] = useState(1);
+  const TAM_PAGINA = 10;
   // 🆕 Histórico REAL da planilha (colunas numero_fatura/codigo_status/detalhamento/datas)
   const [histPlanilha, setHistPlanilha] = useState<Map<number, any[]>>(new Map());
   const [buscaCliente, setBuscaCliente] = useState("");
@@ -731,76 +731,28 @@ export default function CobrancaPage() {
     return { listaDias, listaMeses };
   }, [todasFaturas]);
 
-  const faturasFiltradas = useMemo(() => {
-    let arr = todasFaturas;
-    if (clienteSel != null) arr = arr.filter(f => f.proposta.id === clienteSel);
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    // 🆕 quando há BUSCA, a janela de vencimento é ignorada (busca acha em tudo)
-    if (filtroVenc !== "todos" && !filtroBusca) {
-      arr = arr.filter(f => {
-        const dias = f.dias_atraso;
-        if (filtroVenc === "hoje") return dias === 0;
-        if (filtroVenc === "vencendo_7d") return dias >= -7 && dias <= 0;
-        if (filtroVenc === "vencidos") return dias > 0 && f.status !== "paga";
-        if (filtroVenc === "este_mes") {
-          return f.data_vencimento.getMonth() === hoje.getMonth() && f.data_vencimento.getFullYear() === hoje.getFullYear();
-        }
-        return true;
-      });
-    }
-
-    if (filtroStatus === "pendentes")        arr = arr.filter(f => f.status_visual === "pendente");
-    else if (filtroStatus === "atrasadas")   arr = arr.filter(f => f.status_visual === "atrasada");
-    else if (filtroStatus === "pagas")       arr = arr.filter(f => STATUS_META[f.status_visual]?.recebido);
-    else if (filtroStatus !== "todas")       arr = arr.filter(f => f.status_visual === filtroStatus);
-
-    if (filtroBusca) {
-      arr = arr.filter(f => buscaMatch(f.proposta, filtroBusca));
-    }
-
-    // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês)
-    if (mesInst) arr = arr.filter(f => String(f.proposta.data_instalacao || "").startsWith(mesInst));
-
-    // 🆕 MENU SUSPENSO de vencimento — puxa só os clientes do vencimento escolhido
-    if (filtroVencSel.startsWith("dia:")) {
-      const dia = Number(filtroVencSel.slice(4));
-      arr = arr.filter(f => f.data_vencimento.getDate() === dia);
-    } else if (filtroVencSel.startsWith("mes:")) {
-      const mk = filtroVencSel.slice(4);
-      arr = arr.filter(f => `${f.data_vencimento.getFullYear()}-${String(f.data_vencimento.getMonth() + 1).padStart(2, "0")}` === mk);
-    }
-
-    // 🆕 filtros por coluna
-    const inc = (v: any, q: string) => String(v ?? "").toLowerCase().includes(q.toLowerCase());
-    if (colNome) arr = arr.filter(f => inc(f.proposta.nome, colNome));
-    if (colOs)   arr = arr.filter(f => inc(f.proposta.dados_customizados?.os, colOs));
-    if (colCust) arr = arr.filter(f => inc(f.proposta.dados_customizados?.custcode, colCust));
-    if (colFat)  arr = arr.filter(f => inc(formatMesExtenso(f.numero_referencia), colFat));
-    if (colVenc) arr = arr.filter(f => inc(formatData(f.data_vencimento), colVenc));
-    if (colValor) arr = arr.filter(f => String(f.valor).includes(colValor.replace(",", ".")));
-
-    return [...arr].sort((a, b) => {
-      const ordem = { atrasada: 0, pendente: 1, paga: 2 };
-      const oa = ordem[a.status_visual as keyof typeof ordem] ?? 3;
-      const ob = ordem[b.status_visual as keyof typeof ordem] ?? 3;
-      if (oa !== ob) return oa - ob;
-      return a.data_vencimento.getTime() - b.data_vencimento.getTime();
-    });
-  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, mesInst, filtroVencSel, colNome, colOs, colCust, colFat, colVenc, colValor]);
-
-  // 🆕 Lista de clientes do lado: agrupa faturas por cliente e calcula situação.
+  // 🆕 Lista de clientes: agrupa faturas por cliente com resumo completo.
   const clientes = useMemo<any[]>(() => {
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const MS = 86400000;
     const map = new Map<number, any>();
     for (const f of todasFaturas) {
       const id = f.proposta.id;
       let c = map.get(id);
-      if (!c) { c = { proposta: f.proposta, faturas: [], totalAberto: 0, atrasadas: 0, atrasoMax: 0 }; map.set(id, c); }
+      if (!c) { c = { proposta: f.proposta, faturas: [], totalAberto: 0, atrasadas: 0, atrasoMax: 0, pagas: 0, emAberto: 0, aVencer: 0, proxVenc: null as Date | null, proxDias: null as number | null, temFraude: false, temChurn: false }; map.set(id, c); }
       c.faturas.push(f);
       const meta = STATUS_META[f.status_visual];
-      if (meta?.pendencia) c.totalAberto += f.valor;
-      if (f.status_visual === "atrasada") { c.atrasadas++; c.atrasoMax = Math.max(c.atrasoMax, f.dias_atraso); }
+      if (meta?.recebido) c.pagas++;
+      else {
+        c.totalAberto += f.valor;
+        const dias = Math.round((f.data_vencimento.getTime() - hoje.getTime()) / MS);
+        if (f.status_visual === "atrasada") { c.atrasadas++; c.emAberto++; c.atrasoMax = Math.max(c.atrasoMax, f.dias_atraso); }
+        else { c.aVencer++; }
+        // próximo vencimento em aberto (o mais cedo a vencer, dias >= 0)
+        if (dias >= 0 && (c.proxDias == null || dias < c.proxDias)) { c.proxDias = dias; c.proxVenc = f.data_vencimento; }
+      }
+      if (f.suspensao_fraude === true) c.temFraude = true;
+      if (f.churn === true) c.temChurn = true;
     }
     const arr = Array.from(map.values()).map(c => ({ ...c, situacao: c.atrasadas > 0 ? "inadimplente" : "em_dia" }));
     return arr.sort((a, b) => {
@@ -823,6 +775,58 @@ export default function CobrancaPage() {
     }
     return arr;
   }, [clientes, segmento, buscaCliente, mesInst]);
+
+  // 🆕 CLIENTES para a TABELA PRINCIPAL (uma linha por cliente). Aplica os filtros
+  //    de cima: status, dropdown de vencimento, busca da barra e mês de instalação.
+  const clientesTabela = useMemo(() => {
+    let arr = clientes;
+    // segmento (inadimplente/em dia/todos) compartilhado com a barra de status
+    if (filtroStatus === "atrasadas") arr = arr.filter(c => c.atrasadas > 0);
+    else if (filtroStatus === "pagas") arr = arr.filter(c => c.pagas > 0);
+    else if (filtroStatus === "pendentes") arr = arr.filter(c => c.aVencer > 0);
+    // mês de instalação
+    if (mesInst) arr = arr.filter(c => String(c.proposta.data_instalacao || "").startsWith(mesInst));
+    // dropdown de vencimento (dia ou mês) — cliente entra se TEM alguma fatura nesse vencimento
+    if (filtroVencSel.startsWith("dia:")) {
+      const dia = Number(filtroVencSel.slice(4));
+      arr = arr.filter(c => c.faturas.some((f: Fatura) => f.data_vencimento.getDate() === dia));
+    } else if (filtroVencSel.startsWith("mes:")) {
+      const mk = filtroVencSel.slice(4);
+      arr = arr.filter(c => c.faturas.some((f: Fatura) => `${f.data_vencimento.getFullYear()}-${String(f.data_vencimento.getMonth() + 1).padStart(2, "0")}` === mk));
+    }
+    // janela de vencimento (próx 7 dias / hoje / vencidos / este mês)
+    if (filtroVenc !== "todos" && !filtroBusca) {
+      const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      arr = arr.filter(c => c.faturas.some((f: Fatura) => {
+        const dias = f.dias_atraso;
+        if (filtroVenc === "hoje") return dias === 0;
+        if (filtroVenc === "vencendo_7d") return dias >= -7 && dias <= 0;
+        if (filtroVenc === "vencidos") return dias > 0 && f.status_visual === "atrasada";
+        if (filtroVenc === "este_mes") return f.data_vencimento.getMonth() === hoje.getMonth() && f.data_vencimento.getFullYear() === hoje.getFullYear();
+        return true;
+      }));
+    }
+    // busca da barra (nome, cpf, os, telefone, plano)
+    if (filtroBusca) arr = arr.filter(c => buscaMatch(c.proposta, filtroBusca));
+    // filtros por coluna (nome, os, custcode)
+    const inc = (v: any, q: string) => String(v ?? "").toLowerCase().includes(q.toLowerCase());
+    if (colNome) arr = arr.filter(c => inc(c.proposta.nome, colNome));
+    if (colOs)   arr = arr.filter(c => inc(c.proposta.dados_customizados?.os, colOs));
+    if (colCust) arr = arr.filter(c => inc(c.proposta.dados_customizados?.custcode, colCust));
+    return arr;
+  }, [clientes, filtroStatus, mesInst, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust]);
+
+  // 🆕 PAGINAÇÃO POR CLIENTE: 10 clientes por página. Volta pra pág. 1 ao mudar filtro.
+  const totalPaginas = Math.max(1, Math.ceil(clientesTabela.length / TAM_PAGINA));
+  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, filtroVencSel, colNome, colOs, colCust]);
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const clientesPagina = useMemo(
+    () => clientesTabela.slice((paginaSegura - 1) * TAM_PAGINA, paginaSegura * TAM_PAGINA),
+    [clientesTabela, paginaSegura]
+  );
+
+  // 🆕 MODAL de faturas do cliente: guarda a proposta_id do cliente aberto (null = fechado).
+  const [modalCliente, setModalCliente] = useState<number | null>(null);
 
   const kpis = useMemo(() => {
     const hoje = new Date();
@@ -860,8 +864,15 @@ export default function CobrancaPage() {
   const toggleSelFat = (k: string) => {
     setSelecionadasFat(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   };
-  const selecionarTodasFat = () => {
-    setSelecionadasFat(prev => prev.size === faturasFiltradas.length ? new Set() : new Set(faturasFiltradas.map(chaveSelecao)));
+  const selecionarTodasFat = (lista: Fatura[]) => {
+    const chaves = lista.map(chaveSelecao);
+    const todasSelecionadas = chaves.length > 0 && chaves.every(k => selecionadasFat.has(k));
+    setSelecionadasFat(prev => {
+      const n = new Set(prev);
+      if (todasSelecionadas) chaves.forEach(k => n.delete(k));
+      else chaves.forEach(k => n.add(k));
+      return n;
+    });
   };
 
   const abrirStatus = (f: Fatura, statusInicial: StatusFatura = "paga") => {
@@ -949,7 +960,7 @@ export default function CobrancaPage() {
       setFeedback({ tipo: "aviso", titulo: "Nenhuma fatura selecionada", mensagem: "Marque ao menos uma fatura pra disparar a cobrança." });
       return;
     }
-    const contatos = faturasFiltradas
+    const contatos = todasFaturas
       .filter(f => selecionadasFat.has(chaveSelecao(f)))
       .map(f => {
         const p = f.proposta;
@@ -1394,281 +1405,126 @@ export default function CobrancaPage() {
                 )}
               </div>
 
-              {/* ░░ HISTÓRICO REAL (quando um cliente está selecionado) ░░ */}
-              {clienteSel != null && (() => {
-                const hist = histPlanilha.get(clienteSel) || [];
-                if (hist.length === 0) return null;
-                const ult10 = hist.slice(-10);
-                const precoce = hist.some(r => r.codigo_status === "03" || r.codigo_status === "04");
-                const comData = hist.filter(r => r.data_pagamento || r.data_vencimento);
-                let regressiva: { dias: number; data: Date } | null = null;
-                if (comData.length > 0) {
-                  const ref = comData[comData.length - 1];
-                  const base = new Date((ref.data_pagamento || ref.data_vencimento) + "T00:00:00");
-                  const prox = new Date(base.getFullYear(), base.getMonth() + 1, base.getDate());
-                  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-                  regressiva = { dias: Math.ceil((prox.getTime() - hoje.getTime()) / 86400000), data: prox };
-                }
-                const corCod = (cod: string | null): { bg: string; cor: string; txt: string } => {
-                  if (cod === "01") return { bg: "#f0fdf4", cor: "#16a34a", txt: "Pagou no prazo" };
-                  if (cod === "02") return { bg: "#ecfdf5", cor: "#059669", txt: "Pagou até 30d" };
-                  if (cod === "03") return { bg: "#fffbeb", cor: "#d97706", txt: "Pagou até 60d" };
-                  if (cod === "04") return { bg: "#fef2f2", cor: "#dc2626", txt: "Pagou após 60d" };
-                  if (cod === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "Não pagou" };
-                  return { bg: "#f3f4f6", cor: "#6b7280", txt: "—" };
-                };
-                const cliNome = clientes.find(c => c.proposta.id === clienteSel)?.proposta?.nome || "—";
-                return (
-                  <div style={{ ...cardStyle, overflow: "hidden" }}>
-                    <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: "#1f2937" }}>📑 Histórico de faturas (planilha) · {cliNome}</span>
-                      <span style={{ fontSize: 11, color: "#9ca3af" }}>últimas {ult10.length} de {hist.length}</span>
-                      <button onClick={() => setClienteSel(null)} style={{ marginLeft: "auto", background: "#f9fafb", color: "#2563eb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "5px 12px", fontSize: 11.5, cursor: "pointer", fontWeight: 700 }}>← Ver todas as faturas</button>
-                      {precoce && (
-                        <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999 }}>
-                          ⚠️ INADIMPLÊNCIA PRECOCE
-                        </span>
-                      )}
-                    </div>
-                    {regressiva && (
-                      <div style={{ padding: "10px 16px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", gap: 8 }}>
-                        {regressiva.dias >= 0 ? (
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: regressiva.dias <= 5 ? "#d97706" : "#2563eb" }}>
-                            ⏳ Faltam {regressiva.dias} dia(s) pro próximo vencimento ({regressiva.data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })})
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626" }}>
-                            🔴 Vencido há {-regressiva.dias} dia(s) (limite era {regressiva.data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })})
-                          </span>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                        <thead>
-                          <tr style={{ background: "#fafbfc" }}>
-                            {["#", "Status", "Detalhamento", "Instalação", "Vencimento", "Pagamento", "Banco / Obs."].map(h => (
-                              <th key={h} style={{ padding: "8px 12px", textAlign: "left", color: "#6b7280", fontSize: 10.5, textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {ult10.map((r, i) => {
-                            const cc = corCod(r.codigo_status);
-                            return (
-                              <tr key={r.numero_fatura ?? i} style={{ borderTop: "1px solid #f3f4f6" }}>
-                                <td style={{ padding: "8px 12px", fontWeight: 800, color: "#1f2937" }}>{r.numero_fatura}</td>
-                                <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
-                                  <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{r.codigo_status || "—"} · {cc.txt}</span>
-                                </td>
-                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {r.detalhamento || "—"}
-                                  {r.suspensao_fraude && <span style={{ marginLeft: 6, background: "#fef2f2", color: "#b91c1c", fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>FRAUDE</span>}
-                                  {r.churn && <span style={{ marginLeft: 6, background: "#fff7ed", color: "#c2410c", fontSize: 9.5, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>CHURN</span>}
-                                </td>
-                                <td style={{ padding: "8px 12px", color: "#6b7280", whiteSpace: "nowrap" }}>{r.mes_gross ? formatData(r.mes_gross) : "—"}</td>
-                                <td style={{ padding: "8px 12px", color: "#1f2937", fontWeight: 600, whiteSpace: "nowrap" }}>{formatData(r.data_vencimento)}</td>
-                                <td style={{ padding: "8px 12px", color: r.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: r.data_pagamento ? 700 : 400, whiteSpace: "nowrap" }}>{formatData(r.data_pagamento)}</td>
-                                <td style={{ padding: "8px 12px", color: "#6b7280", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }}>
-                                  {r.nome_banco || ""}{r.nome_banco && r.observacao ? " · " : ""}{r.observacao || (!r.nome_banco ? "—" : "")}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ░░ TABELA PRINCIPAL — largura total, TODAS as colunas da planilha ░░ */}
+              {/* ░░ TABELA PRINCIPAL — UMA LINHA POR CLIENTE (clique abre as faturas) ░░ */}
               <div style={{ ...cardStyle, overflow: "hidden" }}>
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                   <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 600 }}>
-                    {faturasFiltradas.length} fatura(s) · {selecionadasFat.size} selecionada(s)
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={selecionarTodasFat} style={btnSecundario}>
-                      {selecionadasFat.size === faturasFiltradas.length && faturasFiltradas.length > 0 ? "✗ Desmarcar todos" : "✓ Selecionar todos"}
-                    </button>
-                    {podeDisparar && (
-                      <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0} style={{ ...btnPrimario, opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
-                        📤 Cobrar {selecionadasFat.size} fatura(s)
-                      </button>
+                    {clientesTabela.length > 0 ? (
+                      <>Mostrando {(paginaSegura - 1) * TAM_PAGINA + 1}–{Math.min(paginaSegura * TAM_PAGINA, clientesTabela.length)} de {formatNum(clientesTabela.length)} cliente(s)</>
+                    ) : (
+                      <>0 cliente(s)</>
                     )}
                   </div>
+                  <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 600 }}>👆 Clique no cliente pra ver as faturas</div>
                 </div>
 
-                {faturasFiltradas.length === 0 ? (
+                {clientesTabela.length === 0 ? (
                   <div style={{ padding: 40, textAlign: "center" }}>
                     <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
-                    <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhuma fatura nesse filtro</p>
+                    <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhum cliente nesse filtro</p>
                     <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 14px" }}>
                       As faturas vêm da planilha de status (uma linha por fatura). Suba a planilha em <b>Atualizar planilha</b> pra preencher os dados.<br/>
                       Confira também os filtros ativos acima — eles se somam.
                     </p>
-                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setFiltroVencSel(""); setClienteSel(null); setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); }}
                       style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
                       ✕ Limpar todos os filtros
                     </button>
                   </div>
                 ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1300 }}>
+                  <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 820 : "auto" }}>
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
-                          <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          {["Cliente", "OS", "Custcode", "Nº fat.", "Vencimento", "Valor", "Status", "Código", "Detalhamento", "Mês gross", "Pagamento", "Banco", "Opção", "Obs. (DACC)", "Fraude", "Churn", "Ações"].map(h => (
-                            <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                          {["Cliente", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
+                            <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
-                        {/* linha de filtros por coluna */}
+                        {/* linha de filtros por coluna (nome / OS / custcode) */}
                         <tr style={{ background: "#fff" }}>
-                          <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>
                           {([
                             { v: colNome, set: setColNome, ph: "filtrar nome" },
                             { v: colOs, set: setColOs, ph: "OS" },
                             { v: colCust, set: setColCust, ph: "custcode" },
-                            { v: "", set: (_: string) => {}, ph: "", off: true },
-                            { v: colVenc, set: setColVenc, ph: "dd/mm" },
-                            { v: colValor, set: setColValor, ph: "valor" },
-                          ] as { v: string; set: (s: string) => void; ph: string; off?: boolean }[]).map((c, i) => (
-                            <th key={i} style={{ padding: "4px 8px 8px", borderBottom: "1px solid #e5e7eb" }}>
-                              {!c.off && (
-                                <input value={c.v} onChange={e => { c.set(e.target.value); setSelecionadasFat(new Set()); }} placeholder={c.ph}
-                                  style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
-                              )}
+                          ] as { v: string; set: (s: string) => void; ph: string }[]).map((c, i) => (
+                            <th key={i} style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                              <input value={c.v} onChange={e => c.set(e.target.value)} placeholder={c.ph}
+                                style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
                             </th>
                           ))}
-                          {/* colunas da planilha sem filtro de coluna individual */}
-                          {Array.from({ length: 10 }).map((_, i) => <th key={`x${i}`} style={{ borderBottom: "1px solid #e5e7eb" }}></th>)}
-                          <th style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 8px" }}>
-                            {(colNome || colOs || colCust || colVenc || colValor) && (
-                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
-                                title="Limpar filtros" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕</button>
+                          <th colSpan={4} style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 14px" }}>
+                            {(colNome || colOs || colCust) && (
+                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); }}
+                                title="Limpar filtros de coluna" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕ Limpar</button>
                             )}
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {faturasFiltradas.map((f, i) => {
-                          const k = chaveSelecao(f);
-                          const sel = selecionadasFat.has(k);
-                          const c = corStatus(f.status_visual);
-                          const fraude = f.suspensao_fraude === true;
-                          const churn = f.churn === true;
+                        {clientesPagina.map((c, i) => {
+                          const inad = c.situacao === "inadimplente";
                           return (
-                            <tr key={k}
-                              style={{ borderTop: "1px solid #f3f4f6", background: sel ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc") }}>
-                              <td style={{ padding: "12px", textAlign: "center" }}>
-                                <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
-                              </td>
-                              <td style={{ padding: "12px", maxWidth: 200, overflow: "hidden" }}>
-                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }}
-                                  onClick={() => { setClienteSel(f.proposta.id); setSelecionadasFat(new Set()); }} title="Ver histórico do cliente">{f.proposta.nome || "—"}</div>
-                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
-                              </td>
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                {f.proposta.dados_customizados?.os
-                                  ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#7c3aed", fontWeight: 700 }}>{f.proposta.dados_customizados.os}</span>
-                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
-                              </td>
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                                  {f.proposta.dados_customizados?.custcode
-                                    ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#2563eb", fontWeight: 700 }}>{f.proposta.dados_customizados.custcode}</span>
-                                    : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
-                                  <button onClick={() => abrirEdicaoCliente(f.proposta)} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
-                                </span>
-                              </td>
-                              {/* 🆕 Nº FATURA (cru da planilha) */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
-                                {f.numero_fatura != null
-                                  ? <span style={{ background: "#eff6ff", color: "#2563eb", fontWeight: 800, fontSize: 12, padding: "2px 9px", borderRadius: 999 }}>{f.numero_fatura}</span>
-                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
-                              </td>
-                              {/* VENCIMENTO + atraso */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 600 }}>{formatData(f.data_vencimento)}</div>
-                                {f.status_visual === "atrasada" && (
-                                  <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>🔴 {f.dias_atraso}d atraso</div>
-                                )}
-                                {f.status_visual === "pendente" && f.dias_atraso < 0 && (
-                                  <div style={{ color: "#16a34a", fontSize: 10, fontWeight: 600 }}>🟢 Em {Math.abs(f.dias_atraso)}d</div>
-                                )}
-                              </td>
-                              {/* VALOR */}
-                              <td style={{ padding: "12px", color: "#16a34a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{formatBRL(f.valor)}</td>
-                              {/* STATUS */}
-                              <td style={{ padding: "12px" }}>
-                                <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                                  {c.label}
-                                </span>
-                              </td>
-                              {/* 🆕 CÓDIGO da planilha */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: "#374151", fontWeight: 700, fontSize: 12 }}>{f.codigo_status || "—"}</td>
-                              {/* 🆕 DETALHAMENTO */}
-                              <td style={{ padding: "12px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: f.detalhamento ? "#374151" : "#d1d5db", fontSize: 11.5 }} title={f.detalhamento || undefined}>{f.detalhamento || "—"}</td>
-                              {/* 🆕 MÊS GROSS */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.mes_gross ? "#6b7280" : "#d1d5db", fontSize: 11.5 }}>{f.mes_gross ? formatData(f.mes_gross) : "—"}</td>
-                              {/* 🆕 PAGAMENTO */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: f.data_pagamento ? 700 : 400, fontSize: 11.5 }}>{f.data_pagamento ? formatData(f.data_pagamento) : "—"}</td>
-                              {/* 🆕 BANCO */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.nome_banco ? "#374151" : "#d1d5db", fontSize: 11.5 }}>{f.nome_banco || "—"}</td>
-                              {/* 🆕 OPÇÃO PAGAMENTO */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", fontSize: 11.5 }}>
-                                {f.opcao_pagamento
-                                  ? <span style={{ background: "#f5f3ff", color: "#7c3aed", fontWeight: 700, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>{f.opcao_pagamento}</span>
-                                  : <span style={{ color: "#d1d5db" }}>—</span>}
-                              </td>
-                              {/* 🆕 OBSERVAÇÃO (DACC) */}
-                              <td style={{ padding: "12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: f.observacoes ? "#6b7280" : "#d1d5db", fontSize: 11 }} title={f.observacoes || undefined}>{f.observacoes || "—"}</td>
-                              {/* 🆕 FRAUDE */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
-                                {f.suspensao_fraude == null
-                                  ? <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
-                                  : fraude
-                                    ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontWeight: 800, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
-                                    : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
-                              </td>
-                              {/* 🆕 CHURN */}
-                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
-                                {f.churn == null
-                                  ? <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
-                                  : churn
-                                    ? <span style={{ background: "#fff7ed", color: "#c2410c", fontWeight: 800, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
-                                    : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
-                              </td>
-                              {/* AÇÕES */}
-                              <td style={{ padding: "12px" }}>
-                                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                  {podeMudarStatus ? (
-                                    <>
-                                      {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
-                                        <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga / outras opções"
-                                          style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                          ✓ Paga
-                                        </button>
-                                      ) : (
-                                        <button onClick={() => marcarAPagar(f)} title="Reverter status"
-                                          style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                          ↩ A pagar
-                                        </button>
-                                      )}
-                                      <button onClick={() => abrirStatus(f, "promessa")} title="Mais opções de status"
-                                        style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                        ⚙ Status
-                                      </button>
-                                      <button onClick={() => clienteCancelou(f)} title="Cliente cancelou o serviço"
-                                        style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 6, padding: "5px 9px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>
-                                        ✕ Cancelou
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }} title="Você não tem permissão pra mudar status de fatura">somente leitura</span>
-                                  )}
+                            <tr key={c.proposta.id} onClick={() => setModalCliente(c.proposta.id)}
+                              style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#ffffff" : "#fafbfc", cursor: "pointer" }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "#eff6ff")}
+                              onMouseLeave={e => (e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#fafbfc")}>
+                              <td style={{ padding: "12px 14px", maxWidth: 240, borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}` }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
+                                  {c.temFraude && <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>FRAUDE</span>}
+                                  {c.temChurn && <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>CHURN</span>}
                                 </div>
+                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{c.proposta.telefone1 || "—"} · {c.proposta.plano || "—"}</div>
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                                {c.proposta.dados_customizados?.os
+                                  ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#7c3aed", fontWeight: 700 }}>{c.proposta.dados_customizados.os}</span>
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                  {c.proposta.dados_customizados?.custcode
+                                    ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#2563eb", fontWeight: 700 }}>{c.proposta.dados_customizados.custcode}</span>
+                                    : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                  <button onClick={e => { e.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
+                                </span>
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                                {inad ? (
+                                  <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>🔴 Inadimplente</span>
+                                ) : (
+                                  <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>✅ Em dia</span>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                  <span title="Total de faturas" style={{ color: "#374151", fontSize: 13, fontWeight: 700 }}>{c.faturas.length}</span>
+                                  <span style={{ display: "flex", gap: 5, fontSize: 11, fontWeight: 700 }}>
+                                    <span title="Pagas" style={{ color: c.pagas > 0 ? "#16a34a" : "#d1d5db" }}>✅{c.pagas}</span>
+                                    <span title="Em aberto (vencidas)" style={{ color: c.emAberto > 0 ? "#dc2626" : "#d1d5db" }}>🔴{c.emAberto}</span>
+                                    <span title="A vencer" style={{ color: c.aVencer > 0 ? "#d97706" : "#d1d5db" }}>⏳{c.aVencer}</span>
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap", color: c.totalAberto > 0 ? "#dc2626" : "#9ca3af", fontSize: 13, fontWeight: 800 }}>
+                                {c.totalAberto > 0 ? formatBRL(c.totalAberto) : "—"}
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                                {c.proxVenc ? (
+                                  <div>
+                                    <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 600 }}>{formatData(c.proxVenc)}</div>
+                                    <div style={{ color: c.proxDias <= 5 ? "#d97706" : "#2563eb", fontSize: 10, fontWeight: 700 }}>
+                                      {c.proxDias === 0 ? "vence hoje" : `em ${c.proxDias}d`}
+                                    </div>
+                                  </div>
+                                ) : c.atrasadas > 0 ? (
+                                  <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>🔴 {c.atrasoMax}d em atraso</span>
+                                ) : (
+                                  <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 600 }}>tudo pago</span>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px 14px", whiteSpace: "nowrap", textAlign: "right" }}>
+                                <span style={{ color: "#2563eb", fontSize: 12, fontWeight: 700 }}>Ver faturas →</span>
                               </td>
                             </tr>
                           );
@@ -1677,9 +1533,22 @@ export default function CobrancaPage() {
                     </table>
                   </div>
                 )}
-              </div>
 
-              {/* ░░ MENU LATERAL (drawer) de clientes — abre/fecha no botão 👥 Clientes ░░ */}
+                {/* 🆕 RODAPÉ DE PAGINAÇÃO (10 clientes por página) */}
+                {clientesTabela.length > TAM_PAGINA && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+                    <button onClick={() => setPagina(1)} disabled={paginaSegura === 1}
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>« Primeira</button>
+                    <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={paginaSegura === 1}
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>← Anterior</button>
+                    <span style={{ color: "#374151", fontSize: 13, fontWeight: 700, padding: "0 8px" }}>Página {paginaSegura} de {formatNum(totalPaginas)}</span>
+                    <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={paginaSegura === totalPaginas}
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>Próxima →</button>
+                    <button onClick={() => setPagina(totalPaginas)} disabled={paginaSegura === totalPaginas}
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>Última »</button>
+                  </div>
+                )}
+              </div>
               {showSidebar && (
                 <div onClick={() => setShowSidebar(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", zIndex: 200, display: "flex", justifyContent: "flex-start" }}>
                   <div onClick={e => e.stopPropagation()} style={{ width: isMobile ? "88%" : 380, maxWidth: "92vw", height: "100%", background: "#fff", boxShadow: "4px 0 24px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column" }}>
@@ -1710,10 +1579,9 @@ export default function CobrancaPage() {
                         <div style={{ padding: 28, textAlign: "center", color: "#9ca3af", fontSize: 12.5 }}>Nenhum cliente nesse filtro.</div>
                       ) : clientesFiltrados.map(c => {
                         const inad = c.situacao === "inadimplente";
-                        const selc = c.proposta.id === clienteSel;
                         return (
-                          <button key={c.proposta.id} onClick={() => { setClienteSel(c.proposta.id); setSelecionadasFat(new Set()); setShowSidebar(false); }}
-                            style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: selc ? "#eff6ff" : "#ffffff", cursor: "pointer" }}>
+                          <button key={c.proposta.id} onClick={() => { setModalCliente(c.proposta.id); setShowSidebar(false); }}
+                            style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: "#ffffff", cursor: "pointer" }}>
                             <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
@@ -2043,6 +1911,163 @@ export default function CobrancaPage() {
                   style={{ background: cores.botao, color: "#ffffff", border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: `0 4px 12px ${cores.botao}40` }}>
                   {ehConfirm ? (feedback.confirmarLabel || "Continuar") : "Entendi"}
                 </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 🆕 MODAL — FATURAS DO CLIENTE (abre ao clicar numa linha da tabela) */}
+      {modalCliente != null && (() => {
+        const c = clientes.find(x => x.proposta.id === modalCliente);
+        if (!c) return null;
+        const faturasCli = [...c.faturas].sort((a: Fatura, b: Fatura) => (a.numero_fatura ?? 999) - (b.numero_fatura ?? 999) || a.data_vencimento.getTime() - b.data_vencimento.getTime());
+        const corCod = (cod: string | null | undefined): { bg: string; cor: string; txt: string } => {
+          const k = String(cod || "").replace(/\D/g, "").padStart(2, "0");
+          if (k === "01") return { bg: "#f0fdf4", cor: "#16a34a", txt: "Pagou no prazo" };
+          if (k === "02") return { bg: "#ecfdf5", cor: "#059669", txt: "Pagou até 30d" };
+          if (k === "03") return { bg: "#fffbeb", cor: "#d97706", txt: "Pagou até 60d" };
+          if (k === "04") return { bg: "#fef2f2", cor: "#dc2626", txt: "Pagou após 60d" };
+          if (k === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "Não pagou" };
+          return { bg: "#f3f4f6", cor: "#6b7280", txt: "—" };
+        };
+        const mesAnoBR = (d: Date | string | null | undefined) => {
+          if (!d) return "—";
+          const dt = typeof d === "string" ? new Date(d.slice(0, 10) + "T00:00:00") : d;
+          if (!dt || isNaN(dt.getTime())) return "—";
+          return dt.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
+        };
+        const precoce = faturasCli.some((f: Fatura) => f.codigo_status === "03" || f.codigo_status === "04");
+        const selecionarTodasDoModal = () => selecionarTodasFat(faturasCli);
+        return (
+          <div onClick={() => setModalCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: isMobile ? 8 : 24 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 1100, maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,0.3)" }}>
+              {/* cabeçalho do modal */}
+              <div style={{ padding: isMobile ? "14px 16px" : "18px 22px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <h3 style={{ color: "#1f2937", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0 }}>{c.proposta.nome || "—"}</h3>
+                    {c.temFraude && <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>FRAUDE</span>}
+                    {c.temChurn && <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>}
+                    {precoce && <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>⚠️ INADIMPLÊNCIA PRECOCE</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12 }}>
+                    <span style={{ color: "#6b7280" }}>OS: <b style={{ fontFamily: "monospace", color: "#7c3aed" }}>{c.proposta.dados_customizados?.os || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Custcode: <b style={{ fontFamily: "monospace", color: "#2563eb" }}>{c.proposta.dados_customizados?.custcode || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Plano: <b style={{ color: "#374151" }}>{c.proposta.plano || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Tel: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone1 || "—"}</b></span>
+                  </div>
+                </div>
+                <button onClick={() => setModalCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af" }}>✕</button>
+              </div>
+
+              {/* resumo rápido */}
+              <div style={{ padding: "10px 22px", borderBottom: "1px solid #f1f5f9", display: "flex", gap: 18, flexWrap: "wrap", fontSize: 12.5 }}>
+                <span style={{ color: "#374151" }}>📄 <b>{c.faturas.length}</b> fatura(s)</span>
+                <span style={{ color: "#16a34a" }}>✅ <b>{c.pagas}</b> paga(s)</span>
+                <span style={{ color: "#dc2626" }}>🔴 <b>{c.emAberto}</b> em aberto</span>
+                <span style={{ color: "#d97706" }}>⏳ <b>{c.aVencer}</b> a vencer</span>
+                {c.totalAberto > 0 && <span style={{ color: "#dc2626", marginLeft: "auto", fontWeight: 800 }}>Total em aberto: {formatBRL(c.totalAberto)}</span>}
+              </div>
+
+              {/* tabela de faturas do cliente */}
+              <div style={{ overflow: "auto", flex: 1 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, minWidth: 980 }}>
+                  <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                    <tr style={{ background: "#f9fafb" }}>
+                      {podeDisparar && <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>}
+                      {["Nº fat.", "Status pagamento", "Detalhamento", "Mês gross", "Mês venc.", "Data venc.", "Data pgto.", "Banco / Opção", "Fraude", "Churn", "Ações"].map(h => (
+                        <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 10.5, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {faturasCli.map((f: Fatura, i: number) => {
+                      const k = chaveSelecao(f);
+                      const sel = selecionadasFat.has(k);
+                      const cc = corCod(f.codigo_status);
+                      const st = corStatus(f.status_visual);
+                      return (
+                        <tr key={k} style={{ borderTop: "1px solid #f3f4f6", background: sel ? "#eff6ff" : (i % 2 === 0 ? "#fff" : "#fafbfc") }}>
+                          {podeDisparar && (
+                            <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                              <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
+                            </td>
+                          )}
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            {f.numero_fatura != null
+                              ? <span style={{ background: "#eff6ff", color: "#2563eb", fontWeight: 800, fontSize: 12, padding: "2px 9px", borderRadius: 999 }}>{f.numero_fatura}</span>
+                              : <span style={{ color: "#d1d5db" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                            <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{f.codigo_status || "—"} · {cc.txt}</span>
+                            <div style={{ marginTop: 3 }}>
+                              <span style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}`, borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>{st.label}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px 12px", color: f.detalhamento ? "#374151" : "#d1d5db", maxWidth: 230, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11.5 }} title={f.detalhamento || undefined}>{f.detalhamento || "—"}</td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: f.mes_gross ? "#6b7280" : "#d1d5db" }}>{mesAnoBR(f.mes_gross)}</td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: "#6b7280" }}>{mesAnoBR(f.data_vencimento)}</td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: "#1f2937", fontWeight: 600 }}>
+                            {formatData(f.data_vencimento)}
+                            {f.status_visual === "atrasada" && <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>🔴 {f.dias_atraso}d atraso</div>}
+                          </td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: f.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: f.data_pagamento ? 700 : 400 }}>{f.data_pagamento ? formatData(f.data_pagamento) : "—"}</td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", fontSize: 11 }}>
+                            {f.nome_banco && <div style={{ color: "#374151" }}>{f.nome_banco}</div>}
+                            {f.opcao_pagamento && <span style={{ background: "#f5f3ff", color: "#7c3aed", fontWeight: 700, fontSize: 10, padding: "1px 7px", borderRadius: 999 }}>{f.opcao_pagamento}</span>}
+                            {!f.nome_banco && !f.opcao_pagamento && <span style={{ color: "#d1d5db" }}>—</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            {f.suspensao_fraude == null ? <span style={{ color: "#d1d5db" }}>—</span>
+                              : f.suspensao_fraude ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontWeight: 800, fontSize: 10, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
+                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                            {f.churn == null ? <span style={{ color: "#d1d5db" }}>—</span>
+                              : f.churn ? <span style={{ background: "#fff7ed", color: "#c2410c", fontWeight: 800, fontSize: 10, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
+                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {podeMudarStatus ? (
+                                <>
+                                  {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
+                                    <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga"
+                                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✓ Paga</button>
+                                  ) : (
+                                    <button onClick={() => marcarAPagar(f)} title="Reverter status"
+                                      style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>↩ A pagar</button>
+                                  )}
+                                  <button onClick={() => abrirStatus(f, "promessa")} title="Mais status"
+                                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>⚙</button>
+                                </>
+                              ) : (
+                                <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }}>leitura</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* rodapé do modal */}
+              <div style={{ padding: "12px 22px", borderTop: "1px solid #e5e7eb", background: "#fafbfc", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
+                <button onClick={() => { abrirEdicaoCliente(c.proposta); }} style={{ ...btnSecundario, padding: "8px 14px" }}>✏️ Editar cliente</button>
+                {podeDisparar && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <button onClick={selecionarTodasDoModal} style={{ ...btnSecundario, padding: "8px 14px" }}>
+                      {faturasCli.every((f: Fatura) => selecionadasFat.has(chaveSelecao(f))) ? "✗ Desmarcar todas" : "✓ Selecionar todas"}
+                    </button>
+                    <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0}
+                      style={{ ...btnPrimario, padding: "8px 16px", opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
+                      📤 Cobrar {selecionadasFat.size} fatura(s)
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
