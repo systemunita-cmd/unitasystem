@@ -364,6 +364,33 @@ export default function CobrancaPage() {
   const [selecionadosPlanilha, setSelecionadosPlanilha] = useState<Set<number>>(new Set());
   const inputArquivoRef = useRef<HTMLInputElement>(null);
 
+  // ✏️ ADIÇÃO: edição manual de OS / custcode do cliente (igual nas vendas)
+  const [editCliente, setEditCliente] = useState<Proposta | null>(null);
+  const [editOs, setEditOs] = useState("");
+  const [editCust, setEditCust] = useState("");
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+  const abrirEdicaoCliente = (p: Proposta) => {
+    setEditCliente(p);
+    setEditOs(String(p.dados_customizados?.os || ""));
+    setEditCust(String(p.dados_customizados?.custcode || ""));
+  };
+  const salvarEdicaoCliente = async () => {
+    if (!editCliente) return;
+    setSalvandoEdit(true);
+    const novoDados = { ...(editCliente.dados_customizados || {}) } as Record<string, any>;
+    if (editOs.trim()) novoDados.os = editOs.trim(); else delete novoDados.os;
+    if (editCust.trim()) novoDados.custcode = editCust.trim(); else delete novoDados.custcode;
+    const { error } = await supabase.from("proposta").update({ dados_customizados: novoDados }).eq("id", editCliente.id);
+    setSalvandoEdit(false);
+    if (error) {
+      setFeedback({ tipo: "erro", titulo: "Não foi possível salvar", mensagem: error.message });
+      return;
+    }
+    setEditCliente(null);
+    await fetchPropostas();
+    setFeedback({ tipo: "sucesso", titulo: "Cliente atualizado", mensagem: `OS e custcode de ${editCliente.nome || "—"} salvos.` });
+  };
+
   const [showEnvio, setShowEnvio] = useState(false);
   const [envioFonte, setEnvioFonte] = useState<"crm" | "planilha">("crm");
   const [envioContatos, setEnvioContatos] = useState<{ nome: string; telefone: string; vars: Record<string, string> }[]>([]);
@@ -1007,7 +1034,6 @@ export default function CobrancaPage() {
       <div style={{ ...cardStyle, padding: 6, display: "flex", gap: 4, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         {([
           { key: "do_crm",    label: "📅 Do CRM",   color: "#dc2626" },
-          { key: "planilha",  label: "📤 Planilha", color: "#a855f7" },
           { key: "campanhas", label: "📊 Campanhas", color: "#2563eb" },
           { key: "atendimentos", label: "💬 Atendimentos", color: "#16a34a" },
         ] as { key: AbaKey; label: string; color: string }[]).map(t => {
@@ -1130,8 +1156,9 @@ export default function CobrancaPage() {
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0, flexWrap: "wrap" }}>
                             <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{c.proposta.nome || "—"}</span>
-                            {c.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{c.proposta.dados_customizados.custcode}</span>}
                             {c.proposta.dados_customizados?.os && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>OS {c.proposta.dados_customizados.os}</span>}
+                            {c.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{c.proposta.dados_customizados.custcode}</span>}
+                            <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", padding: "0 2px" }}>✏️</span>
                           </div>
                           <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
                         </div>
@@ -1243,8 +1270,9 @@ export default function CobrancaPage() {
                               <td style={{ padding: "12px", maxWidth: 260, overflow: "hidden" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                                   <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 180 }}>{f.proposta.nome || "—"}</span>
-                                  {f.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{f.proposta.dados_customizados.custcode}</span>}
                                   {f.proposta.dados_customizados?.os && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>OS {f.proposta.dados_customizados.os}</span>}
+                                  {f.proposta.dados_customizados?.custcode && <span style={{ fontFamily: "monospace", fontSize: 10, color: "#2563eb", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 5, padding: "1px 5px", fontWeight: 700 }}>{f.proposta.dados_customizados.custcode}</span>}
+                                  <button onClick={() => abrirEdicaoCliente(f.proposta)} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
                                 </div>
                                 <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
                               </td>
@@ -1316,133 +1344,6 @@ export default function CobrancaPage() {
             </div>
           )}
 
-          {/* ════════════ ABA: PLANILHA ════════════ */}
-          {aba === "planilha" && (
-            <>
-              <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
-                <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 12px" }}>1. Suba sua planilha</h3>
-                <input ref={inputArquivoRef} type="file" accept=".csv,.xlsx,.xls" onChange={onArquivoSelecionado} style={{ display: "none" }} />
-                <div style={{ border: "2px dashed #93c5fd", borderRadius: 12, padding: 24, textAlign: "center", background: "#eff6ff", cursor: "pointer" }} onClick={() => inputArquivoRef.current?.click()}>
-                  <div style={{ fontSize: 36, marginBottom: 6 }}>📤</div>
-                  <p style={{ color: "#2563eb", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>
-                    {planilhaNomeArquivo || "Clique pra escolher um arquivo"}
-                  </p>
-                  <p style={{ color: "#3b82f6", fontSize: 12, margin: 0 }}>Aceita .csv, .xlsx, .xls — primeira linha geralmente é o cabeçalho.</p>
-                </div>
-                {planilhaLinhas.length > 0 && (
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "#374151", fontSize: 12, cursor: "pointer" }}>
-                    <input type="checkbox" checked={primeiraLinhaCabecalho} onChange={e => setPrimeiraLinhaCabecalho(e.target.checked)} style={{ accentColor: "#2563eb" }} />
-                    Primeira linha é o cabeçalho da planilha
-                  </label>
-                )}
-              </div>
-
-              {planilhaLinhas.length > 0 && (
-                <div style={{ ...cardStyle, padding: isMobile ? 16 : 24 }}>
-                  <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>2. Mapeie as colunas</h3>
-                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "0 0 16px" }}>Diga qual coluna da planilha corresponde a cada campo do sistema. Auto-detectei o que pude pelo nome.</p>
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-                    {CAMPOS_PLANILHA.map(campo => (
-                      <div key={campo.key}>
-                        <label style={labelStyle}>{campo.label}{campo.obrigatorio && <span style={{ color: "#dc2626" }}> *</span>}</label>
-                        <select
-                          value={mapeamento[campo.key] ?? ""}
-                          onChange={e => {
-                            const v = e.target.value;
-                            setMapeamento(prev => {
-                              const novo = { ...prev };
-                              if (v === "") delete novo[campo.key];
-                              else novo[campo.key] = parseInt(v, 10);
-                              return novo;
-                            });
-                          }}
-                          style={inputStyle}
-                        >
-                          <option value="">— Nenhuma —</option>
-                          {cabecalhoColunas.map((col, idx) => (
-                            <option key={idx} value={idx}>{col}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {planilhaLinhas.length > 0 && (
-                <div style={{ ...cardStyle, overflow: "hidden" }}>
-                  <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                    <div>
-                      <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>3. Confira e dispare</h3>
-                      <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>
-                        {planilhaDados.length} linha(s) · <b style={{ color: "#16a34a" }}>{linhasValidas.length} válidas</b> (telefone com 10+ dígitos) · {selecionadosPlanilha.size} selecionada(s)
-                      </p>
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={selecionarTodosPlanilha} style={btnSecundario}>
-                        {selecionadosPlanilha.size === linhasValidas.length && linhasValidas.length > 0 ? "✗ Desmarcar" : "✓ Todos"}
-                      </button>
-                      <button onClick={abrirEnvioPlanilha} disabled={linhasValidas.length === 0} style={{ ...btnPrimario, opacity: linhasValidas.length === 0 ? 0.5 : 1, cursor: linhasValidas.length === 0 ? "not-allowed" : "pointer" }}>
-                        📤 Cobrar {selecionadosPlanilha.size || linhasValidas.length} contato(s)
-                      </button>
-                    </div>
-                  </div>
-
-                  {linhasMapeadas.length === 0 ? (
-                    <p style={{ color: "#9ca3af", fontSize: 13, fontStyle: "italic", padding: 32, textAlign: "center" }}>Sem dados pra mostrar.</p>
-                  ) : (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 760 : "auto" }}>
-                        <thead>
-                          <tr style={{ background: "#f9fafb" }}>
-                            <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                            {["#", "Nome", "Telefone", "Valor", "Vencimento", "Plano", "Válido"].map(h => (
-                              <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {linhasMapeadas.slice(0, 100).map((l, i) => {
-                            const tel = normalizarTelefone(l.telefone);
-                            const valido = tel.length >= 10;
-                            const idxValido = linhasValidas.indexOf(l);
-                            const sel = idxValido >= 0 && selecionadosPlanilha.has(idxValido);
-                            return (
-                              <tr key={i}
-                                onClick={() => { if (valido && idxValido >= 0) toggleSelPlanilha(idxValido); }}
-                                style={{ borderTop: "1px solid #f3f4f6", background: !valido ? "#fef2f2" : (sel ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc")), cursor: valido ? "pointer" : "default", opacity: valido ? 1 : 0.5 }}>
-                                <td style={{ padding: "12px", textAlign: "center" }}>
-                                  {valido && (
-                                    <input type="checkbox" checked={sel} onChange={() => toggleSelPlanilha(idxValido)} onClick={e => e.stopPropagation()} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
-                                  )}
-                                </td>
-                                <td style={{ padding: "12px", color: "#9ca3af", fontSize: 11 }}>{i + 1}</td>
-                                <td style={{ padding: "12px", color: "#1f2937", fontSize: 12, fontWeight: 600, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.nome || "—"}</td>
-                                <td style={{ padding: "12px", color: "#6b7280", fontSize: 12, fontFamily: "monospace", whiteSpace: "nowrap" }}>{l.telefone || "—"}</td>
-                                <td style={{ padding: "12px", color: "#16a34a", fontSize: 12, fontWeight: 600 }}>{l.valor || "—"}</td>
-                                <td style={{ padding: "12px", color: "#6b7280", fontSize: 12 }}>{l.vencimento || "—"}</td>
-                                <td style={{ padding: "12px", color: "#374151", fontSize: 12, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.plano || "—"}</td>
-                                <td style={{ padding: "12px" }}>
-                                  {valido
-                                    ? <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 8, padding: "2px 7px", fontSize: 10, fontWeight: 700 }}>✓ OK</span>
-                                    : <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "2px 7px", fontSize: 10, fontWeight: 700 }}>✗ Sem telefone</span>}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {linhasMapeadas.length > 100 && (
-                            <tr><td colSpan={8} style={{ padding: 14, textAlign: "center", color: "#9ca3af", fontSize: 12, fontStyle: "italic" }}>
-                              + {linhasMapeadas.length - 100} linha(s) (mostrando primeiras 100)
-                            </td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
 
           {/* ════════════ ABA: CAMPANHAS ════════════ */}
           {aba === "campanhas" && (
@@ -1744,6 +1645,34 @@ export default function CobrancaPage() {
           </div>
         );
       })()}
+
+      {/* ✏️ ADIÇÃO: MODAL — editar OS / custcode do cliente */}
+      {editCliente && (
+        <div onClick={() => setEditCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+          <div onClick={ev => ev.stopPropagation()} style={{ ...cardStyle, width: "100%", maxWidth: 440, padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+              <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>✏️ Editar cliente</h3>
+              <button onClick={() => setEditCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>✕</button>
+            </div>
+            <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 16px", fontWeight: 600 }}>{editCliente.nome || "—"}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>🔖 Ordem de serviço (OS)</label>
+                <input value={editOs} onChange={e => setEditOs(e.target.value)} placeholder="ex: 1-1688493179641" style={{ ...inputStyle, fontFamily: "monospace" }} />
+              </div>
+              <div>
+                <label style={labelStyle}>🏷️ Custcode</label>
+                <input value={editCust} onChange={e => setEditCust(e.target.value)} placeholder="ex: 1.347330633" style={{ ...inputStyle, fontFamily: "monospace" }} />
+              </div>
+            </div>
+            <p style={{ color: "#9ca3af", fontSize: 11, margin: "12px 0 0", lineHeight: 1.5 }}>A OS é como a planilha de pagamento acha esse cliente. O custcode é preenchido sozinho pela Atualização, mas pode ser ajustado aqui.</p>
+            <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditCliente(null)} style={btnSecundario}>Cancelar</button>
+              <button onClick={salvarEdicaoCliente} disabled={salvandoEdit} style={{ ...btnPrimario, opacity: salvandoEdit ? 0.6 : 1 }}>{salvandoEdit ? "⏳ Salvando..." : "💾 Salvar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
