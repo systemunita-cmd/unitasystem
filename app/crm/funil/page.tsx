@@ -83,7 +83,9 @@ const DIAS_SEMANA = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const DIAS_SEMANA_LONGO = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
 // ─── REGEX de classificação de status ────────────────────────────────────────
-const REGEX_INSTALADO = /instal|ativ(?:a|o|ad)|conclu|finaliz|sucesso/i;
+// 🐛 FIX: antes era /instal/, que contava "AGUARDANDO INSTALAÇÃO" como instalada (inflava a soma).
+// Agora só pega particípio concluído: instalada/instalado/ativada/concluída/finalizada.
+const REGEX_INSTALADO = /instalad|conclu[ií]d|finalizad|\bativad|sucesso/i;
 const REGEX_CANCEL = /cancel|distrat|desinstal|reprovad|recus|perd|inviav/i;
 const REGEX_INTERNO = /intern/i;
 const REGEX_EXTERNO = /extern/i;
@@ -919,6 +921,18 @@ export default function Funil() {
                 <label style={{ color: "#9d174d", fontSize: 10, fontWeight: 700, textTransform: "uppercase", display: "block", marginBottom: 5 }}>Até</label>
                 <input type="date" value={dataFim} min={dataInicio || undefined} onChange={e => setDataFim(e.target.value)} style={{ ...inputStyle, cursor: "text", borderColor: "#fbcfe8" }} />
               </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {([
+                  { l: "Este mês", calc: () => { const n = new Date(); return [new Date(n.getFullYear(), n.getMonth(), 1), new Date(n.getFullYear(), n.getMonth() + 1, 0)] as [Date, Date]; } },
+                  { l: "Mês passado", calc: () => { const n = new Date(); return [new Date(n.getFullYear(), n.getMonth() - 1, 1), new Date(n.getFullYear(), n.getMonth(), 0)] as [Date, Date]; } },
+                  { l: "Este ano", calc: () => { const n = new Date(); return [new Date(n.getFullYear(), 0, 1), new Date(n.getFullYear(), 11, 31)] as [Date, Date]; } },
+                ]).map(a => (
+                  <button key={a.l} onClick={() => { const [i, f] = a.calc(); setDataInicio(i.toISOString().slice(0, 10)); setDataFim(f.toISOString().slice(0, 10)); }}
+                    style={{ background: "#ffffff", color: "#9d174d", border: "1px solid #fbcfe8", borderRadius: 8, padding: "7px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                    {a.l}
+                  </button>
+                ))}
+              </div>
               {(!dataInicio || !dataFim) && <span style={{ color: "#9d174d", fontSize: 11, fontWeight: 600, alignSelf: "center" }}>👈 escolha as duas datas</span>}
             </div>
           )}
@@ -990,14 +1004,13 @@ export default function Funil() {
                 </p>
               </div>
 
-              {/* 5 números grandes (contagem + %) */}
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(5, 1fr)", gap: isMobile ? 10 : 14 }}>
+              {/* 4 números grandes que SOMAM ao total (Entraram = Instalaram + Andamento + Cancelaram) */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
                 {[
                   { emoji: "📥", titulo: "ENTRARAM", numero: formatNum(m.total), sub: "vendas no período", cor: COR.entrou, bg: "#eef2ff", trend: m.tTotal },
                   { emoji: "✅", titulo: "INSTALARAM", numero: formatNum(m.instalado), sub: `${m.pctInstalado}% das que entraram`, cor: COR.instalou, bg: "#f0fdf4", trend: m.tInstalado },
                   { emoji: "🔄", titulo: "EM ANDAMENTO", numero: formatNum(m.andamento), sub: `${m.pctAndamento}% ainda abertas`, cor: COR.andamento, bg: "#fffbeb" },
-                  { emoji: "❌", titulo: "CANC. INTERNA", numero: formatNum(m.cancInt), sub: `${m.pctCancInt}% do total`, cor: COR.cancInt, bg: "#fef2f2" },
-                  { emoji: "🚫", titulo: "CANC. EXTERNA", numero: formatNum(m.cancExt), sub: `${m.pctCancExt}% do total`, cor: COR.cancExt, bg: "#fef2f2" },
+                  { emoji: "❌", titulo: "CANCELARAM", numero: formatNum(m.canceladoTotal), sub: `${m.pctCancelado}% das que entraram`, cor: COR.cancel, bg: "#fef2f2", trend: m.tCancelado },
                 ].map(c => (
                   <div key={c.titulo} style={{ ...cardStyle, padding: isMobile ? 14 : 18, borderTop: `4px solid ${c.cor}` }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1011,6 +1024,32 @@ export default function Funil() {
                     </div>
                     <p style={{ color: c.cor, fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{c.numero}</p>
                     <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Conferência: a soma sempre fecha */}
+              <div style={{ ...cardStyle, padding: "10px 16px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#f8fafc" }}>
+                <span style={{ fontSize: 16 }}>🧮</span>
+                <p style={{ color: "#6b7280", fontSize: 12, margin: 0, fontWeight: 600 }}>
+                  <b style={{ color: COR.instalou }}>{formatNum(m.instalado)}</b> instaladas +{" "}
+                  <b style={{ color: COR.andamento }}>{formatNum(m.andamento)}</b> em andamento +{" "}
+                  <b style={{ color: COR.cancel }}>{formatNum(m.canceladoTotal)}</b> canceladas ={" "}
+                  <b style={{ color: COR.entrou }}>{formatNum(m.instalado + m.andamento + m.canceladoTotal)}</b> que entraram
+                </p>
+              </div>
+
+              {/* Quebra dos cancelamentos: interna / externa / outras */}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: isMobile ? 10 : 14 }}>
+                {[
+                  { titulo: "❌ CANCELADA INTERNA", numero: m.cancInt, sub: `${m.pctCancInt}% do total · ${m.pctCancIntDoCancel}% dos cancelamentos`, cor: COR.cancInt },
+                  { titulo: "🚫 CANCELADA EXTERNA", numero: m.cancExt, sub: `${m.pctCancExt}% do total · ${m.pctCancExtDoCancel}% dos cancelamentos`, cor: COR.cancExt },
+                  { titulo: "➖ OUTROS CANCELAMENTOS", numero: m.cancOut, sub: m.cancOut > 0 ? "status de cancelamento sem interna/externa" : "nenhum", cor: "#9ca3af" },
+                ].map(c => (
+                  <div key={c.titulo} style={{ ...cardStyle, padding: isMobile ? 12 : 16, borderLeft: `4px solid ${c.cor}` }}>
+                    <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, margin: "0 0 4px" }}>{c.titulo}</p>
+                    <p style={{ color: c.cor, fontSize: isMobile ? 20 : 26, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{formatNum(c.numero)}</p>
+                    <p style={{ color: "#9ca3af", fontSize: 11, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
                   </div>
                 ))}
               </div>
@@ -1060,20 +1099,6 @@ export default function Funil() {
                           <span style={{ color: "white", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>{formatNum(f.qtd)} ({f.pctNum}%)</span>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* sub-quebra dos cancelamentos */}
-                <div style={{ maxWidth: 640, margin: "16px auto 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                  {[
-                    { l: "Internas", qtd: m.cancInt, cor: COR.cancInt },
-                    { l: "Externas", qtd: m.cancExt, cor: COR.cancExt },
-                    { l: "Outras", qtd: m.cancOut, cor: "#9ca3af" },
-                  ].map(c => (
-                    <div key={c.l} style={{ background: `${c.cor}10`, border: `1px solid ${c.cor}30`, borderRadius: 10, padding: 10, textAlign: "center" }}>
-                      <p style={{ color: c.cor, fontSize: 20, fontWeight: 800, margin: 0 }}>{formatNum(c.qtd)}</p>
-                      <p style={{ color: "#6b7280", fontSize: 10, margin: "2px 0 0", fontWeight: 600 }}>Canc. {c.l}</p>
                     </div>
                   ))}
                 </div>
