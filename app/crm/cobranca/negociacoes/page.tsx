@@ -85,6 +85,18 @@ type Fatura = {
   data_pagamento?: string | null;
   observacoes?: string | null;
   dias_atraso: number;
+  // 🆕 dados CRUS da planilha (uma fatura = uma linha real da planilha)
+  numero_fatura?: number | null;     // 1..10
+  codigo_status?: string | null;     // "01".."05"
+  status_planilha?: string | null;   // texto cru "02 - PAGOU ATÉ 30 DIAS..."
+  detalhamento?: string | null;
+  mes_gross?: string | null;
+  nome_banco?: string | null;
+  opcao_pagamento?: string | null;   // BOLETO / DACC
+  suspensao_fraude?: boolean | null;
+  churn?: boolean | null;
+  insucesso_dacc?: boolean | null;
+  daPlanilha?: boolean;              // veio da planilha (true) ou gerada pelo CRM (false)
 };
 
 type AbaKey = "do_crm" | "planilha" | "campanhas" | "atendimentos";
@@ -177,13 +189,19 @@ const aplicarStatusEAtrasos = (faturas: Fatura[], statusMap: Map<string, FaturaS
   return faturas.map(f => {
     const chave = `${f.proposta.id}_${f.numero_referencia}`;
     const db = statusMap.get(chave);
-    const status = (db?.status || "pendente") as StatusFatura;
     const diasAtraso = Math.round((hoje.getTime() - f.data_vencimento.getTime()) / 86400000);
+    // 🆕 fatura que veio da planilha já carrega o status correto (código 01..05).
+    //    Só deixamos o operador SOBRESCREVER quando ele mexeu manualmente — ou seja,
+    //    quando há uma linha de status com atualizado_por preenchido (ação humana).
+    if (f.daPlanilha && (!db || !db.atualizado_por)) {
+      return { ...f, dias_atraso: diasAtraso };
+    }
+    const status = (db?.status || f.status || "pendente") as StatusFatura;
     const visual: StatusFatura = (status === "pendente" && diasAtraso > 0) ? "atrasada" : status;
     return {
       ...f, status, status_visual: visual, dias_atraso: diasAtraso,
-      data_pagamento: db?.data_pagamento || null,
-      observacoes: db?.observacoes || null,
+      data_pagamento: db?.data_pagamento ?? f.data_pagamento ?? null,
+      observacoes: db?.observacoes ?? f.observacoes ?? null,
     };
   });
 };
@@ -254,20 +272,6 @@ const CAMPOS_PLANILHA = [
   { key: "plano",    label: "📦 Plano / produto",         obrigatorio: false },
   { key: "codigo",   label: "🔖 Código / identificador",  obrigatorio: false },
 ] as const;
-
-// 🆕 colunas extras da planilha que podem ser exibidas na tabela de faturas
-const COLS_EXTRAS_DEF: { k: string; label: string; render: (r: any) => string }[] = [
-  { k: "numero_fatura", label: "Nº fatura",      render: r => r?.numero_fatura != null ? String(r.numero_fatura) : "—" },
-  { k: "codigo_status", label: "Código",          render: r => r?.codigo_status || "—" },
-  { k: "detalhamento",  label: "Detalhamento",    render: r => r?.detalhamento || "—" },
-  { k: "mes_gross",     label: "Mês gross",       render: r => r?.mes_gross ? new Date(String(r.mes_gross) + "T00:00:00").toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }) : "—" },
-  { k: "data_pagamento",label: "Pagamento",       render: r => r?.data_pagamento ? new Date(String(r.data_pagamento) + "T00:00:00").toLocaleDateString("pt-BR") : "—" },
-  { k: "nome_banco",    label: "Banco",           render: r => r?.nome_banco || "—" },
-  { k: "observacao",    label: "Obs. (DACC)",     render: r => r?.observacao || "—" },
-  { k: "opcao_pagamento", label: "Opção pagto",   render: r => r?.opcao_pagamento || "—" },
-  { k: "suspensao_fraude", label: "Fraude",       render: r => r?.suspensao_fraude == null ? "—" : (r.suspensao_fraude ? "SIM" : "não") },
-  { k: "churn",         label: "Churn",           render: r => r?.churn == null ? "—" : (r.churn ? "SIM" : "não") },
-];
 
 export default function CobrancaPage() {
   const router = useRouter();
@@ -356,27 +360,17 @@ export default function CobrancaPage() {
   }, [aba, propostas.length]);
   const [statusMap, setStatusMap] = useState<Map<string, FaturaStatusDB>>(new Map());
 
-  const [filtroVenc, setFiltroVenc] = useState<FiltroVenc>("vencendo_7d");
+  const [filtroVenc, setFiltroVenc] = useState<FiltroVenc>("todos");
   const [filtroBusca, setFiltroBusca] = useState("");
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
-  // 🆕 intervalo personalizado de vencimento (de–até)
-  // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês) — substitui o intervalo de vencimento
+  // 🆕 MENU LATERAL de clientes: abre/fecha (libera a tabela em largura total)
+  const [showSidebar, setShowSidebar] = useState(false);
+  // 🆕 DROPDOWN de vencimento detectado da base (dia + mês reais)
+  //    "" = todos | "dia:10" = todas que vencem dia 10 | "mes:2026-05" = vencem em mai/26
+  const [filtroVencSel, setFiltroVencSel] = useState("");
+  // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês) — opcional, segue existindo
   const [mesInst, setMesInst] = useState("");
-  // 🆕 caixa de seleção de colunas da planilha visíveis na tabela
-  const [colsExtras, setColsExtras] = useState<Set<string>>(new Set());
-  const [showColsMenu, setShowColsMenu] = useState(false);
-  useEffect(() => {
-    try { const raw = window.localStorage.getItem("cobranca_cols_extras"); if (raw) setColsExtras(new Set(JSON.parse(raw))); } catch { /* noop */ }
-  }, []);
-  const toggleColExtra = (k: string) => {
-    setColsExtras(prev => {
-      const n = new Set(prev);
-      if (n.has(k)) n.delete(k); else n.add(k);
-      try { window.localStorage.setItem("cobranca_cols_extras", JSON.stringify(Array.from(n))); } catch { /* noop */ }
-      return n;
-    });
-  };
   // 🆕 filtros por coluna (cabeçalho da tabela)
   const [colNome, setColNome] = useState("");
   const [colOs, setColOs] = useState("");
@@ -645,11 +639,26 @@ export default function CobrancaPage() {
     } catch (e) { console.warn("[Cobrança Unita]", e); }
   }
 
+  // 🆕 mapeia o código bruto da planilha (01..05) -> status visual da fatura
+  const statusVisualDoCodigo = (cod: string | null | undefined, venc: Date, hoje: Date): StatusFatura => {
+    const c = String(cod || "").replace(/\D/g, "");
+    if (c === "01") return "paga";
+    if (c === "02" || c === "03" || c === "04") return "paga_atraso";
+    if (c === "05") {
+      const diasAtraso = Math.round((hoje.getTime() - venc.getTime()) / 86400000);
+      return diasAtraso > 0 ? "atrasada" : "pendente";
+    }
+    return "pendente";
+  };
+
   const todasFaturas = useMemo<Fatura[]>(() => {
     const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase() === "INSTALADA");
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
     const result: Fatura[] = [];
     for (const p of instalados) {
-      // 🆕 FONTE PRINCIPAL: faturas REAIS importadas da planilha (histPlanilha)
+      // 🆕 FONTE PRINCIPAL: cada LINHA REAL da planilha (histPlanilha) vira uma fatura.
+      //    Aqui carregamos TODOS os campos crus, então a tabela já mostra tudo preenchido.
       const hist = histPlanilha.get(p.id) || [];
       const refsPlanilha = new Set<string>();
       for (const r of hist) {
@@ -665,15 +674,62 @@ export default function CobrancaPage() {
           if (m) dv = new Date(Number(m[1]), Number(m[2]) - 1, parseInt(String(p.vencimento || "10").replace(/\D/g, ""), 10) || 10);
         }
         if (!dv) continue;
-        result.push({ proposta: p, numero_referencia: r.numero_referencia, data_vencimento: dv, valor: p.valor_plano || 0, proporcional: false, dias_cobertos: 30 } as Fatura);
+        const sv = statusVisualDoCodigo(r.codigo_status, dv, hoje);
+        const diasAtraso = Math.round((hoje.getTime() - dv.getTime()) / 86400000);
+        result.push({
+          proposta: p,
+          numero_referencia: r.numero_referencia,
+          data_vencimento: dv,
+          valor: p.valor_plano || 0,
+          proporcional: false,
+          dias_cobertos: 30,
+          status: sv,
+          status_visual: sv,
+          data_pagamento: r.data_pagamento || null,
+          observacoes: r.observacao || null,
+          dias_atraso: diasAtraso,
+          // crus da planilha
+          numero_fatura: r.numero_fatura ?? null,
+          codigo_status: r.codigo_status || null,
+          status_planilha: r.status_planilha || null,
+          detalhamento: r.detalhamento || null,
+          mes_gross: r.mes_gross || null,
+          nome_banco: r.nome_banco || null,
+          opcao_pagamento: r.opcao_pagamento || null,
+          suspensao_fraude: r.suspensao_fraude ?? null,
+          churn: r.churn ?? null,
+          insucesso_dacc: r.insucesso_dacc ?? null,
+          daPlanilha: true,
+        } as Fatura);
       }
       // complemento: faturas geradas pelo CRM só pros meses que NÃO vieram na planilha (ex: mês atual)
       for (const g of gerarFaturasDeProposta(p)) {
-        if (!refsPlanilha.has(g.numero_referencia)) result.push(g);
+        if (!refsPlanilha.has(g.numero_referencia)) result.push({ ...g, daPlanilha: false });
       }
     }
     return aplicarStatusEAtrasos(result, statusMap);
   }, [propostas, statusMap, histPlanilha]);
+
+  // 🆕 VENCIMENTOS DISPONÍVEIS na base — alimenta o menu suspenso de filtro.
+  //    Detecta os DIAS de vencimento (1..31) e os MESES (YYYY-MM) que realmente existem,
+  //    com a contagem de faturas de cada um.
+  const vencimentosDisponiveis = useMemo(() => {
+    const dias = new Map<number, number>();
+    const meses = new Map<string, number>();
+    for (const f of todasFaturas) {
+      const d = f.data_vencimento;
+      if (!d || isNaN(d.getTime())) continue;
+      dias.set(d.getDate(), (dias.get(d.getDate()) || 0) + 1);
+      const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      meses.set(mk, (meses.get(mk) || 0) + 1);
+    }
+    const mesesNome = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const listaDias = Array.from(dias.entries()).sort((a, b) => a[0] - b[0])
+      .map(([dia, n]) => ({ value: `dia:${dia}`, label: `Dia ${String(dia).padStart(2, "0")}`, n }));
+    const listaMeses = Array.from(meses.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([mk, n]) => { const [y, m] = mk.split("-"); return { value: `mes:${mk}`, label: `${mesesNome[Number(m) - 1]}/${y.slice(2)}`, n }; });
+    return { listaDias, listaMeses };
+  }, [todasFaturas]);
 
   const faturasFiltradas = useMemo(() => {
     let arr = todasFaturas;
@@ -707,6 +763,15 @@ export default function CobrancaPage() {
     // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês)
     if (mesInst) arr = arr.filter(f => String(f.proposta.data_instalacao || "").startsWith(mesInst));
 
+    // 🆕 MENU SUSPENSO de vencimento — puxa só os clientes do vencimento escolhido
+    if (filtroVencSel.startsWith("dia:")) {
+      const dia = Number(filtroVencSel.slice(4));
+      arr = arr.filter(f => f.data_vencimento.getDate() === dia);
+    } else if (filtroVencSel.startsWith("mes:")) {
+      const mk = filtroVencSel.slice(4);
+      arr = arr.filter(f => `${f.data_vencimento.getFullYear()}-${String(f.data_vencimento.getMonth() + 1).padStart(2, "0")}` === mk);
+    }
+
     // 🆕 filtros por coluna
     const inc = (v: any, q: string) => String(v ?? "").toLowerCase().includes(q.toLowerCase());
     if (colNome) arr = arr.filter(f => inc(f.proposta.nome, colNome));
@@ -723,7 +788,7 @@ export default function CobrancaPage() {
       if (oa !== ob) return oa - ob;
       return a.data_vencimento.getTime() - b.data_vencimento.getTime();
     });
-  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, mesInst, colNome, colOs, colCust, colFat, colVenc, colValor]);
+  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, mesInst, filtroVencSel, colNome, colOs, colCust, colFat, colVenc, colValor]);
 
   // 🆕 Lista de clientes do lado: agrupa faturas por cliente e calcula situação.
   const clientes = useMemo<any[]>(() => {
@@ -1242,117 +1307,68 @@ export default function CobrancaPage() {
           )}
 
           {/* ════════════ ABA: DO CRM ════════════ */}
+          {/* ════════════ ABA: DO CRM ════════════ */}
           {aba === "do_crm" && (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(280px, 340px) 1fr", gap: 14, alignItems: "start" }}>
-              {/* 🆕 LISTA DE CLIENTES DO LADO (inadimplente / em dia) */}
-              <div style={{ ...cardStyle, overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: isMobile ? 420 : "calc(100vh - 190px)" }}>
-                <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #f1f5f9" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* ░░ BARRA DE FILTROS — largura total ░░ */}
+              <div style={{ ...cardStyle, padding: isMobile ? 12 : 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                {/* botão que abre/fecha o menu lateral de clientes */}
+                <button onClick={() => setShowSidebar(s => !s)}
+                  style={{ background: showSidebar ? "#2563eb" : "#eff6ff", color: showSidebar ? "#fff" : "#2563eb", border: `1px solid ${showSidebar ? "#2563eb" : "#bfdbfe"}`, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 800, whiteSpace: "nowrap" }}>
+                  {showSidebar ? "✕ Fechar clientes" : "👥 Clientes"}
+                </button>
+
+                {/* 🆕 MENU SUSPENSO de vencimentos detectados */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>📅 Vencimento:</span>
+                  <select value={filtroVencSel} onChange={e => { setFiltroVencSel(e.target.value); setSelecionadasFat(new Set()); setClienteSel(null); }}
+                    style={{ ...inputStyle, width: "auto", padding: "8px 10px", cursor: "pointer", fontWeight: 600, minWidth: 180 }}>
+                    <option value="">Todos os vencimentos</option>
+                    {vencimentosDisponiveis.listaDias.length > 0 && (
+                      <optgroup label="Por dia do mês">
+                        {vencimentosDisponiveis.listaDias.map(o => (
+                          <option key={o.value} value={o.value}>{o.label} — {formatNum(o.n)} fatura(s)</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {vencimentosDisponiveis.listaMeses.length > 0 && (
+                      <optgroup label="Por mês de vencimento">
+                        {vencimentosDisponiveis.listaMeses.map(o => (
+                          <option key={o.value} value={o.value}>{o.label} — {formatNum(o.n)} fatura(s)</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  {filtroVencSel && (
+                    <button onClick={() => setFiltroVencSel("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar</button>
+                  )}
+                </div>
+
+                {/* atalhos rápidos de janela de vencimento */}
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {([
-                    { k: "inadimplentes", l: "Inadimplentes", n: qtdInad, cor: "#dc2626" },
-                    { k: "em_dia", l: "Em dia", n: qtdEmDia, cor: "#16a34a" },
-                    { k: "todos", l: "Todos", n: clientes.length, cor: "#475569" },
-                  ] as { k: "inadimplentes" | "em_dia" | "todos"; l: string; n: number; cor: string }[]).map(seg => {
-                    const at = segmento === seg.k;
+                    { k: "todos",       l: "🌐 Todos",          cor: "#6b7280" },
+                    { k: "vencendo_7d", l: "🟡 Próx. 7 dias",   cor: "#f59e0b" },
+                    { k: "hoje",        l: "⏰ Hoje",            cor: "#ea580c" },
+                    { k: "vencidos",    l: "🔴 Vencidos",        cor: "#dc2626" },
+                    { k: "este_mes",    l: "📆 Este mês",        cor: "#2563eb" },
+                  ] as { k: FiltroVenc; l: string; cor: string }[]).map(f => {
+                    const at = filtroVenc === f.k;
                     return (
-                      <button key={seg.k} onClick={() => { setSegmento(seg.k); setClienteSel(null); }}
-                        style={{ flex: 1, background: at ? seg.cor : "#ffffff", color: at ? "#ffffff" : "#6b7280", border: `1px solid ${at ? seg.cor : "#e5e7eb"}`, borderRadius: 10, padding: "7px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1.3 }}>
-                        {seg.l}<br /><span style={{ fontSize: 15, fontWeight: 800 }}>{seg.n}</span>
+                      <button key={f.k} onClick={() => { setFiltroVenc(f.k); setSelecionadasFat(new Set()); }}
+                        style={{ background: at ? `${f.cor}15` : "#ffffff", color: at ? f.cor : "#6b7280", border: `1px solid ${at ? f.cor : "#e5e7eb"}`, borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: at ? 700 : 600, whiteSpace: "nowrap" }}>
+                        {f.l}
                       </button>
                     );
                   })}
                 </div>
-                <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
-                  <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Nome, CPF ou OS..." style={{ ...inputStyle, padding: "8px 12px" }} />
-                </div>
-                <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
-                  {clienteSel != null && (
-                    <button onClick={() => setClienteSel(null)} style={{ width: "100%", textAlign: "center", border: "none", borderBottom: "1px solid #f3f4f6", background: "#f9fafb", color: "#2563eb", fontSize: 12, fontWeight: 700, padding: "8px", cursor: "pointer" }}>← Ver todas as faturas</button>
-                  )}
-                  {clientesFiltrados.length === 0 ? (
-                    <div style={{ padding: 28, textAlign: "center", color: "#9ca3af", fontSize: 12.5 }}>Nenhum cliente nesse filtro.</div>
-                  ) : clientesFiltrados.map(c => {
-                    const inad = c.situacao === "inadimplente";
-                    const selc = c.proposta.id === clienteSel;
-                    return (
-                      <button key={c.proposta.id} onClick={() => { setClienteSel(c.proposta.id); setSelecionadasFat(new Set()); }}
-                        style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: selc ? "#eff6ff" : "#ffffff", cursor: "pointer" }}>
-                        <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                            <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
-                            <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", flexShrink: 0 }}>✏️</span>
-                          </div>
-                          <div style={{ fontFamily: "monospace", fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            <span style={{ color: c.proposta.dados_customizados?.os ? "#7c3aed" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.os || "sem OS"}</span>
-                            <span style={{ color: "#d1d5db" }}> · </span>
-                            <span style={{ color: c.proposta.dados_customizados?.custcode ? "#2563eb" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.custcode || "sem custcode"}</span>
-                          </div>
-                          <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
-                        </div>
-                        <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          {inad ? (
-                            <>
-                              <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 800 }}>{formatBRL(c.totalAberto)}</div>
-                              <div style={{ color: "#9ca3af", fontSize: 10 }}>{c.atrasadas} mês · {c.atrasoMax}d</div>
-                            </>
-                          ) : (
-                            <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>em dia</div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
-              {/* COLUNA DIREITA — conteúdo ORIGINAL (filtros + tabela) */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div style={{ ...cardStyle, padding: isMobile ? 12 : 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                {([
-                  { k: "vencendo_7d", l: "🟡 Próximos 7 dias", cor: "#f59e0b" },
-                  { k: "hoje",        l: "⏰ Vencendo hoje",    cor: "#ea580c" },
-                  { k: "vencidos",    l: "🔴 Vencidos",         cor: "#dc2626" },
-                  { k: "este_mes",    l: "📅 Este mês",         cor: "#2563eb" },
-                  { k: "todos",       l: "🌐 Todos",            cor: "#6b7280" },
-                ] as { k: FiltroVenc; l: string; cor: string }[]).map(f => {
-                  const at = filtroVenc === f.k;
-                  return (
-                    <button key={f.k} onClick={() => { setFiltroVenc(f.k); setSelecionadasFat(new Set()); }}
-                      style={{ background: at ? `${f.cor}15` : "#ffffff", color: at ? f.cor : "#6b7280", border: `1px solid ${at ? f.cor : "#e5e7eb"}`, borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: at ? 700 : 600, whiteSpace: "nowrap" }}>
-                      {f.l}
-                    </button>
-                  );
-                })}
                 <input value={filtroBusca} onChange={e => { const v = e.target.value; setFiltroBusca(v); if (v) { setFiltroVenc("todos"); setClienteSel(null); } }} placeholder="🔍 Nome, CPF, OS, telefone, plano..."
-                  style={{ ...inputStyle, flex: 1, minWidth: 180, padding: "7px 12px" }} />
+                  style={{ ...inputStyle, flex: 1, minWidth: 200, padding: "8px 12px" }} />
               </div>
 
-              {/* 🆕 MÊS DE INSTALAÇÃO (mês a mês) + CAIXA DE SELEÇÃO DE COLUNAS */}
-              <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", position: "relative" }}>
-                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🛠️ Instalaram em:</span>
-                <input type="month" value={mesInst} onChange={e => { setMesInst(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
-                {mesInst && (
-                  <button onClick={() => setMesInst("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar mês</button>
-                )}
-                <div style={{ marginLeft: "auto", position: "relative" }}>
-                  <button onClick={() => setShowColsMenu(s => !s)} style={{ background: showColsMenu || colsExtras.size > 0 ? "#eff6ff" : "#ffffff", color: showColsMenu || colsExtras.size > 0 ? "#2563eb" : "#6b7280", border: `1px solid ${showColsMenu || colsExtras.size > 0 ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 20, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
-                    🧩 Colunas{colsExtras.size > 0 ? ` (${colsExtras.size})` : ""}
-                  </button>
-                  {showColsMenu && (
-                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, minWidth: 220 }}>
-                      <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px" }}>Colunas da planilha</p>
-                      {COLS_EXTRAS_DEF.map(c => (
-                        <label key={c.k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px", cursor: "pointer", borderRadius: 6 }}>
-                          <input type="checkbox" checked={colsExtras.has(c.k)} onChange={() => toggleColExtra(c.k)} style={{ accentColor: "#2563eb" }} />
-                          <span style={{ color: "#374151", fontSize: 12.5, fontWeight: 600 }}>{c.label}</span>
-                        </label>
-                      ))}
-                      <button onClick={() => setShowColsMenu(false)} style={{ width: "100%", marginTop: 8, background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px", fontSize: 11.5, cursor: "pointer", fontWeight: 700 }}>Fechar</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
+              {/* ░░ STATUS + MÊS DE INSTALAÇÃO ░░ */}
               <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 4 }}>Status:</span>
                 {([
@@ -1370,15 +1386,20 @@ export default function CobrancaPage() {
                     </button>
                   );
                 })}
+                <span style={{ width: 1, height: 22, background: "#e5e7eb", margin: "0 4px" }} />
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🛠️ Instalaram em:</span>
+                <input type="month" value={mesInst} onChange={e => { setMesInst(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                {mesInst && (
+                  <button onClick={() => setMesInst("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar mês</button>
+                )}
               </div>
 
+              {/* ░░ HISTÓRICO REAL (quando um cliente está selecionado) ░░ */}
               {clienteSel != null && (() => {
                 const hist = histPlanilha.get(clienteSel) || [];
                 if (hist.length === 0) return null;
                 const ult10 = hist.slice(-10);
-                // precoce = pagou após 30 dias (cód 03/04) em alguma fatura
                 const precoce = hist.some(r => r.codigo_status === "03" || r.codigo_status === "04");
-                // dias regressivos: a partir da última fatura COM data (paga ou vencimento) + 1 mês
                 const comData = hist.filter(r => r.data_pagamento || r.data_vencimento);
                 let regressiva: { dias: number; data: Date } | null = null;
                 if (comData.length > 0) {
@@ -1396,13 +1417,15 @@ export default function CobrancaPage() {
                   if (cod === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "Não pagou" };
                   return { bg: "#f3f4f6", cor: "#6b7280", txt: "—" };
                 };
+                const cliNome = clientes.find(c => c.proposta.id === clienteSel)?.proposta?.nome || "—";
                 return (
-                  <div style={{ ...cardStyle, overflow: "hidden", marginBottom: 14 }}>
+                  <div style={{ ...cardStyle, overflow: "hidden" }}>
                     <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: "#1f2937" }}>📑 Histórico de faturas (planilha)</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#1f2937" }}>📑 Histórico de faturas (planilha) · {cliNome}</span>
                       <span style={{ fontSize: 11, color: "#9ca3af" }}>últimas {ult10.length} de {hist.length}</span>
+                      <button onClick={() => setClienteSel(null)} style={{ marginLeft: "auto", background: "#f9fafb", color: "#2563eb", border: "1px solid #e5e7eb", borderRadius: 8, padding: "5px 12px", fontSize: 11.5, cursor: "pointer", fontWeight: 700 }}>← Ver todas as faturas</button>
                       {precoce && (
-                        <span style={{ marginLeft: "auto", background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999 }}>
+                        <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999 }}>
                           ⚠️ INADIMPLÊNCIA PRECOCE
                         </span>
                       )}
@@ -1459,6 +1482,7 @@ export default function CobrancaPage() {
                 );
               })()}
 
+              {/* ░░ TABELA PRINCIPAL — largura total, TODAS as colunas da planilha ░░ */}
               <div style={{ ...cardStyle, overflow: "hidden" }}>
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                   <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 600 }}>
@@ -1481,47 +1505,46 @@ export default function CobrancaPage() {
                     <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
                     <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhuma fatura nesse filtro</p>
                     <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 14px" }}>
-                      As faturas são calculadas pra cada cliente <b>INSTALADO</b> a partir de <b>data_instalacao</b> + dia de <b>vencimento</b> + <b>valor_plano</b>.<br/>
+                      As faturas vêm da planilha de status (uma linha por fatura). Suba a planilha em <b>Atualizar planilha</b> pra preencher os dados.<br/>
                       Confira também os filtros ativos acima — eles se somam.
                     </p>
-                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setClienteSel(null); setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setFiltroVencSel(""); setClienteSel(null); setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
                       style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
                       ✕ Limpar todos os filtros
                     </button>
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 900 : "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1300 }}>
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
                           <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          {["Cliente", "OS", "Custcode", "Fatura", "Vencimento", "Valor", ...COLS_EXTRAS_DEF.filter(c => colsExtras.has(c.k)).map(c => c.label), "Status", "Ações"].map(h => (
+                          {["Cliente", "OS", "Custcode", "Nº fat.", "Vencimento", "Valor", "Status", "Código", "Detalhamento", "Mês gross", "Pagamento", "Banco", "Opção", "Obs. (DACC)", "Fraude", "Churn", "Ações"].map(h => (
                             <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
-                        {/* 🆕 linha de filtros por coluna */}
+                        {/* linha de filtros por coluna */}
                         <tr style={{ background: "#fff" }}>
                           <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>
                           {([
                             { v: colNome, set: setColNome, ph: "filtrar nome" },
                             { v: colOs, set: setColOs, ph: "OS" },
                             { v: colCust, set: setColCust, ph: "custcode" },
-                            { v: colFat, set: setColFat, ph: "ex: Mar/26" },
+                            { v: "", set: (_: string) => {}, ph: "", off: true },
                             { v: colVenc, set: setColVenc, ph: "dd/mm" },
                             { v: colValor, set: setColValor, ph: "valor" },
-                          ] as { v: string; set: (s: string) => void; ph: string }[]).map((c, i) => (
+                          ] as { v: string; set: (s: string) => void; ph: string; off?: boolean }[]).map((c, i) => (
                             <th key={i} style={{ padding: "4px 8px 8px", borderBottom: "1px solid #e5e7eb" }}>
-                              <input value={c.v} onChange={e => { c.set(e.target.value); setSelecionadasFat(new Set()); }} placeholder={c.ph}
-                                style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                              {!c.off && (
+                                <input value={c.v} onChange={e => { c.set(e.target.value); setSelecionadasFat(new Set()); }} placeholder={c.ph}
+                                  style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                              )}
                             </th>
                           ))}
-                          {/* 🆕 espaços das colunas extras (sem filtro) */}
-                          {COLS_EXTRAS_DEF.filter(cd => colsExtras.has(cd.k)).map(cd => (
-                            <th key={`x_${cd.k}`} style={{ borderBottom: "1px solid #e5e7eb" }}></th>
-                          ))}
-                          <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>
+                          {/* colunas da planilha sem filtro de coluna individual */}
+                          {Array.from({ length: 10 }).map((_, i) => <th key={`x${i}`} style={{ borderBottom: "1px solid #e5e7eb" }}></th>)}
                           <th style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 8px" }}>
-                            {(colNome || colOs || colCust || colFat || colVenc || colValor) && (
+                            {(colNome || colOs || colCust || colVenc || colValor) && (
                               <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
                                 title="Limpar filtros" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕</button>
                             )}
@@ -1533,6 +1556,8 @@ export default function CobrancaPage() {
                           const k = chaveSelecao(f);
                           const sel = selecionadasFat.has(k);
                           const c = corStatus(f.status_visual);
+                          const fraude = f.suspensao_fraude === true;
+                          const churn = f.churn === true;
                           return (
                             <tr key={k}
                               style={{ borderTop: "1px solid #f3f4f6", background: sel ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc") }}>
@@ -1540,7 +1565,8 @@ export default function CobrancaPage() {
                                 <input type="checkbox" checked={sel} onChange={() => toggleSelFat(k)} style={{ cursor: "pointer", width: 16, height: 16, accentColor: "#2563eb" }} />
                               </td>
                               <td style={{ padding: "12px", maxWidth: 200, overflow: "hidden" }}>
-                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.proposta.nome || "—"}</div>
+                                <div style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }}
+                                  onClick={() => { setClienteSel(f.proposta.id); setSelecionadasFat(new Set()); }} title="Ver histórico do cliente">{f.proposta.nome || "—"}</div>
                                 <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{f.proposta.telefone1 || "—"} · {f.proposta.plano || "—"}</div>
                               </td>
                               <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
@@ -1556,10 +1582,13 @@ export default function CobrancaPage() {
                                   <button onClick={() => abrirEdicaoCliente(f.proposta)} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
                                 </span>
                               </td>
-                              <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
-                                <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 700 }}>{formatMesExtenso(f.numero_referencia)}</div>
-                                {f.proporcional && <div style={{ color: "#a855f7", fontSize: 10, fontWeight: 600 }}>⚠ 1ª (+{f.dias_cobertos - 30}d proporcional)</div>}
+                              {/* 🆕 Nº FATURA (cru da planilha) */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
+                                {f.numero_fatura != null
+                                  ? <span style={{ background: "#eff6ff", color: "#2563eb", fontWeight: 800, fontSize: 12, padding: "2px 9px", borderRadius: 999 }}>{f.numero_fatura}</span>
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
                               </td>
+                              {/* VENCIMENTO + atraso */}
                               <td style={{ padding: "12px", whiteSpace: "nowrap" }}>
                                 <div style={{ color: "#1f2937", fontSize: 12, fontWeight: 600 }}>{formatData(f.data_vencimento)}</div>
                                 {f.status_visual === "atrasada" && (
@@ -1568,34 +1597,50 @@ export default function CobrancaPage() {
                                 {f.status_visual === "pendente" && f.dias_atraso < 0 && (
                                   <div style={{ color: "#16a34a", fontSize: 10, fontWeight: 600 }}>🟢 Em {Math.abs(f.dias_atraso)}d</div>
                                 )}
-                                {(f.status_visual === "paga" || f.status_visual === "paga_atraso" || f.status_visual === "paga_parcial") && f.data_pagamento && (
-                                  <div style={{ color: STATUS_META[f.status_visual].color, fontSize: 10, fontWeight: 600 }}>✓ {STATUS_META[f.status_visual].icone} {formatData(f.data_pagamento)}</div>
-                                )}
-                                {f.observacoes && (
-                                  <div style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }} title={f.observacoes}>
-                                    💬 {f.observacoes}
-                                  </div>
-                                )}
                               </td>
+                              {/* VALOR */}
                               <td style={{ padding: "12px", color: "#16a34a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{formatBRL(f.valor)}</td>
-                              {/* 🆕 colunas extras da planilha (linha de faturas_status) */}
-                              {colsExtras.size > 0 && (() => {
-                                const rp = statusMap.get(`${f.proposta.id}_${f.numero_referencia}`) as any;
-                                return COLS_EXTRAS_DEF.filter(cd => colsExtras.has(cd.k)).map(cd => {
-                                  const val = cd.render(rp);
-                                  const alerta = (cd.k === "suspensao_fraude" || cd.k === "churn") && val === "SIM";
-                                  return (
-                                    <td key={cd.k} style={{ padding: "12px", fontSize: 11.5, whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", color: alerta ? "#b91c1c" : (val === "—" ? "#d1d5db" : "#374151"), fontWeight: alerta ? 800 : 600 }} title={val !== "—" ? val : undefined}>
-                                      {val}
-                                    </td>
-                                  );
-                                });
-                              })()}
+                              {/* STATUS */}
                               <td style={{ padding: "12px" }}>
                                 <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                                   {c.label}
                                 </span>
                               </td>
+                              {/* 🆕 CÓDIGO da planilha */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: "#374151", fontWeight: 700, fontSize: 12 }}>{f.codigo_status || "—"}</td>
+                              {/* 🆕 DETALHAMENTO */}
+                              <td style={{ padding: "12px", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: f.detalhamento ? "#374151" : "#d1d5db", fontSize: 11.5 }} title={f.detalhamento || undefined}>{f.detalhamento || "—"}</td>
+                              {/* 🆕 MÊS GROSS */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.mes_gross ? "#6b7280" : "#d1d5db", fontSize: 11.5 }}>{f.mes_gross ? formatData(f.mes_gross) : "—"}</td>
+                              {/* 🆕 PAGAMENTO */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: f.data_pagamento ? 700 : 400, fontSize: 11.5 }}>{f.data_pagamento ? formatData(f.data_pagamento) : "—"}</td>
+                              {/* 🆕 BANCO */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", color: f.nome_banco ? "#374151" : "#d1d5db", fontSize: 11.5 }}>{f.nome_banco || "—"}</td>
+                              {/* 🆕 OPÇÃO PAGAMENTO */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", fontSize: 11.5 }}>
+                                {f.opcao_pagamento
+                                  ? <span style={{ background: "#f5f3ff", color: "#7c3aed", fontWeight: 700, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>{f.opcao_pagamento}</span>
+                                  : <span style={{ color: "#d1d5db" }}>—</span>}
+                              </td>
+                              {/* 🆕 OBSERVAÇÃO (DACC) */}
+                              <td style={{ padding: "12px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: f.observacoes ? "#6b7280" : "#d1d5db", fontSize: 11 }} title={f.observacoes || undefined}>{f.observacoes || "—"}</td>
+                              {/* 🆕 FRAUDE */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
+                                {f.suspensao_fraude == null
+                                  ? <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
+                                  : fraude
+                                    ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontWeight: 800, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
+                                    : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                              </td>
+                              {/* 🆕 CHURN */}
+                              <td style={{ padding: "12px", whiteSpace: "nowrap", textAlign: "center" }}>
+                                {f.churn == null
+                                  ? <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
+                                  : churn
+                                    ? <span style={{ background: "#fff7ed", color: "#c2410c", fontWeight: 800, fontSize: 10.5, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
+                                    : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                              </td>
+                              {/* AÇÕES */}
                               <td style={{ padding: "12px" }}>
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                   {podeMudarStatus ? (
@@ -1633,7 +1678,72 @@ export default function CobrancaPage() {
                   </div>
                 )}
               </div>
-              </div>
+
+              {/* ░░ MENU LATERAL (drawer) de clientes — abre/fecha no botão 👥 Clientes ░░ */}
+              {showSidebar && (
+                <div onClick={() => setShowSidebar(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", zIndex: 200, display: "flex", justifyContent: "flex-start" }}>
+                  <div onClick={e => e.stopPropagation()} style={{ width: isMobile ? "88%" : 380, maxWidth: "92vw", height: "100%", background: "#fff", boxShadow: "4px 0 24px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column" }}>
+                    <div style={{ padding: "14px 16px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: "#1f2937" }}>👥 Clientes</span>
+                      <button onClick={() => setShowSidebar(false)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>✕</button>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #f1f5f9" }}>
+                      {([
+                        { k: "inadimplentes", l: "Inadimplentes", n: qtdInad, cor: "#dc2626" },
+                        { k: "em_dia", l: "Em dia", n: qtdEmDia, cor: "#16a34a" },
+                        { k: "todos", l: "Todos", n: clientes.length, cor: "#475569" },
+                      ] as { k: "inadimplentes" | "em_dia" | "todos"; l: string; n: number; cor: string }[]).map(seg => {
+                        const at = segmento === seg.k;
+                        return (
+                          <button key={seg.k} onClick={() => { setSegmento(seg.k); setClienteSel(null); }}
+                            style={{ flex: 1, background: at ? seg.cor : "#ffffff", color: at ? "#ffffff" : "#6b7280", border: `1px solid ${at ? seg.cor : "#e5e7eb"}`, borderRadius: 10, padding: "7px 4px", fontSize: 11, fontWeight: 700, cursor: "pointer", lineHeight: 1.3 }}>
+                            {seg.l}<br /><span style={{ fontSize: 15, fontWeight: 800 }}>{seg.n}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
+                      <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Nome, CPF ou OS..." style={{ ...inputStyle, padding: "8px 12px" }} />
+                    </div>
+                    <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
+                      {clientesFiltrados.length === 0 ? (
+                        <div style={{ padding: 28, textAlign: "center", color: "#9ca3af", fontSize: 12.5 }}>Nenhum cliente nesse filtro.</div>
+                      ) : clientesFiltrados.map(c => {
+                        const inad = c.situacao === "inadimplente";
+                        const selc = c.proposta.id === clienteSel;
+                        return (
+                          <button key={c.proposta.id} onClick={() => { setClienteSel(c.proposta.id); setSelecionadasFat(new Set()); setShowSidebar(false); }}
+                            style={{ width: "100%", textAlign: "left", display: "flex", gap: 10, alignItems: "center", padding: "11px 12px", border: "none", borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}`, borderBottom: "1px solid #f6f7f9", background: selc ? "#eff6ff" : "#ffffff", cursor: "pointer" }}>
+                            <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                                <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
+                                <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", flexShrink: 0 }}>✏️</span>
+                              </div>
+                              <div style={{ fontFamily: "monospace", fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                <span style={{ color: c.proposta.dados_customizados?.os ? "#7c3aed" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.os || "sem OS"}</span>
+                                <span style={{ color: "#d1d5db" }}> · </span>
+                                <span style={{ color: c.proposta.dados_customizados?.custcode ? "#2563eb" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.custcode || "sem custcode"}</span>
+                              </div>
+                              <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
+                            </div>
+                            <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                              {inad ? (
+                                <>
+                                  <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 800 }}>{formatBRL(c.totalAberto)}</div>
+                                  <div style={{ color: "#9ca3af", fontSize: 10 }}>{c.atrasadas} mês · {c.atrasoMax}d</div>
+                                </>
+                              ) : (
+                                <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>em dia</div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -178,6 +178,14 @@ export default function CobrancaAtualizacao() {
     if (faltaTabela) { setFeedback({ tipo: "erro", titulo: "Tabela faltando", msg: "A tabela faturas_status não existe. Rode o SQL de setup primeiro." }); return; }
     const matched = res.clientes.filter(c => c.matched && c.proposta);
     if (matched.length === 0) { setFeedback({ tipo: "aviso", titulo: "Nada pra gravar", msg: "Nenhuma ordem casou com uma venda do CRM (dados_customizados.os)." }); return; }
+
+    // 🛡️ Pré-checagem: a coluna NÚMERO FATURA foi mapeada? Sem ela, todas as faturas
+    //    seriam puladas e a tela de Cobrança ficaria vazia. Avisa ANTES de gravar.
+    if (mapCols.numero_fatura < 0) {
+      setFeedback({ tipo: "erro", titulo: "Coluna 'Número da fatura' não mapeada", msg: "Sem essa coluna, nenhuma fatura é gravada (a Cobrança usa o número da fatura). Vá no passo 2 e selecione a coluna NÚMERO FATURA da planilha antes de gravar." });
+      return;
+    }
+
     setGravando(true);
     try {
       let custOk = 0;
@@ -186,13 +194,16 @@ export default function CobrancaAtualizacao() {
         const { error } = await supabase.from("proposta").update({ dados_customizados: novo }).eq("id", c.proposta!.id);
         if (!error) custOk++;
       }
+
       // 🆕 Grava CADA fatura da planilha (1..10), não agrupa mais por mês.
-      //    Chave de upsert agora é (proposta_id, numero_fatura) — ver SQL cobranca_faturas_extra.
+      //    Chave de upsert = (proposta_id, numero_fatura) — ver SQL cobranca_faturas_extra.
       const payload: any[] = [];
+      let semNumero = 0;
       for (const c of matched) {
         const vistos = new Set<number>();
         for (const f of c.faturas) {
-          if (f.numeroFatura == null || vistos.has(f.numeroFatura)) continue; // 1 linha por número de fatura
+          if (f.numeroFatura == null) { semNumero++; continue; }   // sem nº de fatura → não dá pra gravar por fatura
+          if (vistos.has(f.numeroFatura)) continue;                // 1 linha por número de fatura
           vistos.add(f.numeroFatura);
           payload.push({
             proposta_id: c.proposta!.id,
@@ -215,13 +226,34 @@ export default function CobrancaAtualizacao() {
           });
         }
       }
+
+      // 🛡️ Nada pra gravar mesmo tendo clientes casados = a planilha não trouxe número de fatura.
+      if (payload.length === 0) {
+        setGravando(false);
+        setFeedback({ tipo: "erro", titulo: "Nenhuma fatura com número", msg: `${matched.length} cliente(s) casaram com o CRM, mas nenhuma linha tinha NÚMERO FATURA preenchido (${semNumero} linha(s) sem número). Confira no passo 2 se a coluna 'Número da fatura' aponta pra coluna certa da planilha.` });
+        return;
+      }
+
+      // 🆕 Grava em lotes. AGORA o erro do upsert NÃO é engolido — para no 1º e mostra.
       let fatOk = 0;
+      let primeiroErro: string | null = null;
       for (let i = 0; i < payload.length; i += 500) {
         const chunk = payload.slice(i, i + 500);
         const { error } = await supabase.from("faturas_status").upsert(chunk, { onConflict: "proposta_id,numero_fatura" });
-        if (!error) fatOk += chunk.length;
+        if (error) {
+          primeiroErro = `${error.code ? `[${error.code}] ` : ""}${error.message}${(error as any).hint ? ` — ${(error as any).hint}` : ""}`;
+          break;
+        }
+        fatOk += chunk.length;
       }
-      setFeedback({ tipo: "ok", titulo: "Cobrança atualizada!", msg: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s).${res.semVenda.length > 0 ? ` ${res.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });
+
+      if (primeiroErro) {
+        setGravando(false);
+        setFeedback({ tipo: "erro", titulo: "O banco recusou a gravação", msg: `Gravou ${fatOk} antes de falhar. Erro: ${primeiroErro}` });
+        return;
+      }
+
+      setFeedback({ tipo: "ok", titulo: "Cobrança atualizada!", msg: `${fatOk} fatura(s) em ${matched.length} cliente(s). ${custOk} custcode(s) preenchido(s).${semNumero > 0 ? ` ${semNumero} linha(s) sem número de fatura ignorada(s).` : ""}${res.semVenda.length > 0 ? ` ${res.semVenda.length} ordem(ns) sem venda no CRM.` : ""}` });
     } catch (e: any) {
       setFeedback({ tipo: "erro", titulo: "Erro ao gravar", msg: e?.message || "Falha inesperada." });
     }
