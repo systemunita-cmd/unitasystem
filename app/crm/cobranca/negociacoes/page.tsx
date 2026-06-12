@@ -255,6 +255,20 @@ const CAMPOS_PLANILHA = [
   { key: "codigo",   label: "🔖 Código / identificador",  obrigatorio: false },
 ] as const;
 
+// 🆕 colunas extras da planilha que podem ser exibidas na tabela de faturas
+const COLS_EXTRAS_DEF: { k: string; label: string; render: (r: any) => string }[] = [
+  { k: "numero_fatura", label: "Nº fatura",      render: r => r?.numero_fatura != null ? String(r.numero_fatura) : "—" },
+  { k: "codigo_status", label: "Código",          render: r => r?.codigo_status || "—" },
+  { k: "detalhamento",  label: "Detalhamento",    render: r => r?.detalhamento || "—" },
+  { k: "mes_gross",     label: "Mês gross",       render: r => r?.mes_gross ? new Date(String(r.mes_gross) + "T00:00:00").toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" }) : "—" },
+  { k: "data_pagamento",label: "Pagamento",       render: r => r?.data_pagamento ? new Date(String(r.data_pagamento) + "T00:00:00").toLocaleDateString("pt-BR") : "—" },
+  { k: "nome_banco",    label: "Banco",           render: r => r?.nome_banco || "—" },
+  { k: "observacao",    label: "Obs. (DACC)",     render: r => r?.observacao || "—" },
+  { k: "opcao_pagamento", label: "Opção pagto",   render: r => r?.opcao_pagamento || "—" },
+  { k: "suspensao_fraude", label: "Fraude",       render: r => r?.suspensao_fraude == null ? "—" : (r.suspensao_fraude ? "SIM" : "não") },
+  { k: "churn",         label: "Churn",           render: r => r?.churn == null ? "—" : (r.churn ? "SIM" : "não") },
+];
+
 export default function CobrancaPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string>("");
@@ -347,8 +361,22 @@ export default function CobrancaPage() {
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
   // 🆕 intervalo personalizado de vencimento (de–até)
-  const [vencDe, setVencDe] = useState("");
-  const [vencAte, setVencAte] = useState("");
+  // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês) — substitui o intervalo de vencimento
+  const [mesInst, setMesInst] = useState("");
+  // 🆕 caixa de seleção de colunas da planilha visíveis na tabela
+  const [colsExtras, setColsExtras] = useState<Set<string>>(new Set());
+  const [showColsMenu, setShowColsMenu] = useState(false);
+  useEffect(() => {
+    try { const raw = window.localStorage.getItem("cobranca_cols_extras"); if (raw) setColsExtras(new Set(JSON.parse(raw))); } catch { /* noop */ }
+  }, []);
+  const toggleColExtra = (k: string) => {
+    setColsExtras(prev => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      try { window.localStorage.setItem("cobranca_cols_extras", JSON.stringify(Array.from(n))); } catch { /* noop */ }
+      return n;
+    });
+  };
   // 🆕 filtros por coluna (cabeçalho da tabela)
   const [colNome, setColNome] = useState("");
   const [colOs, setColOs] = useState("");
@@ -652,9 +680,8 @@ export default function CobrancaPage() {
       arr = arr.filter(f => buscaMatch(f.proposta, filtroBusca));
     }
 
-    // 🆕 intervalo personalizado por data de vencimento
-    if (vencDe) { const d = new Date(vencDe + "T00:00:00"); arr = arr.filter(f => f.data_vencimento >= d); }
-    if (vencAte) { const d = new Date(vencAte + "T23:59:59"); arr = arr.filter(f => f.data_vencimento <= d); }
+    // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês)
+    if (mesInst) arr = arr.filter(f => String(f.proposta.data_instalacao || "").startsWith(mesInst));
 
     // 🆕 filtros por coluna
     const inc = (v: any, q: string) => String(v ?? "").toLowerCase().includes(q.toLowerCase());
@@ -672,7 +699,7 @@ export default function CobrancaPage() {
       if (oa !== ob) return oa - ob;
       return a.data_vencimento.getTime() - b.data_vencimento.getTime();
     });
-  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, vencDe, vencAte, colNome, colOs, colCust, colFat, colVenc, colValor]);
+  }, [todasFaturas, filtroVenc, filtroStatus, filtroBusca, clienteSel, mesInst, colNome, colOs, colCust, colFat, colVenc, colValor]);
 
   // 🆕 Lista de clientes do lado: agrupa faturas por cliente e calcula situação.
   const clientes = useMemo<any[]>(() => {
@@ -700,11 +727,13 @@ export default function CobrancaPage() {
     let arr = clientes;
     if (segmento === "inadimplentes") arr = arr.filter(c => c.situacao === "inadimplente");
     else if (segmento === "em_dia") arr = arr.filter(c => c.situacao === "em_dia");
+    // 🆕 clientes que INSTALARAM no mês escolhido
+    if (mesInst) arr = arr.filter(c => String(c.proposta.data_instalacao || "").startsWith(mesInst));
     if (buscaCliente) {
       arr = arr.filter(c => buscaMatch(c.proposta, buscaCliente));
     }
     return arr;
-  }, [clientes, segmento, buscaCliente]);
+  }, [clientes, segmento, buscaCliente, mesInst]);
 
   const kpis = useMemo(() => {
     const hoje = new Date();
@@ -1270,19 +1299,34 @@ export default function CobrancaPage() {
                     </button>
                   );
                 })}
-                <input value={filtroBusca} onChange={e => setFiltroBusca(e.target.value)} placeholder="🔍 Nome, CPF, OS, telefone, plano..."
+                <input value={filtroBusca} onChange={e => { const v = e.target.value; setFiltroBusca(v); if (v) { setFiltroVenc("todos"); setClienteSel(null); } }} placeholder="🔍 Nome, CPF, OS, telefone, plano..."
                   style={{ ...inputStyle, flex: 1, minWidth: 180, padding: "7px 12px" }} />
               </div>
 
-              {/* 🆕 INTERVALO PERSONALIZADO POR DATA DE VENCIMENTO */}
-              <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>📅 Vencimento de:</span>
-                <input type="date" value={vencDe} onChange={e => { setVencDe(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
-                <span style={{ color: "#9ca3af", fontSize: 12 }}>até</span>
-                <input type="date" value={vencAte} onChange={e => { setVencAte(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
-                {(vencDe || vencAte) && (
-                  <button onClick={() => { setVencDe(""); setVencAte(""); }} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar período</button>
+              {/* 🆕 MÊS DE INSTALAÇÃO (mês a mês) + CAIXA DE SELEÇÃO DE COLUNAS */}
+              <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", position: "relative" }}>
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🛠️ Instalaram em:</span>
+                <input type="month" value={mesInst} onChange={e => { setMesInst(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                {mesInst && (
+                  <button onClick={() => setMesInst("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar mês</button>
                 )}
+                <div style={{ marginLeft: "auto", position: "relative" }}>
+                  <button onClick={() => setShowColsMenu(s => !s)} style={{ background: showColsMenu || colsExtras.size > 0 ? "#eff6ff" : "#ffffff", color: showColsMenu || colsExtras.size > 0 ? "#2563eb" : "#6b7280", border: `1px solid ${showColsMenu || colsExtras.size > 0 ? "#bfdbfe" : "#e5e7eb"}`, borderRadius: 20, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                    🧩 Colunas{colsExtras.size > 0 ? ` (${colsExtras.size})` : ""}
+                  </button>
+                  {showColsMenu && (
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 50, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, minWidth: 220 }}>
+                      <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, margin: "0 0 8px" }}>Colunas da planilha</p>
+                      {COLS_EXTRAS_DEF.map(c => (
+                        <label key={c.k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 4px", cursor: "pointer", borderRadius: 6 }}>
+                          <input type="checkbox" checked={colsExtras.has(c.k)} onChange={() => toggleColExtra(c.k)} style={{ accentColor: "#2563eb" }} />
+                          <span style={{ color: "#374151", fontSize: 12.5, fontWeight: 600 }}>{c.label}</span>
+                        </label>
+                      ))}
+                      <button onClick={() => setShowColsMenu(false)} style={{ width: "100%", marginTop: 8, background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px", fontSize: 11.5, cursor: "pointer", fontWeight: 700 }}>Fechar</button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
@@ -1412,10 +1456,14 @@ export default function CobrancaPage() {
                   <div style={{ padding: 40, textAlign: "center" }}>
                     <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
                     <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhuma fatura nesse filtro</p>
-                    <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>
+                    <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 14px" }}>
                       As faturas são calculadas pra cada cliente <b>INSTALADO</b> a partir de <b>data_instalacao</b> + dia de <b>vencimento</b> + <b>valor_plano</b>.<br/>
-                      Sem instalados ou sem esses 3 campos preenchidos, nada aparece aqui.
+                      Confira também os filtros ativos acima — eles se somam.
                     </p>
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setClienteSel(null); setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
+                      style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
+                      ✕ Limpar todos os filtros
+                    </button>
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
@@ -1423,7 +1471,7 @@ export default function CobrancaPage() {
                       <thead>
                         <tr style={{ background: "#f9fafb" }}>
                           <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          {["Cliente", "OS", "Custcode", "Fatura", "Vencimento", "Valor", "Status", "Ações"].map(h => (
+                          {["Cliente", "OS", "Custcode", "Fatura", "Vencimento", "Valor", ...COLS_EXTRAS_DEF.filter(c => colsExtras.has(c.k)).map(c => c.label), "Status", "Ações"].map(h => (
                             <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
@@ -1443,6 +1491,11 @@ export default function CobrancaPage() {
                                 style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
                             </th>
                           ))}
+                          {/* 🆕 espaços das colunas extras (sem filtro) */}
+                          {COLS_EXTRAS_DEF.filter(cd => colsExtras.has(cd.k)).map(cd => (
+                            <th key={`x_${cd.k}`} style={{ borderBottom: "1px solid #e5e7eb" }}></th>
+                          ))}
+                          <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>
                           <th style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 8px" }}>
                             {(colNome || colOs || colCust || colFat || colVenc || colValor) && (
                               <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFat(""); setColVenc(""); setColValor(""); }}
@@ -1501,6 +1554,19 @@ export default function CobrancaPage() {
                                 )}
                               </td>
                               <td style={{ padding: "12px", color: "#16a34a", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>{formatBRL(f.valor)}</td>
+                              {/* 🆕 colunas extras da planilha (linha de faturas_status) */}
+                              {colsExtras.size > 0 && (() => {
+                                const rp = statusMap.get(`${f.proposta.id}_${f.numero_referencia}`) as any;
+                                return COLS_EXTRAS_DEF.filter(cd => colsExtras.has(cd.k)).map(cd => {
+                                  const val = cd.render(rp);
+                                  const alerta = (cd.k === "suspensao_fraude" || cd.k === "churn") && val === "SIM";
+                                  return (
+                                    <td key={cd.k} style={{ padding: "12px", fontSize: 11.5, whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", color: alerta ? "#b91c1c" : (val === "—" ? "#d1d5db" : "#374151"), fontWeight: alerta ? 800 : 600 }} title={val !== "—" ? val : undefined}>
+                                      {val}
+                                    </td>
+                                  );
+                                });
+                              })()}
                               <td style={{ padding: "12px" }}>
                                 <span style={{ background: c.bg, color: c.color, border: `1px solid ${c.border}`, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
                                   {c.label}
