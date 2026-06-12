@@ -74,9 +74,11 @@ export default function CobrancaAtualizacao() {
     reader.onload = ev => {
       try {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-        const wb = XLSX.read(data, { type: "array" });
+        // 🆕 cellDates + raw:true → datas vêm como objeto Date REAL (não o texto "set/25").
+        //    Resolve o bug do MÊS GROSS virar 2001: a célula tem a data completa por baixo.
+        const wb = XLSX.read(data, { type: "array", cellDates: true });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: false, defval: "" });
+        const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: "" });
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
         setLinhas(rows); setPagina(1);
         const head = (rows[0] || []).map((c: any) => String(c || "").toLowerCase().trim());
@@ -188,31 +190,39 @@ export default function CobrancaAtualizacao() {
 
     setGravando(true);
     try {
-      // 🆕 monta a lista de UPDATEs necessários (custcode novo e/ou data_instalacao = mês gross)
       let custOk = 0;
       let instOk = 0;
-      const updates: { id: number; update: any; mudaCust: boolean; mudaInst: boolean }[] = [];
-      for (const c of matched) {
-        const mg = c.faturas.map(f => f.mesGross).find(Boolean) || null;
-        const instCorreta = mg ? `${String(mg).slice(0, 7)}-01` : null;
-        const instAtual = String(c.proposta!.data_instalacao || "").slice(0, 10);
-        const mudaCust = !!(c.custcodeNovo && c.custcode);
-        const mudaInst = !!(instCorreta && instCorreta !== instAtual);
-        if (!mudaCust && !mudaInst) continue;
-        const update: any = {};
-        if (mudaCust) update.dados_customizados = { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode };
-        if (mudaInst) update.data_instalacao = instCorreta;
-        updates.push({ id: c.proposta!.id, update, mudaCust, mudaInst });
+
+      // 1) CUSTCODE — só de quem realmente mudou (geralmente poucos). Em lotes paralelos.
+      const custUpdates = matched
+        .filter(c => c.custcodeNovo && c.custcode)
+        .map(c => ({ id: c.proposta!.id, dados: { ...(c.proposta!.dados_customizados || {}), custcode: c.custcode } }));
+      const LOTE = 25;
+      for (let i = 0; i < custUpdates.length; i += LOTE) {
+        const lote = custUpdates.slice(i, i + LOTE);
+        const rs = await Promise.all(lote.map(u => supabase.from("proposta").update({ dados_customizados: u.dados }).eq("id", u.id)));
+        custOk += rs.filter(r => !r.error).length;
       }
-      // ⚡ roda em lotes PARALELOS (25 por vez) — sequencial travava com 2k+ clientes
-      const LOTE_PROP = 25;
-      for (let i = 0; i < updates.length; i += LOTE_PROP) {
-        const lote = updates.slice(i, i + LOTE_PROP);
-        const resultados = await Promise.all(
-          lote.map(u => supabase.from("proposta").update(u.update).eq("id", u.id).then(r => ({ r, u })))
-        );
-        for (const { r, u } of resultados) {
-          if (!r.error) { if (u.mudaCust) custOk++; if (u.mudaInst) instOk++; }
+
+      // 2) DATA_INSTALACAO = mês gross. Como só há ~9 meses distintos, agrupamos por mês
+      //    e fazemos UM update por mês com .in("id", [...]) — 9 chamadas em vez de 2.000.
+      const porMes = new Map<string, number[]>();
+      for (const c of matched) {
+        const mg = c.faturas.map((f: any) => f.mesGross).find(Boolean) || null;
+        if (!mg) continue;
+        const instCorreta = `${String(mg).slice(0, 7)}-01`;
+        const instAtual = String(c.proposta!.data_instalacao || "").slice(0, 10);
+        if (instCorreta === instAtual) continue; // já está certo
+        const arr = porMes.get(instCorreta) || [];
+        arr.push(c.proposta!.id);
+        porMes.set(instCorreta, arr);
+      }
+      for (const [data, ids] of porMes) {
+        // .in() aguenta listas grandes, mas quebramos em blocos de 300 ids por garantia
+        for (let i = 0; i < ids.length; i += 300) {
+          const bloco = ids.slice(i, i + 300);
+          const { error } = await supabase.from("proposta").update({ data_instalacao: data }).in("id", bloco);
+          if (!error) instOk += bloco.length;
         }
       }
 
