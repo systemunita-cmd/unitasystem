@@ -287,6 +287,8 @@ export default function Vendas() {
   // Modal edição
   const [showModal, setShowModal] = useState(false);
   const [propostaEditando, setPropostaEditando] = useState<Proposta | null>(null);
+  // 🏢 Tipo de pessoa no modal de edição (CPF/CNPJ) — começa pelo que está salvo
+  const [tipoEdit, setTipoEdit] = useState<"cpf" | "cnpj">("cpf");
   const [form, setForm] = useState<Record<string, any>>({});
   const [dadosCustomizadosEdit, setDadosCustomizadosEdit] = useState<Record<string, any>>({});
   const [uploadandoEdit, setUploadandoEdit] = useState<Record<string, boolean>>({});
@@ -907,6 +909,7 @@ export default function Vendas() {
     }
     setPropostaEditando(p);
     setForm({ ...p });
+    setTipoEdit(propostaEhCnpj(p) ? "cnpj" : "cpf");
     // 🏢 Começa com TODO o dados_customizados original (preserva tipo_pessoa, cnpj_*, socio_*
     //    que não existem no Editor de Proposta e antes eram descartados ao salvar)
     const dadosIniciais: Record<string, any> = { ...(p.dados_customizados || {}) };
@@ -930,6 +933,13 @@ export default function Vendas() {
     setSalvando(true);
     try {
       const up = (v: any) => (typeof v === "string" ? textoLimpo(v) : v);
+      // 🏢 Garante o tipo_pessoa e limpa campos CNPJ se virou CPF
+      const dcFinal: Record<string, any> = { ...dadosCustomizadosEdit, tipo_pessoa: tipoEdit };
+      if (tipoEdit === "cpf") {
+        for (const s of ["cnpj_nome_fantasia", "cnpj_inscricao_estadual", "socio_nome", "socio_cpf", "socio_rg", "socio_nascimento", "socio_nome_mae"]) {
+          delete dcFinal[s];
+        }
+      }
       const payload: Record<string, any> = {
         data_proposta: form.data_proposta, nome: up(form.nome), cpf: form.cpf, rg: up(form.rg),
         data_nascimento: form.data_nascimento, nome_mae: up(form.nome_mae), email: form.email,
@@ -941,7 +951,7 @@ export default function Vendas() {
         vendedor: form.vendedor, status_venda: form.status_venda,
         data_instalacao: form.data_instalacao, data_cancelamento: form.data_cancelamento,
         operadora: form.operadora,
-        dados_customizados: dadosCustomizadosEdit,
+        dados_customizados: dcFinal,
       };
 
       // 🕘 Diff pro log: compara o payload com a proposta original, campo a campo
@@ -953,10 +963,10 @@ export default function Vendas() {
         if (norm(vAntigo) !== norm(vNovo)) mudancas.push({ campo: k, de: vAntigo ?? null, para: vNovo ?? null });
       }
       const antigosCustom: Record<string, any> = propostaEditando.dados_customizados || {};
-      const slugsCustom = new Set([...Object.keys(antigosCustom), ...Object.keys(dadosCustomizadosEdit)]);
+      const slugsCustom = new Set([...Object.keys(antigosCustom), ...Object.keys(dcFinal)]);
       for (const slug of Array.from(slugsCustom)) {
         const vA = antigosCustom[slug];
-        const vN = dadosCustomizadosEdit[slug];
+        const vN = dcFinal[slug];
         if (norm(vA) !== norm(vN)) {
           const ehArquivo = Array.isArray(vA) || Array.isArray(vN);
           mudancas.push({
@@ -1046,7 +1056,7 @@ export default function Vendas() {
   const renderCampoModal = (c: CampoUnificado) => {
     // 🏢 CNPJ: renomeia cpf → CNPJ e nome → Razão Social
     let labelTxt = c.label;
-    if (propostaEhCnpj(propostaEditando) && c.origem === "fixo") {
+    if (tipoEdit === "cnpj" && c.origem === "fixo") {
       if (c.slug === "cpf") labelTxt = "CNPJ";
       else if (c.slug === "nome") labelTxt = "Razão Social";
     }
@@ -1368,35 +1378,70 @@ export default function Vendas() {
             </div>
 
             <div style={{ padding: 24, overflowY: "auto", flex: 1 }}>
+              {/* 🏢 Seletor de tipo de pessoa — igual à tela de criação */}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 0.3 }}>TIPO DE CLIENTE</span>
+                {(["cpf", "cnpj"] as const).map(t => {
+                  const ativo = tipoEdit === t;
+                  return (
+                    <button key={t} type="button" onClick={() => {
+                      setTipoEdit(t);
+                      setDadosCustomizadosEdit(prev => ({ ...prev, tipo_pessoa: t }));
+                    }}
+                      style={{
+                        padding: "8px 16px", borderRadius: 10, cursor: "pointer",
+                        fontSize: 13, fontWeight: 700,
+                        border: ativo ? "2px solid #2563eb" : "1px solid #e5e7eb",
+                        background: ativo ? "#eff6ff" : "#fff",
+                        color: ativo ? "#1d4ed8" : "#6b7280",
+                      }}>
+                      {t === "cpf" ? "👤 CPF (Pessoa Física)" : "🏢 CNPJ (Pessoa Jurídica)"}
+                    </button>
+                  );
+                })}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
                 {camposUnificados.map(c => {
-                  // 🏢 No CNPJ, esconde os campos de pessoa física (são dados do sócio)
-                  if (propostaEhCnpj(propostaEditando) && c.origem === "fixo" && ["rg", "data_nascimento", "nome_mae"].includes(c.slug)) return null;
-                  return (
+                  // 🏢 No CNPJ, esconde os campos de pessoa física (viram dados do sócio)
+                  if (tipoEdit === "cnpj" && c.origem === "fixo" && ["rg", "data_nascimento", "nome_mae"].includes(c.slug)) return null;
+                  const out = (
                     <div key={`${c.origem}-${c.slug}`} style={c.larguraTotal || c.tipo === "textarea" ? { gridColumn: "1 / -1" } : undefined}>
                       {renderCampoModal(c)}
                     </div>
                   );
+                  // 🏢 logo após o CPF/CNPJ, injeta Nome Fantasia + Inscrição Estadual (igual criação)
+                  if (tipoEdit === "cnpj" && c.origem === "fixo" && c.slug === "cpf") {
+                    return [
+                      out,
+                      <div key="cnpj_nome_fantasia">
+                        <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>Nome Fantasia</label>
+                        <input value={dadosCustomizadosEdit.cnpj_nome_fantasia ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, cnpj_nome_fantasia: e.target.value }))} style={inputStyle} />
+                      </div>,
+                      <div key="cnpj_inscricao_estadual">
+                        <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>Inscrição Estadual</label>
+                        <input value={dadosCustomizadosEdit.cnpj_inscricao_estadual ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, cnpj_inscricao_estadual: e.target.value }))} style={inputStyle} />
+                      </div>,
+                    ];
+                  }
+                  return out;
                 })}
-                {/* 🏢 Campos extras de CNPJ + dados do sócio (vivem só em dados_customizados) */}
-                {propostaEhCnpj(propostaEditando) && (
+                {/* 🏢 Bloco DADOS DO SÓCIO — só no CNPJ, igual à criação */}
+                {tipoEdit === "cnpj" && (
                   <div style={{ gridColumn: "1 / -1", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 14, background: "#f8faff", marginTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>🏢 DADOS DO CNPJ / SÓCIO</div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>👤 DADOS DO SÓCIO</div>
                     <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
-                      {Object.entries(LABELS_CNPJ).map(([slug, label]) => {
-                        const ehData = slug === "socio_nascimento";
-                        const val = dadosCustomizadosEdit[slug] ?? "";
-                        return (
-                          <div key={slug}>
-                            <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>{label}</label>
-                            <input
-                              type={ehData ? "date" : "text"}
-                              value={val}
-                              onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, [slug]: e.target.value }))}
-                              style={inputStyle} />
-                          </div>
-                        );
-                      })}
+                      {([
+                        ["socio_nome", "Nome do Sócio", "text"],
+                        ["socio_cpf", "CPF do Sócio", "text"],
+                        ["socio_rg", "RG do Sócio", "text"],
+                        ["socio_nascimento", "Data de Nascimento", "date"],
+                        ["socio_nome_mae", "Nome da Mãe", "text"],
+                      ] as [string, string, string][]).map(([slug, label, tipo]) => (
+                        <div key={slug}>
+                          <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>{label}</label>
+                          <input type={tipo} value={dadosCustomizadosEdit[slug] ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, [slug]: e.target.value }))} style={inputStyle} />
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

@@ -545,6 +545,16 @@ function PropostaForm() {
     setLoading(true);
 
     const up = (v: any) => (typeof v === "string" ? textoLimpo(v) : v);
+    // 🏢 Garante que o tipo de pessoa e os campos de CNPJ/sócio SEMPRE vão pro banco
+    //    (antes só gravava se o usuário tivesse clicado no botão CNPJ — quem digitava
+    //     14 dígitos direto perdia tudo). tipoPessoa já considera o documento.
+    const dadosCustomFinal: Record<string, any> = { ...dadosCustomizados, tipo_pessoa: tipoPessoa };
+    if (tipoPessoa === "cpf") {
+      // pessoa física não tem dados de CNPJ/sócio — limpa pra não sujar
+      for (const s of ["cnpj_nome_fantasia", "cnpj_inscricao_estadual", "socio_nome", "socio_cpf", "socio_rg", "socio_nascimento", "socio_nome_mae"]) {
+        delete dadosCustomFinal[s];
+      }
+    }
     const payload: any = {
       criado_por: perm.userEmail || null,
       equipe_id_criador: perm.equipeId || null,
@@ -573,7 +583,7 @@ function PropostaForm() {
       data_instalacao: form.data_instalacao || null,
       data_cancelamento: form.data_cancelamento || null,
       operadora: form.operadora || "",
-      dados_customizados: dadosCustomizados,
+      dados_customizados: dadosCustomFinal,
     };
 
     const { error } = await supabase.from("proposta").insert([payload]);
