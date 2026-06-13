@@ -633,7 +633,16 @@ export default function Vendas() {
     const val = filtrosColuna[c.slug] ?? "";
 
     if (c.tipo === "data") {
-      return <input type="date" value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle} />;
+      const de = filtrosColuna[`${c.slug}__de`] ?? "";
+      const ate = filtrosColuna[`${c.slug}__ate`] ?? "";
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <input type="date" title="De (data inicial)" value={de} max={ate || undefined}
+            onChange={e => setarFiltroColuna(`${c.slug}__de`, e.target.value)} style={filtroInputStyle} />
+          <input type="date" title="Até (data final)" value={ate} min={de || undefined}
+            onChange={e => setarFiltroColuna(`${c.slug}__ate`, e.target.value)} style={filtroInputStyle} />
+        </div>
+      );
     }
 
     if (c.tipo === "checkbox") {
@@ -673,7 +682,27 @@ export default function Vendas() {
   const passaFiltrosColuna = (p: Proposta): boolean => {
     for (const [slug, valor] of Object.entries(filtrosColuna)) {
       if (!valor) continue;
-      // 🕘 coluna fixa "Última alteração": compara a DATA (updated_at; sem edição, vale o cadastro)
+      // 📅 Filtro de intervalo de data: chaves "slug__de" e "slug__ate"
+      if (slug.endsWith("__de") || slug.endsWith("__ate")) {
+        const ehDe = slug.endsWith("__de");
+        const baseSlug = slug.replace(/__(de|ate)$/, "");
+        // pega o valor da data: coluna fixa especial ou campo normal
+        let raw: any;
+        if (baseSlug === "__ultima_alteracao") {
+          const ts = p.updated_at || p.created_at;
+          try { raw = ts ? isoLocal(new Date(ts)) : ""; } catch { raw = ""; }
+        } else {
+          const campo = camposUnificados.find(c => c.slug === baseSlug);
+          if (!campo) continue;
+          raw = campo.origem === "fixo" ? (p as any)[baseSlug] : p.dados_customizados?.[baseSlug];
+        }
+        const d = String(raw ?? "").slice(0, 10); // YYYY-MM-DD
+        if (!d) return false; // sem data não entra num filtro de intervalo
+        if (ehDe && d < valor) return false;
+        if (!ehDe && d > valor) return false;
+        continue;
+      }
+      // 🕘 coluna fixa "Última alteração" (dia único — mantida por compatibilidade)
       if (slug === "__ultima_alteracao") {
         const ts = p.updated_at || p.created_at;
         let d = "";
@@ -1699,7 +1728,14 @@ export default function Vendas() {
                   <th key={`fil-${c.origem}-${c.slug}`}
                     style={{ padding: "6px 12px", borderBottom: "1px solid #e5e7eb" }}>
                     {c.especial
-                      ? <input type="date" value={filtrosColuna["__ultima_alteracao"] ?? ""} onChange={e => setarFiltroColuna("__ultima_alteracao", e.target.value)} style={filtroInputStyle} />
+                      ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <input type="date" title="De (data inicial)" value={filtrosColuna["__ultima_alteracao__de"] ?? ""} max={filtrosColuna["__ultima_alteracao__ate"] || undefined}
+                            onChange={e => setarFiltroColuna("__ultima_alteracao__de", e.target.value)} style={filtroInputStyle} />
+                          <input type="date" title="Até (data final)" value={filtrosColuna["__ultima_alteracao__ate"] ?? ""} min={filtrosColuna["__ultima_alteracao__de"] || undefined}
+                            onChange={e => setarFiltroColuna("__ultima_alteracao__ate", e.target.value)} style={filtroInputStyle} />
+                        </div>
+                      )
                       : renderFiltroColuna(c)}
                   </th>
                 ))}
