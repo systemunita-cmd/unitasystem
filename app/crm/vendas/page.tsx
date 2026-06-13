@@ -45,14 +45,38 @@ type Proposta = {
 };
 type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; filas_acesso?: number[] | null; };
 
-// Cores semânticas dos status — mantêm padrão CRM (INSTALADA = verde, CANCELADA = vermelho)
-const statusColor: Record<string, string> = {
-  PENDENTE: "#f59e0b",
-  "AGUARDANDO AUDITORIA": "#3b82f6",
-  CANCELADA: "#dc2626",
-  INSTALADA: "#16a34a",
-  GERADA: "#8b5cf6",
-  REPROVADA: "#ef4444",
+// 🎨 Cor + emoji de cada status — casa pelo nome exato (sem acento) e cai em
+//    palavras-chave pra status novos criados no Editor de Proposta
+const STATUS_VENDA_META: Record<string, { cor: string; emoji: string }> = {
+  "PENDENTE":               { cor: "#f59e0b", emoji: "⏳" },
+  "AGUARDANDO AUDITORIA":   { cor: "#3b82f6", emoji: "🔍" },
+  "AUDITADA":               { cor: "#0d9488", emoji: "📋" },
+  "AGUARDANDO BIOMETRIA":   { cor: "#a855f7", emoji: "🪪" },
+  "AGUARDANDO INSTALACAO":  { cor: "#0ea5e9", emoji: "🔧" },
+  "GERADA":                 { cor: "#8b5cf6", emoji: "📄" },
+  "INSTALADA":              { cor: "#16a34a", emoji: "✅" },
+  "CANCELADA":              { cor: "#dc2626", emoji: "❌" },
+  "CANCELADA INTERNAMENTE": { cor: "#dc2626", emoji: "❌" },
+  "CANCELADA EXTERNAMENTE": { cor: "#dc2626", emoji: "❌" },
+  "REPROVADA":              { cor: "#ef4444", emoji: "⛔" },
+  "CHURN":                  { cor: "#b91c1c", emoji: "📉" },
+  "CHURN VOLUNTARIO":       { cor: "#b91c1c", emoji: "📉" },
+  "CHURN INVOLUNTARIO":     { cor: "#b91c1c", emoji: "📉" },
+  "FRAUDE INST":            { cor: "#7f1d1d", emoji: "🚨" },
+  "FR PREVENCAO":           { cor: "#7f1d1d", emoji: "🚨" },
+};
+const statusMeta = (s: any): { cor: string; emoji: string } => {
+  const t = String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  if (STATUS_VENDA_META[t]) return STATUS_VENDA_META[t];
+  if (/CANCELAD|CHURN|FRAUDE|FR PREV/.test(t)) return { cor: "#dc2626", emoji: "❌" };
+  if (/REPROVAD/.test(t)) return { cor: "#ef4444", emoji: "⛔" };
+  if (/INSTALADA/.test(t)) return { cor: "#16a34a", emoji: "✅" };
+  if (/BIOMETRIA/.test(t)) return { cor: "#a855f7", emoji: "🪪" };
+  if (/AGUARDANDO AUDITORIA/.test(t)) return { cor: "#3b82f6", emoji: "🔍" };
+  if (/AUDIT/.test(t)) return { cor: "#0d9488", emoji: "📋" };
+  if (/AGUARDANDO/.test(t)) return { cor: "#0ea5e9", emoji: "⏳" };
+  if (/PENDENTE/.test(t)) return { cor: "#f59e0b", emoji: "⏳" };
+  return { cor: "#6b7280", emoji: "🔘" };
 };
 
 // ═══ MOCK DATA pra modo demo ═══
@@ -438,13 +462,14 @@ export default function Vendas() {
 
     // Estilizações especiais por slug
     if (c.slug === "status_venda") {
-      const cor = statusColor[raw] || "#6b7280";
-      return raw ? (
+      if (!raw) return <span style={{ color: "#d1d5db" }}>—</span>;
+      const m = statusMeta(raw);
+      return (
         <span style={{
-          background: `${cor}15`, color: cor, border: `1px solid ${cor}40`,
+          background: `${m.cor}15`, color: m.cor, border: `1px solid ${m.cor}40`,
           padding: "3px 10px", borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap",
-        }}>{raw}</span>
-      ) : <span style={{ color: "#d1d5db" }}>—</span>;
+        }}>{m.emoji} {raw}</span>
+      );
     }
     if (c.slug === "valor_plano") {
       return (
@@ -523,6 +548,39 @@ export default function Vendas() {
     return <span style={{ color: "#4b5563", fontSize: 12 }}>{String(raw)}</span>;
   };
 
+  // 🕘 Célula da coluna FIXA "Última alteração" (updated_at + quem mexeu;
+  //    venda nunca editada mostra o cadastro)
+  const renderUltimaAlteracao = (v: Proposta): ReactNode => {
+    if (v.updated_at) {
+      let dt = "—", hora = "";
+      try {
+        dt = new Date(v.updated_at).toLocaleDateString("pt-BR");
+        hora = new Date(v.updated_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      } catch { /* mostra o que der */ }
+      return (
+        <span style={{ whiteSpace: "nowrap" }}>
+          <span style={{ color: "#1f2937", fontSize: 12, fontWeight: 700, display: "block" }}>{dt}</span>
+          <span style={{ color: "#7c3aed", fontSize: 10.5, fontWeight: 700, display: "block", marginTop: 1 }}>
+            ✏️ {hora}{v.atualizado_por ? ` · ${nomeVendedor(v.atualizado_por)}` : ""}
+          </span>
+        </span>
+      );
+    }
+    let dt = "—", hora = "";
+    try {
+      if (v.created_at) {
+        dt = new Date(v.created_at).toLocaleDateString("pt-BR");
+        hora = new Date(v.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      }
+    } catch { /* mostra o que der */ }
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{ color: "#6b7280", fontSize: 12, display: "block" }}>{dt}</span>
+        <span style={{ color: "#9ca3af", fontSize: 10.5, fontWeight: 600, display: "block", marginTop: 1 }}>📌 cadastro {hora}</span>
+      </span>
+    );
+  };
+
   // ═══ Filtro por coluna ═══
   const filtroInputStyle = {
     width: "100%",
@@ -567,6 +625,7 @@ export default function Vendas() {
     const distintos = opcoesPorColuna[c.slug] || [];
     if (distintos.length > 0 && distintos.length <= 150) {
       const rotulo = (op: string): string => {
+        if (c.slug === "status_venda") return `${statusMeta(op).emoji} ${op}`;
         if (c.slug === "vendedor" || c.tipo === "vendedor" || (c.tipo as string) === "usuario") return nomeVendedor(op);
         if ((c.tipo as string) === "equipe") return nomePorId(equipes as any, op);
         if ((c.tipo as string) === "fila") return nomePorId(filas, op);
@@ -589,6 +648,14 @@ export default function Vendas() {
   const passaFiltrosColuna = (p: Proposta): boolean => {
     for (const [slug, valor] of Object.entries(filtrosColuna)) {
       if (!valor) continue;
+      // 🕘 coluna fixa "Última alteração": compara a DATA (updated_at; sem edição, vale o cadastro)
+      if (slug === "__ultima_alteracao") {
+        const ts = p.updated_at || p.created_at;
+        let d = "";
+        try { if (ts) d = isoLocal(new Date(ts)); } catch { d = ""; }
+        if (d !== valor) return false;
+        continue;
+      }
       const campo = camposUnificados.find(c => c.slug === slug);
       if (!campo) continue;
 
@@ -1004,11 +1071,12 @@ export default function Vendas() {
       if (c.tipo === "telefone") return <div>{lab}<input type="tel" placeholder={c.placeholder || ""} value={val} onChange={e => set(e.target.value)} style={inputStyle} /></div>;
       if (c.tipo === "dropdown") {
         const prefixoVenc = c.slug === "vencimento";
+        const ehStatus = c.slug === "status_venda";
         return (
           <div>{lab}
             <select value={val} onChange={e => set(e.target.value)} style={inputStyle}>
               <option value="">Selecione...</option>
-              {(c.opcoes || []).map(op => <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : op}</option>)}
+              {(c.opcoes || []).map(op => <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : ehStatus ? `${statusMeta(op).emoji} ${op}` : op}</option>)}
             </select>
           </div>
         );
@@ -1164,6 +1232,17 @@ export default function Vendas() {
   const colunasTabela = slugsNaLista.size > 0
     ? camposUnificados.filter(c => slugsNaLista.has(c.slug))
     : camposUnificados.filter(c => COLUNAS_LEGADO.includes(c.slug));
+
+  // 🕘 Coluna FIXA "Última alteração" — entra SEMPRE, colada na Data da Proposta
+  //    (se a Data da Proposta não estiver visível, vira a primeira coluna)
+  const COL_ULT_ALT: any = { slug: "__ultima_alteracao", label: "🕘 Última Alteração", origem: "fixo", especial: true };
+  const colunasRender: any[] = (() => {
+    const arr: any[] = [...colunasTabela];
+    const idx = arr.findIndex(c => c.slug === "data_proposta");
+    if (idx >= 0) arr.splice(idx + 1, 0, COL_ULT_ALT);
+    else arr.unshift(COL_ULT_ALT);
+    return arr;
+  })();
 
   // Opções de filtro por coluna = valores distintos presentes nas propostas.
   // Colunas com mais de 150 distintos viram busca por texto, então paramos de
@@ -1392,7 +1471,7 @@ export default function Vendas() {
           style={{ ...inputStyle, maxWidth: 360, flex: "1 1 200px", borderRadius: 20 }} />
         <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)} style={{ ...inputStyle, maxWidth: 220 }}>
           <option value="todos">Status: Todos</option>
-          {STATUS_OPCOES.map(s => <option key={s} value={s}>{s}</option>)}
+          {STATUS_OPCOES.map(s => <option key={s} value={s}>{statusMeta(s).emoji} {s}</option>)}
         </select>
         {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -1472,7 +1551,7 @@ export default function Vendas() {
             style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 720 : "auto" }}>
             <thead>
               <tr style={{ background: "#f9fafb" }}>
-                {colunasTabela.map(c => (
+                {colunasRender.map(c => (
                   <th key={`th-${c.origem}-${c.slug}`}
                     style={{ padding: "12px 16px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap", fontWeight: 700, borderBottom: "1px solid #e5e7eb" }}>
                     {c.label}
@@ -1484,10 +1563,12 @@ export default function Vendas() {
                 </th>
               </tr>
               <tr style={{ background: "#fbfbfc" }}>
-                {colunasTabela.map(c => (
+                {colunasRender.map(c => (
                   <th key={`fil-${c.origem}-${c.slug}`}
                     style={{ padding: "6px 12px", borderBottom: "1px solid #e5e7eb" }}>
-                    {renderFiltroColuna(c)}
+                    {c.especial
+                      ? <input type="date" value={filtrosColuna["__ultima_alteracao"] ?? ""} onChange={e => setarFiltroColuna("__ultima_alteracao", e.target.value)} style={filtroInputStyle} />
+                      : renderFiltroColuna(c)}
                   </th>
                 ))}
                 <th key="fil-acoes" style={{ padding: "6px 12px", borderBottom: "1px solid #e5e7eb" }}></th>
@@ -1495,9 +1576,9 @@ export default function Vendas() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={colunasTabela.length + 1} style={{ padding: 32, color: "#6b7280", textAlign: "center", fontSize: 13 }}>⏳ Carregando...</td></tr>
+                <tr><td colSpan={colunasRender.length + 1} style={{ padding: 32, color: "#6b7280", textAlign: "center", fontSize: 13 }}>⏳ Carregando...</td></tr>
               ) : propostasFiltradas.length === 0 ? (
-                <tr><td colSpan={colunasTabela.length + 1} style={{ padding: 48, textAlign: "center" }}>
+                <tr><td colSpan={colunasRender.length + 1} style={{ padding: 48, textAlign: "center" }}>
                   <div style={{
                     width: 72, height: 72, borderRadius: 18,
                     background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)",
@@ -1522,9 +1603,9 @@ export default function Vendas() {
                     onMouseEnter={(e) => e.currentTarget.style.background = "#f3f4f6"}
                     onMouseLeave={(e) => e.currentTarget.style.background = i % 2 === 0 ? "#ffffff" : "#fafbfc"}
                   >
-                    {colunasTabela.map(c => (
+                    {colunasRender.map(c => (
                       <td key={`td-${c.origem}-${c.slug}`} style={{ padding: "12px 16px" }}>
-                        {renderCelulaTabela(c, v)}
+                        {c.especial ? renderUltimaAlteracao(v) : renderCelulaTabela(c, v)}
                       </td>
                     ))}
                     <td style={{ padding: "12px 16px" }}>
@@ -1608,10 +1689,10 @@ export default function Vendas() {
                 <div style={{
                   background: "#f9fafb", borderRadius: 12, padding: 14,
                   border: "1px solid #e5e7eb",
-                  borderLeft: `4px solid ${statusColor[propostaVisualizando.status_venda] || "#6b7280"}`,
+                  borderLeft: `4px solid ${statusMeta(propostaVisualizando.status_venda).cor}`,
                 }}>
                   <p style={{ color: "#6b7280", fontSize: 10, margin: 0, textTransform: "uppercase", fontWeight: 700, letterSpacing: 0.5 }}>Status</p>
-                  <p style={{ color: statusColor[propostaVisualizando.status_venda] || "#1f2937", fontSize: 14, margin: "5px 0 0", fontWeight: 700 }}>{propostaVisualizando.status_venda || "—"}</p>
+                  <p style={{ color: statusMeta(propostaVisualizando.status_venda).cor, fontSize: 14, margin: "5px 0 0", fontWeight: 700 }}>{propostaVisualizando.status_venda ? `${statusMeta(propostaVisualizando.status_venda).emoji} ${propostaVisualizando.status_venda}` : "—"}</p>
                 </div>
                 <div style={{
                   background: "#f0fdf4", borderRadius: 12, padding: 14,

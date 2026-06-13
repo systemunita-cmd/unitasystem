@@ -21,6 +21,7 @@ import {
 // Sidebar + scroll spy + progresso · Auto-save · Máscaras · ViaCEP
 // Inferência de seção (custom herda do fixo) · Agrupamento consecutivo
 // Upload de anexos · Tipos auto-populados (equipe/fila/usuário/etiqueta)
+// 🔍 Toda proposta nasce com status AGUARDANDO AUDITORIA por padrão
 // ═══════════════════════════════════════════════════════════════════════
 
 type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string; equipe_id?: number | string | null; fila_id?: number | string | null };
@@ -28,6 +29,9 @@ type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: stri
 type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type AnexoMeta = { url: string; nome: string; tipo: string; tamanho: number; enviado_em: string };
+
+// 🔍 Status padrão de toda proposta nova
+const STATUS_PADRAO = "AGUARDANDO AUDITORIA";
 
 // ═══ MÁSCARAS ═══
 const mascaraCPF = (v: string) =>
@@ -81,6 +85,21 @@ const iconeArquivo = (tipo: string): string => {
 // 🔤 Texto padrão do sistema: MAIÚSCULO, sem acento e sem ç ("José Gonçalves" → "JOSE GONCALVES")
 const textoLimpo = (v: string): string =>
   v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+// 🎨 Emoji de cada status (mesma lógica da tela de Vendas) — pro dropdown
+const statusEmoji = (s: string): string => {
+  const t = String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  if (/CANCELAD|CHURN|FRAUDE|FR PREV/.test(t)) return "❌";
+  if (/REPROVAD/.test(t)) return "⛔";
+  if (/INSTALADA/.test(t)) return "✅";
+  if (/BIOMETRIA/.test(t)) return "🪪";
+  if (/AGUARDANDO AUDITORIA/.test(t)) return "🔍";
+  if (/AUDIT/.test(t)) return "📋";
+  if (/AGUARDANDO/.test(t)) return "🔧";
+  if (/PENDENTE/.test(t)) return "⏳";
+  if (/GERADA/.test(t)) return "📄";
+  return "🔘";
+};
 
 
 // ═══ SEÇÃO META — mesmas cores do Editor Unita ═══
@@ -165,7 +184,8 @@ function PropostaForm() {
     data_proposta: (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })(),
     nome: searchParams.get("nome") || "",
     telefone1: searchParams.get("numero") || "",
-    status_venda: "PENDENTE",
+    // 🔍 Padrão: toda proposta nova nasce AGUARDANDO AUDITORIA
+    status_venda: STATUS_PADRAO,
   });
   const [dadosCustomizados, setDadosCustomizados] = useState<Record<string, any>>({});
   const [dirty, setDirty] = useState(false);
@@ -549,7 +569,7 @@ function PropostaForm() {
       data_agendamento: form.data_agendamento || null,
       periodo_instalacao: form.periodo_instalacao || "",
       vendedor: form.vendedor || "",
-      status_venda: form.status_venda || "PENDENTE",
+      status_venda: form.status_venda || STATUS_PADRAO,
       data_instalacao: form.data_instalacao || null,
       data_cancelamento: form.data_cancelamento || null,
       operadora: form.operadora || "",
@@ -1048,7 +1068,8 @@ function PropostaForm() {
           </div>
         );
       }
-      const valorEfetivo = c.slug === "status_venda" ? (val || "PENDENTE") : (val ?? "");
+      // 🔍 Status: padrão AGUARDANDO AUDITORIA quando vazio
+      const valorEfetivo = c.slug === "status_venda" ? (val || STATUS_PADRAO) : (val ?? "");
       let input;
       if (c.tipo === "data") {
         input = <input type="date" value={valorEfetivo} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)} />;
@@ -1068,11 +1089,12 @@ function PropostaForm() {
       } else if (c.tipo === "dropdown") {
         const placeholderLabel = c.slug === "vencimento" ? "Selecione..." : c.slug === "periodo_instalacao" ? "Selecione..." : c.slug === "forma_pagamento" ? "Selecione..." : null;
         const prefixoVenc = c.slug === "vencimento";
+        const ehStatus = c.slug === "status_venda";
         input = (
           <select value={valorEfetivo} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)}>
             {placeholderLabel && <option value="">{placeholderLabel}</option>}
             {(c.opcoes || []).map(op => (
-              <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : op}</option>
+              <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : ehStatus ? `${statusEmoji(op)} ${op}` : op}</option>
             ))}
           </select>
         );
