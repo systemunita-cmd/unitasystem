@@ -200,6 +200,9 @@ export default function Vendas() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filas, setFilas] = useState<{ id: any; nome: string }[]>([]);
   const [etiquetas, setEtiquetas] = useState<{ id: any; nome: string }[]>([]);
+  // 🏷️ Equipes (PDV) carregadas direto da tabela — o `equipes` do useEquipeFiltro
+  //    às vezes vem vazio/incompleto, então o nome do PDV não resolvia (mostrava 1/2/3)
+  const [equipesLista, setEquipesLista] = useState<{ id: any; nome: string }[]>([]);
 
   const [camposUnificados, setCamposUnificados] = useState<CampoUnificado[]>([]);
   const [slugsNaLista, setSlugsNaLista] = useState<Set<string>>(new Set());
@@ -454,6 +457,26 @@ export default function Vendas() {
     return c?.label || slug;
   };
 
+  // 🏢 Rótulos amigáveis dos campos extras de CNPJ/sócio (ficam só em dados_customizados,
+  //    não existem no Editor de Proposta — então o modal precisa conhecê-los na mão)
+  const LABELS_CNPJ: Record<string, string> = {
+    cnpj_nome_fantasia: "Nome Fantasia",
+    cnpj_inscricao_estadual: "Inscrição Estadual",
+    socio_nome: "Nome do Sócio",
+    socio_cpf: "CPF do Sócio",
+    socio_rg: "RG do Sócio",
+    socio_nascimento: "Data de Nascimento do Sócio",
+    socio_nome_mae: "Nome da Mãe do Sócio",
+  };
+  // venda é CNPJ? (pelo tipo_pessoa salvo, ou pelo documento ter mais de 11 dígitos)
+  const propostaEhCnpj = (p?: Proposta | null): boolean => {
+    if (!p) return false;
+    const tp = p.dados_customizados?.tipo_pessoa;
+    if (tp === "cnpj") return true;
+    if (tp === "cpf") return false;
+    return String(p.cpf || "").replace(/\D/g, "").length > 11;
+  };
+
   // ═══ Renderização dinâmica de cada célula da tabela ═══
   const renderCelulaTabela = (c: CampoUnificado, v: Proposta): ReactNode => {
     const raw = c.origem === "fixo"
@@ -533,7 +556,7 @@ export default function Vendas() {
       return <span style={{ color: n ? "#2563eb" : "#d1d5db", fontSize: 12, fontWeight: 600 }}>{n ? `📎 ${n}` : "—"}</span>;
     }
     if (c.tipo === "equipe") {
-      return <span style={{ color: "#4b5563", fontSize: 12 }}>{nomePorId(equipes as any, raw)}</span>;
+      return <span style={{ color: "#4b5563", fontSize: 12 }}>{nomePorId(equipesParaNome, raw)}</span>;
     }
     if (c.tipo === "fila") {
       return <span style={{ color: "#4b5563", fontSize: 12 }}>{nomePorId(filas, raw)}</span>;
@@ -627,7 +650,7 @@ export default function Vendas() {
       const rotulo = (op: string): string => {
         if (c.slug === "status_venda") return `${statusMeta(op).emoji} ${op}`;
         if (c.slug === "vendedor" || c.tipo === "vendedor" || (c.tipo as string) === "usuario") return nomeVendedor(op);
-        if ((c.tipo as string) === "equipe") return nomePorId(equipes as any, op);
+        if ((c.tipo as string) === "equipe") return nomePorId(equipesParaNome, op);
         if ((c.tipo as string) === "fila") return nomePorId(filas, op);
         if ((c.tipo as string) === "etiqueta") return nomePorId(etiquetas, op);
         if (c.slug === "vencimento") return `Dia ${op}`;
@@ -743,16 +766,21 @@ export default function Vendas() {
   // Listas auxiliares pra traduzir id -> nome nas colunas (PDV/equipe, fila, etiqueta)
   const fetchListasAux = async () => {
     try {
-      const [rf, re] = await Promise.all([
+      const [rf, re, req] = await Promise.all([
         supabase.from("filas").select("id, nome"),
         supabase.from("etiquetas").select("id, nome"),
+        supabase.from("equipes").select("id, nome"),
       ]);
       setFilas((rf.data as any) || []);
       setEtiquetas((re.data as any) || []);
+      setEquipesLista((req.data as any) || []);
     } catch {
       /* tabelas podem não existir — segue sem tradução */
     }
   };
+
+  // 🏷️ Lista de equipes pra resolver nome do PDV: usa a tabela; cai no hook se vazio
+  const equipesParaNome = (equipesLista.length > 0 ? equipesLista : (equipes as any)) || [];
 
   const fetchCamposUnificados = async (usouMock: boolean) => {
     let configs: ConfigCampoPadrao[] = [];
@@ -879,11 +907,12 @@ export default function Vendas() {
     }
     setPropostaEditando(p);
     setForm({ ...p });
-    const dadosIniciais: Record<string, any> = {};
+    // 🏢 Começa com TODO o dados_customizados original (preserva tipo_pessoa, cnpj_*, socio_*
+    //    que não existem no Editor de Proposta e antes eram descartados ao salvar)
+    const dadosIniciais: Record<string, any> = { ...(p.dados_customizados || {}) };
     for (const c of camposUnificados) {
-      if (c.origem === "custom") {
-        const v = p.dados_customizados?.[c.slug];
-        dadosIniciais[c.slug] = v !== undefined ? v : (c.tipo === "checkbox" ? false : "");
+      if (c.origem === "custom" && dadosIniciais[c.slug] === undefined) {
+        dadosIniciais[c.slug] = (c.tipo === "checkbox" ? false : "");
       }
     }
     setDadosCustomizadosEdit(dadosIniciais);
@@ -1015,9 +1044,15 @@ export default function Vendas() {
   };
 
   const renderCampoModal = (c: CampoUnificado) => {
+    // 🏢 CNPJ: renomeia cpf → CNPJ e nome → Razão Social
+    let labelTxt = c.label;
+    if (propostaEhCnpj(propostaEditando) && c.origem === "fixo") {
+      if (c.slug === "cpf") labelTxt = "CNPJ";
+      else if (c.slug === "nome") labelTxt = "Razão Social";
+    }
     const labelComObr = (
       <>
-        {c.label}
+        {labelTxt}
         {c.obrigatorio && <span style={{ color: "#dc2626", marginLeft: 4 }}>*</span>}
       </>
     );
@@ -1334,11 +1369,37 @@ export default function Vendas() {
 
             <div style={{ padding: 24, overflowY: "auto", flex: 1 }}>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
-                {camposUnificados.map(c => (
-                  <div key={`${c.origem}-${c.slug}`} style={c.larguraTotal || c.tipo === "textarea" ? { gridColumn: "1 / -1" } : undefined}>
-                    {renderCampoModal(c)}
+                {camposUnificados.map(c => {
+                  // 🏢 No CNPJ, esconde os campos de pessoa física (são dados do sócio)
+                  if (propostaEhCnpj(propostaEditando) && c.origem === "fixo" && ["rg", "data_nascimento", "nome_mae"].includes(c.slug)) return null;
+                  return (
+                    <div key={`${c.origem}-${c.slug}`} style={c.larguraTotal || c.tipo === "textarea" ? { gridColumn: "1 / -1" } : undefined}>
+                      {renderCampoModal(c)}
+                    </div>
+                  );
+                })}
+                {/* 🏢 Campos extras de CNPJ + dados do sócio (vivem só em dados_customizados) */}
+                {propostaEhCnpj(propostaEditando) && (
+                  <div style={{ gridColumn: "1 / -1", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 14, background: "#f8faff", marginTop: 4 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>🏢 DADOS DO CNPJ / SÓCIO</div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
+                      {Object.entries(LABELS_CNPJ).map(([slug, label]) => {
+                        const ehData = slug === "socio_nascimento";
+                        const val = dadosCustomizadosEdit[slug] ?? "";
+                        return (
+                          <div key={slug}>
+                            <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>{label}</label>
+                            <input
+                              type={ehData ? "date" : "text"}
+                              value={val}
+                              onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, [slug]: e.target.value }))}
+                              style={inputStyle} />
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -1714,16 +1775,43 @@ export default function Vendas() {
 
               <ViewSection
                 titulo="📋 Informações"
-                campos={camposUnificados
-                  .filter(c => c.slug !== "status_venda" && c.slug !== "valor_plano" && c.slug !== "vendedor" && (c.tipo as string) !== "arquivo")
-                  .map(c => {
-                    let v = c.origem === "fixo" ? (propostaVisualizando as any)[c.slug] : propostaVisualizando.dados_customizados?.[c.slug];
-                    if (c.tipo === "checkbox") v = v === true ? "Sim" : v === false ? "Não" : "";
-                    else if (c.tipo === "moeda" && v) v = `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
-                    else if (c.tipo === "data" && v) v = new Date(v + "T00:00:00").toLocaleDateString("pt-BR");
-                    else if (c.tipo === "vendedor" && v) v = nomeVendedor(v);
-                    return [c.label, v] as [string, any];
-                  })}
+                campos={(() => {
+                  const ehCnpj = propostaEhCnpj(propostaVisualizando);
+                  const linhas: [string, any][] = camposUnificados
+                    .filter(c => c.slug !== "status_venda" && c.slug !== "valor_plano" && c.slug !== "vendedor" && (c.tipo as string) !== "arquivo")
+                    .map(c => {
+                      let v = c.origem === "fixo" ? (propostaVisualizando as any)[c.slug] : propostaVisualizando.dados_customizados?.[c.slug];
+                      if (c.tipo === "checkbox") v = v === true ? "Sim" : v === false ? "Não" : "";
+                      else if (c.tipo === "moeda" && v) v = `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
+                      else if (c.tipo === "data" && v) v = new Date(v + "T00:00:00").toLocaleDateString("pt-BR");
+                      else if (c.tipo === "vendedor" && v) v = nomeVendedor(v);
+                      else if ((c.tipo as string) === "equipe" && v) v = nomePorId(equipesParaNome, v);
+                      else if ((c.tipo as string) === "fila" && v) v = nomePorId(filas, v);
+                      else if ((c.tipo as string) === "etiqueta" && v) v = nomePorId(etiquetas, v);
+                      else if ((c.tipo as string) === "usuario" && v) v = nomeVendedor(String(v));
+                      // 🏢 CNPJ: troca o rótulo de cpf/nome
+                      let label = c.label;
+                      if (ehCnpj && c.origem === "fixo") {
+                        if (c.slug === "cpf") label = "CNPJ";
+                        else if (c.slug === "nome") label = "Razão Social";
+                        else if (["rg", "data_nascimento", "nome_mae"].includes(c.slug)) return null as any; // são do sócio no CNPJ
+                      }
+                      return [label, v] as [string, any];
+                    })
+                    .filter(Boolean) as [string, any][];
+                  // 🏢 Injeta os campos extras de CNPJ/sócio que ficam só em dados_customizados
+                  if (ehCnpj) {
+                    const dc = propostaVisualizando.dados_customizados || {};
+                    for (const [slug, label] of Object.entries(LABELS_CNPJ)) {
+                      let v = dc[slug];
+                      if (slug === "socio_nascimento" && v) {
+                        try { v = new Date(String(v) + "T00:00:00").toLocaleDateString("pt-BR"); } catch { /* mantém */ }
+                      }
+                      linhas.push([label, v ?? ""]);
+                    }
+                  }
+                  return linhas;
+                })()}
               />
 
               {camposUnificados.filter(c => (c.tipo as string) === "arquivo").map(c => {
