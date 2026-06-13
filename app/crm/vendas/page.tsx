@@ -1213,6 +1213,34 @@ export default function Vendas() {
         </div>
       );
     }
+    // 🏷️ PDV/equipe, fila e etiqueta: select mostrando o NOME (não o id cru)
+    if ((c.tipo as string) === "equipe" || (c.tipo as string) === "fila" || (c.tipo as string) === "etiqueta") {
+      const lista = (c.tipo as string) === "equipe" ? equipesParaNome
+        : (c.tipo as string) === "fila" ? filas
+        : etiquetas;
+      const temOpcao = lista.some((o: any) => String(o.id) === String(val ?? ""));
+      return (
+        <div>{lab}
+          <select value={val ?? ""} onChange={e => set(e.target.value)} style={inputStyle}>
+            <option value="">Selecione...</option>
+            {lista.map((o: any) => <option key={o.id} value={String(o.id)}>{o.nome}</option>)}
+            {val != null && String(val) !== "" && !temOpcao && (
+              <option value={String(val)}>{nomePorId(lista as any, val) || `#${val}`}</option>
+            )}
+          </select>
+        </div>
+      );
+    }
+    if ((c.tipo as string) === "usuario") {
+      return (
+        <div>{lab}
+          <select value={val ?? ""} onChange={e => set(e.target.value)} style={inputStyle}>
+            <option value="">Selecione...</option>
+            {usuarios.map(u => <option key={u.email} value={u.email}>{u.nome}</option>)}
+          </select>
+        </div>
+      );
+    }
     return <div>{lab}<input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} style={inputStyle} /></div>;
   };
 
@@ -1409,7 +1437,8 @@ export default function Vendas() {
                       {renderCampoModal(c)}
                     </div>
                   );
-                  // 🏢 logo após o CPF/CNPJ, injeta Nome Fantasia + Inscrição Estadual (igual criação)
+                  // 🏢 logo após o CPF/CNPJ, injeta Nome Fantasia + Inscrição Estadual
+                  //    e o bloco DADOS DO SÓCIO — tudo junto, na mesma posição da criação
                   if (tipoEdit === "cnpj" && c.origem === "fixo" && c.slug === "cpf") {
                     return [
                       out,
@@ -1421,30 +1450,27 @@ export default function Vendas() {
                         <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>Inscrição Estadual</label>
                         <input value={dadosCustomizadosEdit.cnpj_inscricao_estadual ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, cnpj_inscricao_estadual: e.target.value }))} style={inputStyle} />
                       </div>,
+                      <div key="bloco_socio" style={{ gridColumn: "1 / -1", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 14, background: "#f8faff", marginTop: 4 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>👤 DADOS DO SÓCIO</div>
+                        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
+                          {([
+                            ["socio_nome", "Nome do Sócio", "text"],
+                            ["socio_cpf", "CPF do Sócio", "text"],
+                            ["socio_rg", "RG do Sócio", "text"],
+                            ["socio_nascimento", "Data de Nascimento", "date"],
+                            ["socio_nome_mae", "Nome da Mãe", "text"],
+                          ] as [string, string, string][]).map(([slug, label, tipo]) => (
+                            <div key={slug}>
+                              <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>{label}</label>
+                              <input type={tipo} value={dadosCustomizadosEdit[slug] ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, [slug]: e.target.value }))} style={inputStyle} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>,
                     ];
                   }
                   return out;
                 })}
-                {/* 🏢 Bloco DADOS DO SÓCIO — só no CNPJ, igual à criação */}
-                {tipoEdit === "cnpj" && (
-                  <div style={{ gridColumn: "1 / -1", border: "1px dashed #bfdbfe", borderRadius: 12, padding: 14, background: "#f8faff", marginTop: 4 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "#2563eb", letterSpacing: 0.3, marginBottom: 10 }}>👤 DADOS DO SÓCIO</div>
-                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12 }}>
-                      {([
-                        ["socio_nome", "Nome do Sócio", "text"],
-                        ["socio_cpf", "CPF do Sócio", "text"],
-                        ["socio_rg", "RG do Sócio", "text"],
-                        ["socio_nascimento", "Data de Nascimento", "date"],
-                        ["socio_nome_mae", "Nome da Mãe", "text"],
-                      ] as [string, string, string][]).map(([slug, label, tipo]) => (
-                        <div key={slug}>
-                          <label style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 5, fontWeight: 700 }}>{label}</label>
-                          <input type={tipo} value={dadosCustomizadosEdit[slug] ?? ""} onChange={e => setDadosCustomizadosEdit(prev => ({ ...prev, [slug]: e.target.value }))} style={inputStyle} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1822,37 +1848,40 @@ export default function Vendas() {
                 titulo="📋 Informações"
                 campos={(() => {
                   const ehCnpj = propostaEhCnpj(propostaVisualizando);
-                  const linhas: [string, any][] = camposUnificados
-                    .filter(c => c.slug !== "status_venda" && c.slug !== "valor_plano" && c.slug !== "vendedor" && (c.tipo as string) !== "arquivo")
-                    .map(c => {
-                      let v = c.origem === "fixo" ? (propostaVisualizando as any)[c.slug] : propostaVisualizando.dados_customizados?.[c.slug];
-                      if (c.tipo === "checkbox") v = v === true ? "Sim" : v === false ? "Não" : "";
-                      else if (c.tipo === "moeda" && v) v = `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
-                      else if (c.tipo === "data" && v) v = new Date(v + "T00:00:00").toLocaleDateString("pt-BR");
-                      else if (c.tipo === "vendedor" && v) v = nomeVendedor(v);
-                      else if ((c.tipo as string) === "equipe" && v) v = nomePorId(equipesParaNome, v);
-                      else if ((c.tipo as string) === "fila" && v) v = nomePorId(filas, v);
-                      else if ((c.tipo as string) === "etiqueta" && v) v = nomePorId(etiquetas, v);
-                      else if ((c.tipo as string) === "usuario" && v) v = nomeVendedor(String(v));
-                      // 🏢 CNPJ: troca o rótulo de cpf/nome
-                      let label = c.label;
-                      if (ehCnpj && c.origem === "fixo") {
-                        if (c.slug === "cpf") label = "CNPJ";
-                        else if (c.slug === "nome") label = "Razão Social";
-                        else if (["rg", "data_nascimento", "nome_mae"].includes(c.slug)) return null as any; // são do sócio no CNPJ
-                      }
-                      return [label, v] as [string, any];
-                    })
-                    .filter(Boolean) as [string, any][];
-                  // 🏢 Injeta os campos extras de CNPJ/sócio que ficam só em dados_customizados
+                  const dc = propostaVisualizando.dados_customizados || {};
+                  // bloco extra de CNPJ/sócio, inserido logo após o campo CNPJ
+                  const extrasCnpj: [string, any][] = [];
                   if (ehCnpj) {
-                    const dc = propostaVisualizando.dados_customizados || {};
                     for (const [slug, label] of Object.entries(LABELS_CNPJ)) {
                       let v = dc[slug];
                       if (slug === "socio_nascimento" && v) {
                         try { v = new Date(String(v) + "T00:00:00").toLocaleDateString("pt-BR"); } catch { /* mantém */ }
                       }
-                      linhas.push([label, v ?? ""]);
+                      extrasCnpj.push([label, v ?? ""]);
+                    }
+                  }
+                  const linhas: [string, any][] = [];
+                  for (const c of camposUnificados) {
+                    if (c.slug === "status_venda" || c.slug === "valor_plano" || c.slug === "vendedor" || (c.tipo as string) === "arquivo") continue;
+                    let v = c.origem === "fixo" ? (propostaVisualizando as any)[c.slug] : propostaVisualizando.dados_customizados?.[c.slug];
+                    if (c.tipo === "checkbox") v = v === true ? "Sim" : v === false ? "Não" : "";
+                    else if (c.tipo === "moeda" && v) v = `R$ ${Number(v).toFixed(2).replace(".", ",")}`;
+                    else if (c.tipo === "data" && v) v = new Date(v + "T00:00:00").toLocaleDateString("pt-BR");
+                    else if (c.tipo === "vendedor" && v) v = nomeVendedor(v);
+                    else if ((c.tipo as string) === "equipe" && v) v = nomePorId(equipesParaNome, v);
+                    else if ((c.tipo as string) === "fila" && v) v = nomePorId(filas, v);
+                    else if ((c.tipo as string) === "etiqueta" && v) v = nomePorId(etiquetas, v);
+                    else if ((c.tipo as string) === "usuario" && v) v = nomeVendedor(String(v));
+                    let label = c.label;
+                    if (ehCnpj && c.origem === "fixo") {
+                      if (c.slug === "cpf") label = "CNPJ";
+                      else if (c.slug === "nome") label = "Razão Social";
+                      else if (["rg", "data_nascimento", "nome_mae"].includes(c.slug)) continue; // são do sócio no CNPJ
+                    }
+                    linhas.push([label, v]);
+                    // 🏢 logo após o CNPJ, despeja Nome Fantasia / Inscrição / Sócio
+                    if (ehCnpj && c.origem === "fixo" && c.slug === "cpf") {
+                      linhas.push(...extrasCnpj);
                     }
                   }
                   return linhas;
