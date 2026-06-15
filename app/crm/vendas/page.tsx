@@ -192,11 +192,22 @@ export default function Vendas() {
   // 📅 Padrao = HOJE. Toggles rapidos (Hoje / 7 / 30 / 90 dias / Personalizado) controlam o range.
   const [filtroDataInicio, setFiltroDataInicio] = useState(() => isoLocal(new Date()));
   const [filtroDataFim, setFiltroDataFim] = useState(() => isoLocal(new Date()));
-  const [rangeRapido, setRangeRapido] = useState<"hoje" | "7d" | "30d" | "90d" | "custom">("hoje");
+  const [rangeRapido, setRangeRapido] = useState<"hoje" | "7d" | "mes" | "mes_ant" | "custom">("hoje");
   // 🕘 Filtro por data da ÚLTIMA MODIFICAÇÃO (updated_at; venda nunca editada vale o cadastro)
   const [filtroModif, setFiltroModif] = useState<"qualquer" | "hoje" | "7d" | "30d">("qualquer");
   const [propostaVisualizando, setPropostaVisualizando] = useState<Proposta | null>(null);
   const [userEmail, setUserEmail] = useState<string>("");
+  // 🛡️ Perfil de visibilidade do PRÓPRIO usuário logado, lido DIRETO da tabela
+  //    usuarios (não depende do usuariosMap nem de flags derivadas). É o que
+  //    blinda o recorte: equipe (PDV) e fila vêm daqui, sempre.
+  const [meuPerfilVendas, setMeuPerfilVendas] = useState<{
+    equipeId: number | null; filaId: number | null;
+    equipesAcesso: number[]; filasAcesso: number[]; carregado: boolean;
+  }>({ equipeId: null, filaId: null, equipesAcesso: [], filasAcesso: [], carregado: false });
+  // 🎚️ Filtro de FILA escolhido no segundo seletor (quando um PDV está ativo)
+  const [filaFiltro, setFilaFiltro] = useState<string>("");
+  // 🏷️ Filas carregadas (id, nome, equipe_id) pra montar o seletor PDV→fila
+  const [filasLista, setFilasLista] = useState<{ id: number; nome: string; equipe_id: number | null; ativo: boolean }[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filas, setFilas] = useState<{ id: any; nome: string }[]>([]);
   const [etiquetas, setEtiquetas] = useState<{ id: any; nome: string }[]>([]);
@@ -217,16 +228,32 @@ export default function Vendas() {
   const [logsTabelaFalta, setLogsTabelaFalta] = useState(false);
 
   // Aplica um periodo rapido (define inicio/fim). "custom" libera os campos De/Ate.
-  const aplicarRange = (r: "hoje" | "7d" | "30d" | "90d" | "custom") => {
+  // Quando troca o PDV do topo, zera a fila escolhida (cada PDV tem suas filas)
+  useEffect(() => { setFilaFiltro(""); }, [equipeId]);
+
+  const aplicarRange = (r: "hoje" | "7d" | "mes" | "mes_ant" | "custom") => {
     setRangeRapido(r);
     if (r === "custom") return;
     const hoje = new Date();
-    const fim = isoLocal(hoje);
-    let ini = fim;
-    if (r !== "hoje") {
+    let ini: string;
+    let fim: string;
+    if (r === "hoje") {
+      ini = fim = isoLocal(hoje);
+    } else if (r === "7d") {
       const d = new Date(hoje);
-      d.setDate(d.getDate() - (r === "7d" ? 6 : r === "30d" ? 29 : 89));
+      d.setDate(d.getDate() - 6);
       ini = isoLocal(d);
+      fim = isoLocal(hoje);
+    } else if (r === "mes") {
+      // 1º dia do mês atual até hoje
+      const primeiro = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      ini = isoLocal(primeiro);
+      fim = isoLocal(hoje);
+    } else { // mes_ant — 1º ao último dia do mês passado
+      const primeiroAnt = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+      const ultimoAnt = new Date(hoje.getFullYear(), hoje.getMonth(), 0); // dia 0 = último do mês anterior
+      ini = isoLocal(primeiroAnt);
+      fim = isoLocal(ultimoAnt);
     }
     setFiltroDataInicio(ini);
     setFiltroDataFim(fim);
@@ -403,29 +430,39 @@ export default function Vendas() {
   const podeEditarCamposCustom = isDono || perfil === "Administrador";
   const podeVerTudo = isDono || perfil === "Administrador" || !!permissoes?.vendas_equipe;
 
-  // 🔑 Recorte de visibilidade por FILA:
-  //   • veTudo (super/admin/dono) → vê todas as propostas.
-  //   • veEquipe ("ver vendas da equipe") → vê só os vendedores da PRÓPRIA FILA
-  //     (cai pra própria EQUIPE/PDV se o usuário não tiver fila definida).
-  //   • Sem nada disso → vê só as próprias.
+  // 🔑 Recorte de visibilidade — REESCRITO À PROVA DE FALHA:
+  //   A equipe (PDV) e a fila vêm de meuPerfilVendas, lido DIRETO do banco pro
+  //   usuário logado — não de listas auxiliares que podem não conter o usuário.
+  //
+  //   • veTudo  → só quem tem vendas_todas (ou admin/dono/super de verdade).
+  //   • veEquipe→ tem vendas_equipe E uma equipe (PDV) definida → vê só o PDV dele.
+  //   • veFila  → tem vendas_fila E uma fila definida → vê só a fila dele (via vendedor).
+  //   • senão   → vê só as próprias.
   const veTudo = isDono || isSuperAdmin || perfil === "Administrador" || !!permissoes?.vendas_todas;
-  const veEquipe = !!permissoes?.vendas_equipe;
-  const veFila = !!(permissoes as any)?.vendas_fila;
+  const veEquipe = !veTudo && !!permissoes?.vendas_equipe;
+  const veFila = !veTudo && !!(permissoes as any)?.vendas_fila;
   // Map e-mail -> usuário (O(1)) — evita varrer a lista de usuários por linha (lento com 7,5k vendas)
   const usuariosMap = useMemo(() => {
     const m = new Map<string, Usuario>();
     for (const u of usuarios) if (u.email) m.set(u.email.toLowerCase(), u);
     return m;
   }, [usuarios]);
+  // 🛡️ Tudo abaixo vem de meuPerfilVendas (banco direto), com fallback no
+  //    usuariosMap só por segurança extra (se um dia o perfil não carregar).
   const meuRegistro = usuariosMap.get(userEmail.toLowerCase());
-  const minhaFila = meuRegistro?.fila_id ?? null;
+  const minhaEquipe: number | null =
+    meuPerfilVendas.equipeId ?? (meuRegistro?.equipe_id != null ? Number(meuRegistro.equipe_id) : null);
+  const minhaFila: number | null =
+    meuPerfilVendas.filaId ?? (meuRegistro?.fila_id != null ? Number(meuRegistro.fila_id) : null);
   const minhasFilas: string[] = (() => {
-    const arr = Array.isArray(meuRegistro?.filas_acesso) ? (meuRegistro!.filas_acesso as any[]) : [];
-    const base = arr.length ? arr : (meuRegistro?.fila_id != null ? [meuRegistro.fila_id] : []);
-    return base.map((x: any) => String(x));
+    const arr = meuPerfilVendas.filasAcesso.length
+      ? meuPerfilVendas.filasAcesso
+      : (minhaFila != null ? [minhaFila] : []);
+    return arr.map((x: any) => String(x));
   })();
-  const minhaEquipe = meuRegistro?.equipe_id ?? null;
-  const minhasEquipesAcesso: number[] = Array.isArray(meuRegistro?.equipes_acesso) ? (meuRegistro!.equipes_acesso as number[]) : [];
+  const minhasEquipesAcesso: number[] = meuPerfilVendas.equipesAcesso.length
+    ? meuPerfilVendas.equipesAcesso
+    : (minhaEquipe != null ? [minhaEquipe] : []);
   const regDoVendedor = (emailVend: string) => usuariosMap.get((emailVend || "").toLowerCase());
 
   // 🎨 ESTILOS
@@ -655,6 +692,26 @@ export default function Vendas() {
       );
     }
 
+    // 👤 VENDEDOR → SEMPRE dropdown, com a lista de vendedores CADASTRADOS
+    //    (tabela usuarios), não os valores brutos/inconsistentes das vendas.
+    //    O valor do filtro é o email do vendedor; o passaFiltrosColuna casa por
+    //    email OU nome (porque a venda pode ter gravado qualquer um dos dois).
+    if (c.slug === "vendedor" || c.tipo === "vendedor" || (c.tipo as string) === "usuario") {
+      const vendedoresCadastrados = [...usuarios]
+        .filter(u => u.email || u.nome)
+        .sort((a, b) => (a.nome || a.email || "").localeCompare(b.nome || b.email || ""));
+      return (
+        <select value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle}>
+          <option value="">Todos</option>
+          {vendedoresCadastrados.map(u => (
+            <option key={u.email || u.nome} value={u.email || u.nome}>
+              {u.nome || u.email}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
     // 🔄 Opções DINÂMICAS: vêm dos valores que existem de fato nas propostas (custom ou fixo).
     const distintos = opcoesPorColuna[c.slug] || [];
     if (distintos.length > 0 && distintos.length <= 150) {
@@ -723,7 +780,21 @@ export default function Vendas() {
         continue;
       }
 
-      if (campo.tipo === "dropdown" || campo.tipo === "vendedor" || slug === "vendedor") {
+      // 👤 Vendedor: o filtro guarda o EMAIL cadastrado, mas a venda pode ter
+      //    gravado email OU nome. Casa pelos dois (email exato ou nome do mesmo
+      //    usuário). Pra dropdown comum, mantém match exato.
+      if (campo.tipo === "vendedor" || slug === "vendedor") {
+        const rawStr = String(raw ?? "").toLowerCase();
+        const sel = String(valor).toLowerCase();
+        if (rawStr === sel) { continue; }
+        // acha o usuário selecionado (por email) e compara com o nome dele também
+        const uSel = usuarios.find(u => (u.email || "").toLowerCase() === sel || (u.nome || "").toLowerCase() === sel);
+        const nomeSel = (uSel?.nome || "").toLowerCase();
+        const emailSel = (uSel?.email || "").toLowerCase();
+        if (rawStr && (rawStr === nomeSel || rawStr === emailSel)) { continue; }
+        return false;
+      }
+      if (campo.tipo === "dropdown") {
         if (String(raw ?? "") !== valor) return false;
         continue;
       }
@@ -858,6 +929,38 @@ export default function Vendas() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
       setUserEmail(user.email || "");
+
+      // 🛡️ Lê o registro do usuário logado DIRETO (auth_user_id, fallback email).
+      //    Isso define o recorte de visibilidade sem depender de listas auxiliares.
+      try {
+        let meu: any = null;
+        const { data: porAuth } = await supabase.from("usuarios")
+          .select("equipe_id, fila_id, equipes_acesso, filas_acesso")
+          .eq("auth_user_id", user.id).maybeSingle();
+        meu = porAuth;
+        if (!meu && user.email) {
+          const { data: porEmail } = await supabase.from("usuarios")
+            .select("equipe_id, fila_id, equipes_acesso, filas_acesso")
+            .ilike("email", user.email).maybeSingle();
+          meu = porEmail;
+        }
+        setMeuPerfilVendas({
+          equipeId: meu?.equipe_id ?? null,
+          filaId: meu?.fila_id ?? null,
+          equipesAcesso: Array.isArray(meu?.equipes_acesso) ? meu.equipes_acesso : [],
+          filasAcesso: Array.isArray(meu?.filas_acesso) ? meu.filas_acesso : [],
+          carregado: true,
+        });
+      } catch {
+        setMeuPerfilVendas(p => ({ ...p, carregado: true }));
+      }
+
+      // Carrega filas (pro seletor PDV→fila)
+      try {
+        const { data: fl } = await supabase.from("filas")
+          .select("id, nome, equipe_id, ativo").eq("ativo", true).order("nome");
+        setFilasLista((fl || []) as any);
+      } catch { /* sem filas */ }
 
       const usouMock = await fetchPropostas();
       setModoDemo(usouMock);
@@ -1294,9 +1397,17 @@ export default function Vendas() {
       }
       return false;
     })
-    // 🔒 O seletor de equipe (que vem do localStorage) só filtra quem vê tudo.
-    // Compara equipe_id_criador (coluna que de fato é gravada) — equipe_id fica sempre NULL.
-    .filter(p => !veTudo || !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
+    // 🔒 Seletor de PDV do topo (equipeId): filtra por equipe_id_criador pra
+    //    QUALQUER usuário que tenha um PDV selecionado/travado (não só quem vê tudo).
+    .filter(p => !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
+    // 🎚️ Seletor de FILA (filaFiltro): quando escolhido, mostra só vendas cujo
+    //    vendedor pertence àquela fila. Vendas com vendedor não-identificável
+    //    (INDICADOR, nomes soltos) não casam numa fila específica.
+    .filter(p => {
+      if (!filaFiltro) return true;
+      const rv = regDoVendedor(p.vendedor);
+      return !!rv && String(rv.fila_id ?? "") === String(filaFiltro);
+    })
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => !buscaDebounced || p.nome?.toLowerCase().includes(buscaDebounced.toLowerCase()) || p.cpf?.includes(buscaDebounced) || nomeVendedor(p.vendedor).toLowerCase().includes(buscaDebounced.toLowerCase()))
     .filter(p => {
@@ -1326,7 +1437,7 @@ export default function Vendas() {
     })
     .filter(p => passaFiltrosColuna(p)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, userEmail, equipeId, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, filtrosColuna, usuarios, camposUnificados]
   );
 
   // 📊 Colunas a renderizar
@@ -1386,7 +1497,7 @@ export default function Vendas() {
   }, [busca]);
 
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
@@ -1568,7 +1679,31 @@ export default function Vendas() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {podeVerTudo && <EquipeSelector />}
+          <EquipeSelector />
+          {/* 🎚️ Seletor de FILA — aparece quando há um PDV ativo e filas nele */}
+          {(() => {
+            const pdvAtivo = equipeId || (meuPerfilVendas.equipeId != null ? String(meuPerfilVendas.equipeId) : "");
+            if (!pdvAtivo) return null;
+            const filasDoPdv = filasLista.filter(f => String(f.equipe_id ?? "") === String(pdvAtivo));
+            if (filasDoPdv.length === 0) return null;
+            return (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8,
+                background: filaFiltro ? "#eff6ff" : "#ffffff",
+                border: `1px solid ${filaFiltro ? "#bfdbfe" : "#e5e7eb"}`,
+                borderRadius: 12, padding: "6px 12px 6px 14px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+              }}>
+                <span style={{ fontSize: 14, lineHeight: 1 }}>🎯</span>
+                <span style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Fila</span>
+                <select value={filaFiltro} onChange={e => setFilaFiltro(e.target.value)}
+                  style={{ background: "transparent", border: "none", outline: "none", color: filaFiltro ? "#2563eb" : "#1f2937", fontSize: 13, fontWeight: 700, cursor: "pointer", padding: "4px 0", minWidth: 130 }}>
+                  <option value="">🌐 Todas as filas</option>
+                  {filasDoPdv.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                </select>
+              </div>
+            );
+          })()}
 
           {podeEditarCamposCustom && (
             <button onClick={() => router.push("/crm/editor-proposta")} title="Configurar campos da proposta"
@@ -1639,10 +1774,10 @@ export default function Vendas() {
           {([
             { k: "hoje", l: "Hoje" },
             { k: "7d", l: "7 dias" },
-            { k: "30d", l: "30 dias" },
-            { k: "90d", l: "90 dias" },
+            { k: "mes", l: "Este mês" },
+            { k: "mes_ant", l: "Mês anterior" },
             { k: "custom", l: "Personalizado" },
-          ] as { k: "hoje" | "7d" | "30d" | "90d" | "custom"; l: string }[]).map(o => {
+          ] as { k: "hoje" | "7d" | "mes" | "mes_ant" | "custom"; l: string }[]).map(o => {
             const at = rangeRapido === o.k;
             return (
               <button key={o.k} onClick={() => aplicarRange(o.k)}
@@ -1670,8 +1805,8 @@ export default function Vendas() {
           <option value="7d">🕘 Modificadas nos últimos 7 dias</option>
           <option value="30d">🕘 Modificadas nos últimos 30 dias</option>
         </select>
-        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || Object.keys(filtrosColuna).length > 0) && (
-          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); aplicarRange("hoje"); }}
+        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || filaFiltro || Object.keys(filtrosColuna).length > 0) && (
+          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); setFilaFiltro(""); aplicarRange("hoje"); }}
             style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 10, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
             ✕ Limpar filtros
           </button>

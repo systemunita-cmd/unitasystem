@@ -209,6 +209,7 @@ export function usePermissao() {
 
         // ─── 2. Super Admin (email) → sempre tudo, independente de grupo/role ───
         if (ehSuperAdmin) {
+          console.log("🐞 [usePermissao] CAMINHO=superadmin-email", { email: user.email });
           setPerfil("Administrador");
           setIsDono(true);
           setIsSuperAdmin(true);
@@ -252,6 +253,13 @@ export function usePermissao() {
             setIsDono(false);             // 🔑 desativa checks de "isDono"
             setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"
             setPermissoes(final as Permissoes);
+            // 🐞 DEBUG TEMPORÁRIO — remover depois de diagnosticar o Adnael
+            console.log("🐞 [usePermissao] CAMINHO=grupo-naoadmin", {
+              email: user.email, grupo: nomeGrupo, grupo_id: usr.grupo_id,
+              vendas_todas: final.vendas_todas, vendas_equipe: final.vendas_equipe,
+              vendas_fila: final.vendas_fila, vendas_proprio: final.vendas_proprio,
+              isDono: false, isSuperAdmin: false, perfil: "Atendente",
+            });
           }
           setLoading(false);
           return;
