@@ -137,24 +137,25 @@ export default function TemplatesPage() {
   };
 
   const fetchCanais = async () => {
-    if (!wsId) return;
+    // 🔧 FIX single-tenant: wsId é null por design no Unita — NÃO retornar aqui,
+    // senão fetchCanais nunca roda e a tela mostra "nenhum canal conectado".
     const { data } = await supabase.from("conexoes").select("id, nome, tipo, waba_id").eq("tipo", "waba");
     setCanais(data || []);
   };
 
   const fetchTemplates = async () => {
-    if (!wsId) return;
+    // 🔧 FIX single-tenant: idem — sem isso a lista de templates fica sempre vazia.
     const { data } = await supabase.from("templates_waba").select("*").order("created_at", { ascending: false });
     setTemplates(data || []);
   };
 
   useEffect(() => {
-    if (!wsId) return;
+    // 🔧 FIX single-tenant: roda sempre (wsId é null por design no Unita).
     fetchCanais();
     fetchTemplates();
 
     // Realtime no Supabase
-    const ch = supabase.channel("templates_rt_" + wsId)
+    const ch = supabase.channel("templates_rt_unita")
       .on("postgres_changes", { event: "*", schema: "public", table: "templates_waba"}, () => fetchTemplates())
       .subscribe();
 
