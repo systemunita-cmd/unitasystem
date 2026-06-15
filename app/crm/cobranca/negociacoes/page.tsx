@@ -558,7 +558,7 @@ export default function CobrancaPage() {
     const { data, error } = await supabase
       .from("templates_waba")
       .select("id, canal_id, meta_template_name, nome_amigavel, categoria, idioma, status, componentes")
-      .eq("status", "aprovado");
+      .in("status", ["aprovado", "approved", "APPROVED", "Approved"]);
     if (error?.code === "PGRST205") { faltando?.push("templates_waba"); return; }
     setTemplates(data || []);
   }
