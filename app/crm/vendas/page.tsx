@@ -736,76 +736,64 @@ export default function Vendas() {
     return <input placeholder="filtrar..." value={val} onChange={e => setarFiltroColuna(c.slug, e.target.value)} style={filtroInputStyle} />;
   };
 
+  // Avalia UM filtro de coluna isolado (slug + valor) sobre uma proposta.
+  //  Retorna true se passa. Usado tanto no filtro final quanto no facetado.
+  const passaUmFiltroColuna = (p: Proposta, slug: string, valor: string): boolean => {
+    if (!valor) return true;
+    // 📅 Intervalo de data: chaves "slug__de" e "slug__ate"
+    if (slug.endsWith("__de") || slug.endsWith("__ate")) {
+      const ehDe = slug.endsWith("__de");
+      const baseSlug = slug.replace(/__(de|ate)$/, "");
+      let raw: any;
+      if (baseSlug === "__ultima_alteracao") {
+        const ts = p.updated_at || p.created_at;
+        try { raw = ts ? isoLocal(new Date(ts)) : ""; } catch { raw = ""; }
+      } else {
+        const campo = camposUnificados.find(c => c.slug === baseSlug);
+        if (!campo) return true;
+        raw = campo.origem === "fixo" ? (p as any)[baseSlug] : p.dados_customizados?.[baseSlug];
+      }
+      const d = String(raw ?? "").slice(0, 10);
+      if (!d) return false;
+      if (ehDe && d < valor) return false;
+      if (!ehDe && d > valor) return false;
+      return true;
+    }
+    // 🕘 coluna fixa "Última alteração" (dia único)
+    if (slug === "__ultima_alteracao") {
+      const ts = p.updated_at || p.created_at;
+      let d = "";
+      try { if (ts) d = isoLocal(new Date(ts)); } catch { d = ""; }
+      return d === valor;
+    }
+    const campo = camposUnificados.find(c => c.slug === slug);
+    if (!campo) return true;
+    const raw = campo.origem === "fixo" ? (p as any)[slug] : p.dados_customizados?.[slug];
+
+    if (campo.tipo === "checkbox") {
+      return !!raw === (valor === "sim");
+    }
+    // 👤 Vendedor: filtro guarda o EMAIL cadastrado, mas a venda pode ter gravado
+    //    email OU nome. Casa pelos dois.
+    if (campo.tipo === "vendedor" || slug === "vendedor") {
+      const rawStr = String(raw ?? "").toLowerCase();
+      const sel = String(valor).toLowerCase();
+      if (rawStr === sel) return true;
+      const uSel = usuarios.find(u => (u.email || "").toLowerCase() === sel || (u.nome || "").toLowerCase() === sel);
+      const nomeSel = (uSel?.nome || "").toLowerCase();
+      const emailSel = (uSel?.email || "").toLowerCase();
+      return !!(rawStr && (rawStr === nomeSel || rawStr === emailSel));
+    }
+    if (campo.tipo === "dropdown" || campo.tipo === "data") {
+      return String(raw ?? "") === valor;
+    }
+    return String(raw ?? "").toLowerCase().includes(valor.toLowerCase());
+  };
+
   const passaFiltrosColuna = (p: Proposta): boolean => {
     for (const [slug, valor] of Object.entries(filtrosColuna)) {
       if (!valor) continue;
-      // 📅 Filtro de intervalo de data: chaves "slug__de" e "slug__ate"
-      if (slug.endsWith("__de") || slug.endsWith("__ate")) {
-        const ehDe = slug.endsWith("__de");
-        const baseSlug = slug.replace(/__(de|ate)$/, "");
-        // pega o valor da data: coluna fixa especial ou campo normal
-        let raw: any;
-        if (baseSlug === "__ultima_alteracao") {
-          const ts = p.updated_at || p.created_at;
-          try { raw = ts ? isoLocal(new Date(ts)) : ""; } catch { raw = ""; }
-        } else {
-          const campo = camposUnificados.find(c => c.slug === baseSlug);
-          if (!campo) continue;
-          raw = campo.origem === "fixo" ? (p as any)[baseSlug] : p.dados_customizados?.[baseSlug];
-        }
-        const d = String(raw ?? "").slice(0, 10); // YYYY-MM-DD
-        if (!d) return false; // sem data não entra num filtro de intervalo
-        if (ehDe && d < valor) return false;
-        if (!ehDe && d > valor) return false;
-        continue;
-      }
-      // 🕘 coluna fixa "Última alteração" (dia único — mantida por compatibilidade)
-      if (slug === "__ultima_alteracao") {
-        const ts = p.updated_at || p.created_at;
-        let d = "";
-        try { if (ts) d = isoLocal(new Date(ts)); } catch { d = ""; }
-        if (d !== valor) return false;
-        continue;
-      }
-      const campo = camposUnificados.find(c => c.slug === slug);
-      if (!campo) continue;
-
-      const raw = campo.origem === "fixo"
-        ? (p as any)[slug]
-        : p.dados_customizados?.[slug];
-
-      if (campo.tipo === "checkbox") {
-        const esperado = valor === "sim";
-        if (!!raw !== esperado) return false;
-        continue;
-      }
-
-      // 👤 Vendedor: o filtro guarda o EMAIL cadastrado, mas a venda pode ter
-      //    gravado email OU nome. Casa pelos dois (email exato ou nome do mesmo
-      //    usuário). Pra dropdown comum, mantém match exato.
-      if (campo.tipo === "vendedor" || slug === "vendedor") {
-        const rawStr = String(raw ?? "").toLowerCase();
-        const sel = String(valor).toLowerCase();
-        if (rawStr === sel) { continue; }
-        // acha o usuário selecionado (por email) e compara com o nome dele também
-        const uSel = usuarios.find(u => (u.email || "").toLowerCase() === sel || (u.nome || "").toLowerCase() === sel);
-        const nomeSel = (uSel?.nome || "").toLowerCase();
-        const emailSel = (uSel?.email || "").toLowerCase();
-        if (rawStr && (rawStr === nomeSel || rawStr === emailSel)) { continue; }
-        return false;
-      }
-      if (campo.tipo === "dropdown") {
-        if (String(raw ?? "") !== valor) return false;
-        continue;
-      }
-
-      if (campo.tipo === "data") {
-        if (String(raw ?? "") !== valor) return false;
-        continue;
-      }
-
-      const txt = String(raw ?? "").toLowerCase();
-      if (!txt.includes(valor.toLowerCase())) return false;
+      if (!passaUmFiltroColuna(p, slug, valor)) return false;
     }
     return true;
   };
@@ -1376,7 +1364,10 @@ export default function Vendas() {
     return <div>{lab}<input placeholder={c.placeholder || ""} value={val || ""} onChange={e => set(textoLimpo(e.target.value))} style={inputStyle} /></div>;
   };
 
-  const propostasFiltradas = useMemo(() => propostas
+  // 🧱 BASE do recorte: visibilidade + PDV + fila + status + busca + datas.
+  //    NÃO inclui os filtros de coluna (esses entram depois). Serve de fonte
+  //    tanto pra lista final quanto pras OPÇÕES dos dropdowns de filtro (facetado).
+  const propostasNoEscopo = useMemo(() => propostas
     // 👁️ Recorte de visibilidade — HIERARQUIA:
     //   • Administrador / Dono / Super / "Ver todas"   → todas as vendas.
     //   • "Ver vendas do PDV/equipe" (Diretor/Gerente) → vendas do próprio PDV (equipe_id_criador == minha equipe).
@@ -1435,9 +1426,16 @@ export default function Vendas() {
       ini.setDate(ini.getDate() - (filtroModif === "7d" ? 6 : 29));
       return d >= isoLocal(ini) && d <= isoLocal(hoje);
     })
-    .filter(p => passaFiltrosColuna(p)),
+    ,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, filtrosColuna, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados]
+  );
+
+  // 🔎 Lista FINAL = base no escopo + filtros de coluna (a linha "filtrar..." de cada coluna)
+  const propostasFiltradas = useMemo(
+    () => propostasNoEscopo.filter(p => passaFiltrosColuna(p)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [propostasNoEscopo, filtrosColuna, camposUnificados, usuarios]
   );
 
   // 📊 Colunas a renderizar
@@ -1460,23 +1458,41 @@ export default function Vendas() {
   // Opções de filtro por coluna = valores distintos presentes nas propostas.
   // Colunas com mais de 150 distintos viram busca por texto, então paramos de
   // coletar nelas (evita varrer 7,5k linhas montando listas que seriam descartadas).
+  // Aplica os filtros de coluna EXCETO o de \`slugIgnorar\` (pra facetar as opções
+  //  sem que o filtro de uma coluna esconda as próprias opções dela).
+  const passaFiltrosColunaExceto = (p: Proposta, slugIgnorar: string): boolean => {
+    for (const [slug, valor] of Object.entries(filtrosColuna)) {
+      if (!valor) continue;
+      const base = slug.replace(/__(de|ate)$/, "");
+      if (base === slugIgnorar || slug === slugIgnorar) continue; // ignora o próprio
+      // reusa a lógica existente filtrando um filtrosColuna reduzido a esse slug
+      if (!passaUmFiltroColuna(p, slug, valor)) return false;
+    }
+    return true;
+  };
+
+  // 🔎 OPÇÕES dos dropdowns de filtro = valores distintos presentes nas vendas
+  //    do ESCOPO (PDV/fila/data/status), aplicando os demais filtros de coluna
+  //    (facetado: as opções encolhem conforme você filtra, mas o filtro de uma
+  //    coluna nunca esconde as próprias opções dela).
   const opcoesPorColuna = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const c of camposUnificados) {
       if (c.tipo === "data" || c.tipo === "checkbox") continue;
       const set = new Set<string>();
       let estourou = false;
-      for (const p of propostas) {
+      for (const p of propostasNoEscopo) {
+        if (!passaFiltrosColunaExceto(p, c.slug)) continue;
         const raw = c.origem === "fixo" ? (p as any)[c.slug] : p.dados_customizados?.[c.slug];
         if (raw === null || raw === undefined || raw === "") continue;
         set.add(String(raw));
-        if (set.size > 150) { estourou = true; break; }
+        if (set.size > 300) { estourou = true; break; }
       }
       map[c.slug] = estourou ? [] : Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propostas, camposUnificados]);
+  }, [propostasNoEscopo, filtrosColuna, camposUnificados]);
 
   // Paginação: 50 por página
   const POR_PAGINA = 20;
