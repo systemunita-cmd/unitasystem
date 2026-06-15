@@ -166,19 +166,43 @@ export function usePermissao() {
       const ehSuperAdmin = email === SUPER_ADMIN_EMAIL;
 
       try {
-        const { data: usr, error } = await supabase.from("usuarios")
+        // 🔧 Busca o registro por auth_user_id PRIMEIRO (vínculo forte) e, se não
+        //    achar, por email (case-insensitive). Antes buscava só por email com
+        //    match exato — se o e-mail de login divergisse do cadastrado (maiúscula,
+        //    domínio, etc.) o usuário "sumia" e caía no bootstrap que liberava TUDO.
+        let usr: any = null;
+        const { data: porAuth, error: errAuth } = await supabase.from("usuarios")
           .select("role, nome, grupo_id, equipe_id")
-          .eq("email", user.email)
+          .eq("auth_user_id", user.id)
           .maybeSingle();
+        if (errAuth) throw errAuth;
+        usr = porAuth;
 
-        if (error) throw error;
+        if (!usr && user.email) {
+          const { data: porEmail, error: errEmail } = await supabase.from("usuarios")
+            .select("role, nome, grupo_id, equipe_id")
+            .ilike("email", user.email)
+            .maybeSingle();
+          if (errEmail) throw errEmail;
+          usr = porEmail;
+        }
 
-        // ─── 1. Sem registro → bootstrap (libera tudo) ───
+        // ─── 1. Sem registro ───
+        //   ⚠️ NUNCA liberar tudo aqui. Só o super admin (pelo e-mail) entra full.
+        //   Qualquer outro usuário sem registro recebe acesso MÍNIMO (atendente),
+        //   pra um e-mail desconhecido jamais ver todas as vendas por engano.
         if (!usr) {
-          setPerfil("Administrador");
-          setIsDono(true);
-          setIsSuperAdmin(true);
-          setPermissoes(PERMISSOES_ADMIN);
+          if (ehSuperAdmin) {
+            setPerfil("Administrador");
+            setIsDono(true);
+            setIsSuperAdmin(true);
+            setPermissoes(PERMISSOES_ADMIN);
+          } else {
+            setPerfil("Atendente");
+            setIsDono(false);
+            setIsSuperAdmin(false);
+            setPermissoes(PERMISSOES_ATENDENTE);
+          }
           setLoading(false);
           return;
         }
@@ -252,11 +276,20 @@ export function usePermissao() {
           setPermissoes(PERMISSOES_ATENDENTE);
         }
       } catch (e) {
-        console.warn("[usePermissao] erro, fallback admin:", e);
-        setPerfil("Administrador");
-        setIsDono(true);
-        setIsSuperAdmin(true);
-        setPermissoes(PERMISSOES_ADMIN);
+        // 🔧 Em erro, NÃO liberar tudo (a menos que seja o super admin por e-mail).
+        //    Erro de rede/consulta não pode virar "vê todas as vendas".
+        console.warn("[usePermissao] erro ao resolver permissões:", e);
+        if (ehSuperAdmin) {
+          setPerfil("Administrador");
+          setIsDono(true);
+          setIsSuperAdmin(true);
+          setPermissoes(PERMISSOES_ADMIN);
+        } else {
+          setPerfil("Atendente");
+          setIsDono(false);
+          setIsSuperAdmin(false);
+          setPermissoes(PERMISSOES_ATENDENTE);
+        }
       }
       setLoading(false);
     };
