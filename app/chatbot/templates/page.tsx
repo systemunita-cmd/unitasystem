@@ -27,16 +27,41 @@ const IDIOMAS = [
   { v: "en_US", l: "🇺🇸 Inglês (EUA)" },
   { v: "es_ES", l: "🇪🇸 Espanhol" }
 ];
-const STATUS_COLORS: Record<string, string> = {
-  rascunho: "#6b7280", pendente: "#f59e0b", aprovado: "#16a34a",
-  rejeitado: "#dc2626", pausado: "#f59e0b", desativado: "#6b7280",
-  em_recurso: "#2563eb", deletando: "#6b7280", deletado: "#6b7280"
+// Normaliza o status: a Meta devolve em INGLÊS (approved, rejected, pending...),
+// mas internamente o sistema usa português. Mapeia tudo pra uma chave canônica.
+const normalizaStatus = (s: string | null | undefined): string => {
+  const v = String(s || "").trim().toLowerCase();
+  const mapa: Record<string, string> = {
+    approved: "aprovado", rejected: "rejeitado", pending: "pendente",
+    paused: "pausado", disabled: "desativado", in_appeal: "em_recurso",
+    draft: "rascunho", deleting: "deletando", deleted: "deletado",
+    pending_deletion: "deletando",
+  };
+  return mapa[v] || v;
 };
-const STATUS_LABELS: Record<string, string> = {
-  rascunho: "📝 Rascunho", pendente: "⏳ Pendente", aprovado: "✅ Aprovado",
-  rejeitado: "❌ Rejeitado", pausado: "⏸️ Pausado", desativado: "🚫 Desativado",
-  em_recurso: "🔄 Em recurso", deletando: "🗑️ Deletando", deletado: "🗑️ Deletado"
+
+// Paleta de cada status — cor sólida (texto/ponto), tom claro de fundo, borda.
+const STATUS_THEME: Record<string, { cor: string; bg: string; borda: string; label: string }> = {
+  aprovado:   { cor: "#15803d", bg: "#f0fdf4", borda: "#bbf7d0", label: "Aprovado" },
+  rejeitado:  { cor: "#b91c1c", bg: "#fef2f2", borda: "#fecaca", label: "Rejeitado" },
+  pendente:   { cor: "#b45309", bg: "#fffbeb", borda: "#fde68a", label: "Em análise" },
+  pausado:    { cor: "#b45309", bg: "#fffbeb", borda: "#fde68a", label: "Pausado" },
+  rascunho:   { cor: "#4b5563", bg: "#f9fafb", borda: "#e5e7eb", label: "Rascunho" },
+  desativado: { cor: "#4b5563", bg: "#f9fafb", borda: "#e5e7eb", label: "Desativado" },
+  em_recurso: { cor: "#1d4ed8", bg: "#eff6ff", borda: "#bfdbfe", label: "Em recurso" },
+  deletando:  { cor: "#4b5563", bg: "#f9fafb", borda: "#e5e7eb", label: "Removendo" },
+  deletado:   { cor: "#4b5563", bg: "#f9fafb", borda: "#e5e7eb", label: "Removido" },
 };
+const temaStatus = (s: string | null | undefined) =>
+  STATUS_THEME[normalizaStatus(s)] || { cor: "#4b5563", bg: "#f9fafb", borda: "#e5e7eb", label: String(s || "—") };
+
+// Mantidos por compatibilidade com trechos legados que ainda referenciam direto.
+const STATUS_COLORS: Record<string, string> = Object.fromEntries(
+  Object.entries(STATUS_THEME).map(([k, v]) => [k, v.cor])
+);
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(STATUS_THEME).map(([k, v]) => [k, v.label])
+);
 
 // 🆕 Traduz motivos de rejeição da Meta (vêm em inglês via API) pra português.
 // Quando o template é APROVADO, a Meta retorna "NONE" no campo rejected_reason — ou seja,
@@ -591,7 +616,8 @@ export default function TemplatesPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {templatesFiltrados.map(t => {
               const canal = canais.find(c => c.id === t.canal_id);
-              const color = STATUS_COLORS[t.status] || "#6b7280";
+              const tema = temaStatus(t.status);
+              const color = tema.cor;
               const bodyComp = (t.componentes || []).find((c: any) => c.type === "BODY");
               const bodyPreview = bodyComp?.text ? (bodyComp.text.length > 120 ? bodyComp.text.slice(0, 120) + "..." : bodyComp.text) : "";
               // 🆕 Traduz motivo da rejeição (retorna null pra "NONE"/""/null → não exibe nada)
@@ -619,10 +645,16 @@ export default function TemplatesPage() {
                       </p>
                     </div>
                     <span style={{
-                      background: `${color}15`, color,
-                      border: `1px solid ${color}40`,
-                      fontSize: 11, padding: "5px 12px", borderRadius: 12, fontWeight: 700, whiteSpace: "nowrap"}}>
-                      {STATUS_LABELS[t.status] || t.status}
+                      display: "inline-flex", alignItems: "center", gap: 7,
+                      background: tema.bg, color: tema.cor,
+                      border: `1px solid ${tema.borda}`,
+                      fontSize: 11.5, padding: "6px 13px 6px 11px", borderRadius: 999,
+                      fontWeight: 700, whiteSpace: "nowrap", letterSpacing: 0.2,
+                      boxShadow: `0 1px 2px ${tema.cor}14`}}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: 999, background: tema.cor,
+                        boxShadow: `0 0 0 3px ${tema.cor}22`, flexShrink: 0}} />
+                      {tema.label}
                     </span>
                   </div>
                   {bodyPreview && (
@@ -816,7 +848,19 @@ export default function TemplatesPage() {
             <div style={{ padding: 22, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
                 <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>Status</p>
-                <p style={{ color: STATUS_COLORS[detalhe.status], fontSize: 14, fontWeight: 700, margin: 0 }}>{STATUS_LABELS[detalhe.status]}</p>
+                {(() => {
+                  const td = temaStatus(detalhe.status);
+                  return (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 8,
+                      background: td.bg, color: td.cor, border: `1px solid ${td.borda}`,
+                      fontSize: 13, padding: "7px 15px 7px 12px", borderRadius: 999,
+                      fontWeight: 700, letterSpacing: 0.2, boxShadow: `0 1px 2px ${td.cor}14`}}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: td.cor, boxShadow: `0 0 0 3px ${td.cor}22` }} />
+                      {td.label}
+                    </span>
+                  );
+                })()}
               </div>
               <div>
                 <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, margin: "0 0 4px", textTransform: "uppercase", letterSpacing: 0.5 }}>Nome Técnico (Meta)</p>
