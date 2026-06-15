@@ -299,14 +299,16 @@ export default function TemplatesPage() {
   const enviarParaMetaSemValidar = async () => {
     setEnviando(true);
     try {
-      const resp = await wa("templates/criar", {
+      // 🔧 Backend Unita expõe /waba/criar-template e espera { canalId, template }
+      // (objeto no formato da Meta), não os campos soltos.
+      const resp = await wa("waba/criar-template", {
         canalId: parseInt(form.canalId),
-        nomeAmigavel: form.nomeAmigavel || form.metaTemplateName,
-        metaTemplateName: form.metaTemplateName,
-        categoria: form.categoria,
-        idioma: form.idioma,
-        componentes: montarComponentes(),
-        criadoPor: user?.email
+        template: {
+          name: form.metaTemplateName,
+          language: form.idioma,
+          category: form.categoria,
+          components: montarComponentes()
+        }
       });
 
       if (resp.success) {
@@ -333,25 +335,13 @@ export default function TemplatesPage() {
   };
 
   const deletarTemplate = async (t: Template) => {
+    // 🔧 O backend Unita ainda NÃO tem rota de deletar template (/waba/deletar-template).
+    // Em vez de chamar uma rota inexistente (que dá "rota não encontrada"), avisa claro.
+    // Quando a rota for criada no backend, basta trocar o bloco abaixo pela chamada real.
     setFeedback({
-      tipo: "aviso",
-      titulo: "Deletar template?",
-      mensagem: `O template "${t.nome_amigavel || t.meta_template_name}" será removido do sistema e também da Meta. Essa ação não pode ser desfeita.`,
-      confirmarLabel: "Sim, deletar",
-      onConfirmar: async () => {
-        setFeedback(null);
-        try {
-          const resp = await wa("templates/deletar", { templateId: t.id});
-          if (resp.success) {
-            fetchTemplates();
-            setFeedback({ tipo: "sucesso", titulo: "Template deletado", mensagem: "Foi removido do sistema e da Meta." });
-          } else {
-            setFeedback({ tipo: "erro", titulo: "Não foi possível deletar", mensagem: limparMensagemErro(resp.error || "") });
-          }
-        } catch (e: any) {
-          setFeedback({ tipo: "erro", titulo: "Não foi possível deletar", mensagem: limparMensagemErro(e?.message || "") });
-        }
-      }});
+      tipo: "info",
+      titulo: "Exclusão indisponível",
+      mensagem: `A exclusão de templates ainda não está habilitada neste sistema. Por enquanto, você pode deletar o template "${t.nome_amigavel || t.meta_template_name}" direto no WhatsApp Manager da Meta. Depois é só Sincronizar pra atualizar a lista aqui.`});
   };
 
   const sincronizarAgora = async () => {
@@ -385,7 +375,7 @@ export default function TemplatesPage() {
           ? ` (compartilha com ${canaisDoWaba.slice(1).map(c => c.nome).join(", ")})`
           : "";
         try {
-          const resp: any = await wa("templates/sincronizar", { canalId: canalPrincipal.id});
+          const resp: any = await wa("waba/sincronizar-templates", { canalId: canalPrincipal.id});
           const ok = resp?.success || resp?.sucesso;
           const count = resp?.count ?? resp?.total ?? resp?.templates?.length ?? "?";
           if (ok === false || resp?.error || resp?.erro) {
