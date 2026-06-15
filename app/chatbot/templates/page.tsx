@@ -191,14 +191,38 @@ export default function TemplatesPage() {
   }, [wsId]);
 
   // Monta o array de componentes no formato da Meta
+  // Conta quantas variáveis {{1}}, {{2}}... existem num texto (pega o maior número usado).
+  const contarVars = (texto: string): number => {
+    const nums = (texto.match(/\{\{\s*(\d+)\s*\}\}/g) || [])
+      .map(v => parseInt(v.replace(/[^0-9]/g, ""), 10))
+      .filter(n => !isNaN(n));
+    return nums.length ? Math.max(...nums) : 0;
+  };
+  // Gera valores de exemplo pra cada variável. A Meta EXIGE example quando há variáveis,
+  // senão rejeita o template ("missing example"). Valores genéricos servem só pra revisão.
+  const exemplosPara = (qtd: number): string[] => {
+    const amostras = ["João Silva", "Janeiro/2026", "R$ 149,90", "10/02/2026", "Unita Telecom", "12345", "Plano Fibra 500MB"];
+    return Array.from({ length: qtd }, (_, i) => amostras[i] || `exemplo${i + 1}`);
+  };
+
   const montarComponentes = () => {
     const comps: any[] = [];
     if (form.headerTipo === "text" && form.headerTexto) {
-      comps.push({ type: "HEADER", format: "TEXT", text: form.headerTexto });
+      // HEADER de texto com variável também precisa de example (header_text)
+      const nH = contarVars(form.headerTexto);
+      const headerComp: any = { type: "HEADER", format: "TEXT", text: form.headerTexto };
+      if (nH > 0) headerComp.example = { header_text: exemplosPara(nH) };
+      comps.push(headerComp);
     } else if (["image", "video", "document"].includes(form.headerTipo) && form.headerUrl) {
       comps.push({ type: "HEADER", format: form.headerTipo.toUpperCase(), example: { header_handle: [form.headerUrl] } });
     }
-    if (form.body) comps.push({ type: "BODY", text: form.body });
+    if (form.body) {
+      // BODY com variável precisa de example.body_text (array de arrays — 1 conjunto de amostras)
+      const nB = contarVars(form.body);
+      const bodyComp: any = { type: "BODY", text: form.body };
+      if (nB > 0) bodyComp.example = { body_text: [exemplosPara(nB)] };
+      comps.push(bodyComp);
+    }
     if (form.footer) comps.push({ type: "FOOTER", text: form.footer });
     if (form.botoes.length > 0) {
       comps.push({
