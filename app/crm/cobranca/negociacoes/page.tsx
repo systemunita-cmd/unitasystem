@@ -319,6 +319,8 @@ export default function CobrancaPage() {
   const [colNome, setColNome] = useState("");
   const [colOs, setColOs] = useState("");
   const [colCust, setColCust] = useState("");
+  const [colFraude, setColFraude] = useState("");  // "" todos | "sim" | "nao"
+  const [colChurn, setColChurn] = useState("");    // "" todos | "sim" | "nao"
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
   // 🆕 paginação da tabela principal (10 por página pra não pesar)
@@ -800,12 +802,16 @@ export default function CobrancaPage() {
     if (colNome) arr = arr.filter(c => inc(c.proposta.nome, colNome));
     if (colOs)   arr = arr.filter(c => inc(c.proposta.dados_customizados?.os, colOs));
     if (colCust) arr = arr.filter(c => inc(c.proposta.dados_customizados?.custcode, colCust));
+    if (colFraude === "sim") arr = arr.filter(c => c.temFraude === true);
+    if (colFraude === "nao") arr = arr.filter(c => !c.temFraude);
+    if (colChurn === "sim")  arr = arr.filter(c => c.temChurn === true);
+    if (colChurn === "nao")  arr = arr.filter(c => !c.temChurn);
     return arr;
-  }, [clientes, filtroStatus, mesInst, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust]);
+  }, [clientes, filtroStatus, mesInst, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust, colFraude, colChurn]);
 
   // 🆕 PAGINAÇÃO POR CLIENTE: 10 clientes por página. Volta pra pág. 1 ao mudar filtro.
   const totalPaginas = Math.max(1, Math.ceil(clientesTabela.length / TAM_PAGINA));
-  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, filtroVencSel, colNome, colOs, colCust]);
+  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn]);
   const paginaSegura = Math.min(pagina, totalPaginas);
   const clientesPagina = useMemo(
     () => clientesTabela.slice((paginaSegura - 1) * TAM_PAGINA, paginaSegura * TAM_PAGINA),
@@ -1526,26 +1532,44 @@ export default function CobrancaPage() {
                                 onChange={selecionarTodosClientesPagina} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
                             </th>
                           )}
-                          {["Cliente", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
+                          {["Cliente", "Fraude", "Churn", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
                             <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
                         {/* linha de filtros por coluna (nome / OS / custcode) */}
                         <tr style={{ background: "#fff" }}>
                           {podeDisparar && <th style={{ borderBottom: "1px solid #e5e7eb" }}></th>}
+                          {/* filtro Nome */}
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                            <input value={colNome} onChange={e => setColNome(e.target.value)} placeholder="filtrar nome"
+                              style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colNome ? "#bfdbfe" : "#e5e7eb"}`, background: colNome ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                          </th>
+                          {/* filtros Fraude e Churn */}
                           {([
-                            { v: colNome, set: setColNome, ph: "filtrar nome" },
-                            { v: colOs, set: setColOs, ph: "OS" },
-                            { v: colCust, set: setColCust, ph: "custcode" },
-                          ] as { v: string; set: (s: string) => void; ph: string }[]).map((c, i) => (
-                            <th key={i} style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
-                              <input value={c.v} onChange={e => c.set(e.target.value)} placeholder={c.ph}
-                                style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                            { v: colFraude, set: setColFraude },
+                            { v: colChurn, set: setColChurn },
+                          ] as { v: string; set: (s: string) => void }[]).map((c, i) => (
+                            <th key={"fc" + i} style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                              <select value={c.v} onChange={e => c.set(e.target.value)}
+                                style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400, cursor: "pointer" }}>
+                                <option value="">Todos</option>
+                                <option value="sim">Sim</option>
+                                <option value="nao">Não</option>
+                              </select>
                             </th>
                           ))}
+                          {/* filtros OS e Custcode */}
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                            <input value={colOs} onChange={e => setColOs(e.target.value)} placeholder="OS"
+                              style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colOs ? "#bfdbfe" : "#e5e7eb"}`, background: colOs ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                          </th>
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                            <input value={colCust} onChange={e => setColCust(e.target.value)} placeholder="custcode"
+                              style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colCust ? "#bfdbfe" : "#e5e7eb"}`, background: colCust ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
+                          </th>
                           <th colSpan={4} style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 14px" }}>
-                            {(colNome || colOs || colCust) && (
-                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); }}
+                            {(colNome || colOs || colCust || colFraude || colChurn) && (
+                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); }}
                                 title="Limpar filtros de coluna" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕ Limpar</button>
                             )}
                           </th>
@@ -1566,12 +1590,20 @@ export default function CobrancaPage() {
                                 </td>
                               )}
                               <td style={{ padding: "12px 14px", maxWidth: 240, borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}` }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <span style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
-                                  {c.temFraude && <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>FRAUDE</span>}
-                                  {c.temChurn && <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999 }}>CHURN</span>}
-                                </div>
+                                <div style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</div>
                                 <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{c.proposta.telefone1 || "—"} · {c.proposta.plano || "—"}</div>
+                              </td>
+                              {/* coluna Fraude */}
+                              <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                {c.temFraude
+                                  ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>FRAUDE</span>
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                              </td>
+                              {/* coluna Churn */}
+                              <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                {c.temChurn
+                                  ? <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 {c.proposta.dados_customizados?.os
