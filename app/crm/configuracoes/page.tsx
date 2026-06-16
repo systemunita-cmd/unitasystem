@@ -99,13 +99,49 @@ const CATEGORIAS_PERMISSAO = [
     { key: "relatorios_voip", label: "Relatórios de telefonia" },
   ]},
   { nome: "💰 Cobrança", cor: "#dc2626", permissoes: [
-    { key: "cobranca", label: "Acessar a Cobrança" },
+    { key: "cobranca", label: "Acessar a Cobrança (tudo)" },
+    { key: "cobranca_dashboard", label: "↳ Dashboard de cobrança" },
+    { key: "cobranca_negociacoes", label: "↳ Negociações (faturas/disparos)" },
+    { key: "cobranca_planilha", label: "↳ Atualizar planilha de pagamento" },
   ]},
   { nome: "🛠️ Suporte", cor: "#0d9488", permissoes: [
     { key: "suporte", label: "Acessar o Suporte" },
   ]},
   { nome: "🧑‍💼 RH", cor: "#4f46e5", permissoes: [
-    { key: "rh", label: "Acessar o RH" },
+    { key: "rh", label: "Acessar o RH (tudo)" },
+    // Visão Geral
+    { key: "rh_dashboard", label: "↳ Dashboard" },
+    { key: "rh_indicadores", label: "↳ Indicadores" },
+    // Pessoas
+    { key: "rh_funcionarios", label: "↳ Funcionários" },
+    { key: "rh_departamentos", label: "↳ Departamentos" },
+    { key: "rh_cargos", label: "↳ Cargos & Salários" },
+    // Folha de Pagamento
+    { key: "rh_folha", label: "↳ Folha do Mês" },
+    { key: "rh_holerites", label: "↳ Holerites" },
+    { key: "rh_encargos", label: "↳ Encargos & Impostos" },
+    // Jornada & Tempo
+    { key: "rh_ponto", label: "↳ Ponto / Frequência" },
+    { key: "rh_ferias", label: "↳ Férias" },
+    { key: "rh_afastamentos", label: "↳ Afastamentos" },
+    { key: "rh_banco_horas", label: "↳ Banco de Horas" },
+    // Benefícios
+    { key: "rh_beneficios", label: "↳ Benefícios" },
+    { key: "rh_vale_transporte", label: "↳ Vale Transporte" },
+    { key: "rh_vale_refeicao", label: "↳ Vale Refeição" },
+    { key: "rh_plano_saude", label: "↳ Plano de Saúde" },
+    // Recrutamento
+    { key: "rh_vagas", label: "↳ Vagas" },
+    { key: "rh_candidatos", label: "↳ Candidatos" },
+    { key: "rh_selecao", label: "↳ Processos Seletivos" },
+    // Desenvolvimento
+    { key: "rh_treinamentos", label: "↳ Treinamentos" },
+    { key: "rh_avaliacoes", label: "↳ Avaliações de Desempenho" },
+    // Documentos
+    { key: "rh_documentos", label: "↳ Documentos" },
+    { key: "rh_contratos", label: "↳ Contratos" },
+    // Config
+    { key: "rh_config", label: "↳ Configurações do RH" },
   ]},
   { nome: "💵 Financeiro", cor: "#d97706", permissoes: [
     { key: "financeiro_acessar", label: "Acessar o Financeiro" },
@@ -121,11 +157,16 @@ const CATEGORIAS_PERMISSAO = [
     { key: "configuracoes_workspace", label: "Configurações do sistema" },
     { key: "relatorios", label: "Relatórios de atendimento" },
     { key: "roleta_gerenciar", label: "Gerenciar roleta" },
+  ]},
+  { nome: "👤 Pessoal", cor: "#0ea5e9", permissoes: [
     { key: "config_proprio", label: "Editar próprio perfil" },
   ]},
 ];
 const TODAS_PERMISSOES = CATEGORIAS_PERMISSAO.flatMap(c => c.permissoes);
 const PERMISSOES_PADRAO: Record<string, boolean> = TODAS_PERMISSOES.reduce((acc, p) => { acc[p.key] = false; return acc; }, {} as Record<string, boolean>);
+// 👤 "Editar próprio perfil" vem LIGADO por padrão em todo grupo novo —
+//    todo usuário deve conseguir mexer no próprio cadastro.
+PERMISSOES_PADRAO.config_proprio = true;
 const LABELS_MAP: Record<string, string> = TODAS_PERMISSOES.reduce((acc, p) => { acc[p.key] = p.label; return acc; }, {} as Record<string, string>);
 
 const CORES_DISPONIVEIS = ["#2563eb", "#3b82f6", "#8b5cf6", "#a855f7", "#ec4899", "#dc2626", "#f59e0b", "#16a34a", "#06b6d4", "#6366f1", "#0ea5e9", "#14b8a6"];

@@ -17,7 +17,16 @@ const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb"
 export default function CobrancaHub() {
   const router = useRouter();
   const perm = useTemPermissao();
-  const permitido = perm.carregando ? null : (perm.superAdmin || perm.escopo("cobranca.acessar") !== "none");
+  const temGeral = perm.superAdmin || perm.escopo("cobranca.acessar") !== "none";
+  // 🔐 Cada card checa seu próprio slug; o acesso geral libera todos.
+  const podeCard = (slug: string) => temGeral || perm.escopo(slug as any) !== "none";
+  const cardsLiberados = {
+    dashboard: podeCard("cobranca_dashboard.acessar"),
+    negociacoes: podeCard("cobranca_negociacoes.acessar"),
+    planilha: podeCard("cobranca_planilha.acessar"),
+  };
+  // Permitido entrar no hub = tem o geral OU pelo menos um card liberado
+  const permitido = perm.carregando ? null : (temGeral || cardsLiberados.dashboard || cardsLiberados.negociacoes || cardsLiberados.planilha);
 
   const [isMobile, setIsMobile] = useState(false);
   const [contagem, setContagem] = useState<{ pagas: number; pendentes: number; inadimplentes: number } | null>(null);
@@ -57,21 +66,21 @@ export default function CobrancaHub() {
 
   const PAGINAS = [
     {
-      rota: "/crm/cobranca/dashboard", icone: "📊", titulo: "Dashboard",
+      rota: "/crm/cobranca/dashboard", icone: "📊", titulo: "Dashboard", slug: "dashboard",
       desc: "Quantas faturas estão pagas, pendentes e inadimplentes, com a evolução dos pagamentos mês a mês.",
       cor: "#2563eb", bg: "#eff6ff", bd: "#bfdbfe",
     },
     {
-      rota: "/crm/cobranca/negociacoes", icone: "🤝", titulo: "Negociações",
+      rota: "/crm/cobranca/negociacoes", icone: "🤝", titulo: "Negociações", slug: "negociacoes",
       desc: "A operação de cobrança: faturas do CRM, status, disparos de WhatsApp, campanhas e atendimentos.",
       cor: "#7c3aed", bg: "#f5f3ff", bd: "#ddd6fe",
     },
     {
-      rota: "/crm/cobranca/atualizacao", icone: "📤", titulo: "Atualizar planilha",
+      rota: "/crm/cobranca/atualizacao", icone: "📤", titulo: "Atualizar planilha", slug: "planilha",
       desc: "Suba a planilha de status de pagamento — acha o cliente pela ordem de serviço e puxa o custcode sozinho.",
       cor: "#16a34a", bg: "#f0fdf4", bd: "#bbf7d0",
     },
-  ];
+  ].filter(p => (cardsLiberados as any)[p.slug]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22 }}>

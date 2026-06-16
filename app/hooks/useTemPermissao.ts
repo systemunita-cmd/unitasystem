@@ -105,6 +105,9 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   if (b.crm_acessar) on("mod_crm.acessar", "all");
   if (b.telefonia_acessar) on("mod_telefonia.acessar", "all");
   if (b.chatbot_acessar) on("mod_chatbot.acessar", "all");
+  // 💰 COBRANÇA — geral libera tudo; individuais liberam cada card.
+  //    Cards: dashboard, negociacoes, planilha.
+  const COBRANCA_ITENS = ["dashboard", "negociacoes", "planilha"];
   if (b.cobranca) {
     on("mod_cobranca.acessar", "all");
     on("cobranca.acessar", "all");
@@ -113,8 +116,43 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
     on("cobranca.cancelar_fatura");
     on("cobranca.juridico");
     on("cobranca.protestada");
+    COBRANCA_ITENS.forEach(k => on(`cobranca_${k}.acessar`, "all"));
   }
-  if (b.rh) { on("mod_rh.acessar", "all"); on("rh.acessar", "all"); }
+  // individuais (liberam o módulo + o card específico, sem precisar do geral)
+  COBRANCA_ITENS.forEach(k => {
+    if ((b as any)[`cobranca_${k}`]) {
+      on("mod_cobranca.acessar", "all");
+      on("cobranca.acessar", "all");
+      on(`cobranca_${k}.acessar`, "all");
+    }
+  });
+
+  // 🧑‍💼 RH — geral libera tudo; individuais liberam cada subtela.
+  //    24 itens (mesmas chaves que o layout do RH checa em rh_<key>.acessar).
+  const RH_ITENS = [
+    "dashboard", "indicadores",
+    "funcionarios", "departamentos", "cargos",
+    "folha", "holerites", "encargos",
+    "ponto", "ferias", "afastamentos", "banco_horas",
+    "beneficios", "vale_transporte", "vale_refeicao", "plano_saude",
+    "vagas", "candidatos", "selecao",
+    "treinamentos", "avaliacoes",
+    "documentos", "contratos",
+    "config",
+  ];
+  if (b.rh) {
+    on("mod_rh.acessar", "all");
+    on("rh.acessar", "all");
+    RH_ITENS.forEach(k => on(`rh_${k}.acessar`, "all"));
+  }
+  // individuais (liberam o módulo + a subtela específica, sem precisar do geral)
+  RH_ITENS.forEach(k => {
+    if ((b as any)[`rh_${k}`]) {
+      on("mod_rh.acessar", "all");
+      on("rh.acessar", "all");
+      on(`rh_${k}.acessar`, "all");
+    }
+  });
   if (b.financeiro_acessar) { on("mod_financeiro.acessar", "all"); on("financeiro.acessar", "all"); }
   if (b.bater_ponto) { on("mod_bater_ponto.acessar", "all"); on("ponto.bater"); }
   if (b.suporte) { on("mod_suporte.acessar", "all"); on("suporte.acessar", "all"); }
