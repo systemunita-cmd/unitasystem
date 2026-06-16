@@ -143,14 +143,15 @@ function PropostaForm() {
   const podeEditarValores = perm.tem("propostas.editar_valores");
   const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
   const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
-  // 🔒 Vendedor (atendente) NÃO escolhe o status ao criar: fica travado em
-  //    "AGUARDANDO AUDITORIA". Supervisor/admin/super/dono escolhem normal.
-  //    ehAdmin (state) = role admin OU supervisor; resolve no carregamento.
-  const vendedorTravaStatus = !ehAdmin && !ehAdminGeralProp && !ehDono && !perm.superAdmin;
 
   // 🔒 Trava por equipe (Diretor/escopo team) — o conjunto de equipes permitidas
   // é derivado mais abaixo (idsEquipesPermitidas), honrando equipes_acesso do BKO/gerente.
   const ehAdminGeralProp = perm.superAdmin || perm.grupoNome === "Administração Geral";
+
+  // 🔒 Vendedor (atendente) NÃO escolhe o status ao criar: fica travado em
+  //    "AGUARDANDO AUDITORIA". Supervisor/admin/super/dono escolhem normal.
+  //    ehAdmin (state) = role admin OU supervisor; resolve no carregamento.
+  const vendedorTravaStatus = !ehAdmin && !ehAdminGeralProp && !ehDono && !perm.superAdmin;
 
   const router = useRouter();
   const searchParams = useSearchParams();
