@@ -157,6 +157,14 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
       on("rh.acessar", "all");
       on(`rh_${k}.acessar`, "all");
     }
+    // ✏️ Permissão de EDIÇÃO da subtela (só faz sentido com o "ver" junto).
+    //    A tela do RH checa escopo("rh_<k>.editar") pra liberar salvar/editar.
+    if ((b as any)[`rh_${k}_editar`]) {
+      on("mod_rh.acessar", "all");
+      on("rh.acessar", "all");
+      on(`rh_${k}.acessar`, "all");   // editar implica ver
+      on(`rh_${k}.editar`, "all");
+    }
   });
   // 🔐 PONTO POR FILA: checkbox "rh_ponto_fila" dá acesso à tela de ponto, mas
   //    com escopo "team" (só a própria fila). Se já tem rh_ponto (todo o ponto)
