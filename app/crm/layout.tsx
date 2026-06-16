@@ -5,6 +5,7 @@ import { supabase } from "../lib/supabase";
 import AuthGuard from "../components/AuthGuard";
 import { useTemPermissao } from "../hooks/useTemPermissao";
 import { usePermissao } from "../hooks/usePermissao";
+import { BaterPontoSection } from "./rh/_sections/baterpontosection";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CRM LAYOUT — Grupo Unita (single-tenant)
@@ -26,6 +27,9 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<Role>("admin"); // fallback admin se tabela não existir
   const [grupoIcone, setGrupoIcone] = useState<string>("");
   const [grupoId, setGrupoId] = useState<number | null>(null);
+
+  // 🕐 Trava de ponto: null = checando; true = liberado; false = precisa bater
+  const [pontoLiberado, setPontoLiberado] = useState<boolean | null>(null);
 
   // 🛡️ Sistema novo de permissões
   const perm = useTemPermissao();
@@ -92,6 +96,51 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     init();
   }, [router]);
 
+  // 🕐 TRAVA DE PONTO — checa UMA vez por sessão, quando as permissões resolvem.
+  //    Regra: tem o módulo bater_ponto E não é super admin → precisa ter batido
+  //    "Entrada" hoje (ponto_registros). Bateu → libera o dia. Super admin / sem
+  //    o módulo → libera direto. Erro de rede → não trava.
+  useEffect(() => {
+    if (perm.carregando) return;
+    if (pontoLiberado !== null) return;
+
+    const checar = async () => {
+      if (isSuperAdmin || isDono || perm.superAdmin) { setPontoLiberado(true); return; }
+      if (!permissoes.bater_ponto) { setPontoLiberado(true); return; }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setPontoLiberado(true); return; }
+
+      let nomeFunc: string | null = null;
+      try {
+        const { data: f } = await supabase
+          .from("funcionarios")
+          .select("nome")
+          .ilike("user_email", user.email || "")
+          .maybeSingle();
+        nomeFunc = f?.nome || null;
+      } catch { nomeFunc = null; }
+
+      // Tem o módulo mas não tem cadastro de funcionário → trava (só super admin escapa)
+      if (!nomeFunc) { setPontoLiberado(false); return; }
+
+      const inicioDia = new Date(); inicioDia.setHours(0, 0, 0, 0);
+      try {
+        const { data: batidas } = await supabase
+          .from("ponto_registros")
+          .select("id, tipo")
+          .eq("funcionario", nomeFunc)
+          .eq("tipo", "Entrada")
+          .gte("data_hora", inicioDia.toISOString())
+          .limit(1);
+        setPontoLiberado(!!(batidas && batidas.length > 0));
+      } catch {
+        setPontoLiberado(true);
+      }
+    };
+    checar();
+  }, [perm.carregando, perm.superAdmin, pontoLiberado, isSuperAdmin, isDono, permissoes.bater_ponto]);
+
   const navegarPara = (path: string) => {
     router.push(path);
     if (isMobile) { setMenuMobileAberto(false); setSecoesAberto(false); }
@@ -147,6 +196,36 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
 
   // Avatar = inicial do email
   const inicial = (userNome || userEmail || "?").charAt(0).toUpperCase();
+
+  // 🕐 TELA DE BLOQUEIO — sem bater ponto, não libera o sistema.
+  if (pontoLiberado === false) {
+    return (
+      <AuthGuard>
+        <div style={{ position: "fixed", inset: 0, background: "#f8fafc", overflowY: "auto", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
+          <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 16px" }}>
+            <div style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", borderRadius: 16, padding: "28px 24px", textAlign: "center", color: "#fff", marginBottom: 20, boxShadow: "0 10px 30px rgba(79,70,229,0.35)" }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>🕐</div>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Bata o ponto para liberar o sistema</h1>
+              <p style={{ margin: "8px 0 0", fontSize: 13, opacity: 0.9 }}>
+                Registre sua <b>entrada</b> abaixo. Assim que bater, o sistema libera automaticamente.
+              </p>
+            </div>
+            <BaterPontoSection />
+            <div style={{ textAlign: "center", marginTop: 20, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+              <button onClick={() => { setPontoLiberado(null); }}
+                style={{ background: "#4f46e5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                ✅ Já bati o ponto — liberar
+              </button>
+              <button onClick={signOut}
+                style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                🚪 Sair
+              </button>
+            </div>
+          </div>
+        </div>
+      </AuthGuard>
+    );
+  }
 
   return (
     <AuthGuard>
