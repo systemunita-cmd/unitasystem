@@ -105,12 +105,13 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     if (pontoLiberado !== null) return;
 
     const checar = async () => {
+      // Super admin / dono nunca travam
       if (isSuperAdmin || isDono || perm.superAdmin) { setPontoLiberado(true); return; }
-      if (!permissoes.bater_ponto) { setPontoLiberado(true); return; }
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setPontoLiberado(true); return; }
 
+      // Busca o cadastro de funcionário (o ponto é gravado por nome)
       let nomeFunc: string | null = null;
       try {
         const { data: f } = await supabase
@@ -121,9 +122,16 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
         nomeFunc = f?.nome || null;
       } catch { nomeFunc = null; }
 
-      // Tem o módulo mas não tem cadastro de funcionário → trava (só super admin escapa)
+      // 🔒 Trava quem tem o MÓDULO de bater ponto OU tem CADASTRO de funcionário.
+      //    Quem não tem nenhum dos dois → não bate ponto, libera.
+      const deveBater = !!permissoes.bater_ponto || !!nomeFunc;
+      if (!deveBater) { setPontoLiberado(true); return; }
+
+      // Deve bater mas não tem cadastro de funcionário (sem nome pra casar o ponto)
+      // → trava mesmo assim (só super admin/dono escapam, já tratados acima).
       if (!nomeFunc) { setPontoLiberado(false); return; }
 
+      // Checa se bateu "Entrada" hoje
       const inicioDia = new Date(); inicioDia.setHours(0, 0, 0, 0);
       try {
         const { data: batidas } = await supabase
