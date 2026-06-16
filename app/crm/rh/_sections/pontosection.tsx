@@ -171,6 +171,15 @@ export function PontoSection() {
     //   • Sem escopo / sem fila → não recorta (deixa o gate da tela cuidar do acesso).
     if (perm.carregando) return lista;
     const escopoPonto = perm.superAdmin ? "all" : perm.escopo("rh_ponto.acessar" as any);
+    // 🐞 DEBUG TEMP — remover depois. Mostra por que o filtro de fila (não) aplica.
+    console.log("🐞 [ponto] filtro fila", {
+      escopoPonto,
+      filaId: perm.filaId,
+      superAdmin: perm.superAdmin,
+      qtdNoMapa: Object.keys(filaPorNome).length,
+      amostraMapa: Object.entries(filaPorNome).slice(0, 5),
+      nomesNaLista: lista.slice(0, 5).map((f) => f.funcionario),
+    });
     if (escopoPonto === "all") return lista;
     if (escopoPonto === "team" && perm.filaId != null) {
       return lista.filter((f) => {
