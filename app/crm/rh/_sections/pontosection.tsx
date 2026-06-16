@@ -36,7 +36,12 @@ type Registro = {
   latitude: number | null;
   longitude: number | null;
   selfie_url: string | null;
+  ajuste_manual?: boolean | null;
+  ajuste_por?: string | null;
 };
+
+// Tipos de batida (mesma ordem do app de bater ponto)
+const TIPOS_BATIDA = ["Entrada", "Saída p/ almoço", "Retorno do almoço", "Saída", "Marcação"];
 
 function mesAtual() {
   const d = new Date();
@@ -99,6 +104,25 @@ export function PontoSection() {
   const [aberto, setAberto] = useState<string | null>(null);
   const [fotoModal, setFotoModal] = useState<{ url: string; mapsUrl: string | null } | null>(null);
 
+  // ✏️ EDIÇÃO DE PONTO (admin com permissão rh_ponto_editar)
+  const podeEditar = perm.superAdmin || perm.escopo("rh_ponto.editar" as any) !== "none";
+  const [meuEmail, setMeuEmail] = useState("");
+  // modal de edição/criação: { modo, registro?, funcionario, cargo, dia(YYYY-MM-DD), tipo, hora(HH:MM) }
+  const [editModal, setEditModal] = useState<null | {
+    modo: "editar" | "novo";
+    registroId?: string;
+    funcionario: string;
+    cargo: string;
+    data: string;   // YYYY-MM-DD
+    hora: string;    // HH:MM
+    tipo: string;
+  }>(null);
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setMeuEmail(data?.user?.email || ""));
+  }, []);
+
   const carregar = async (m: string) => {
     setCarregando(true);
     const [ano, mm] = m.split("-").map(Number);
@@ -106,7 +130,7 @@ export function PontoSection() {
     const fim = new Date(ano, mm, 1, 0, 0, 0); // 1º dia do mês seguinte
     const { data, error } = await supabase
       .from("ponto_registros")
-      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url")
+      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por")
       .gte("data_hora", inicio.toISOString())
       .lt("data_hora", fim.toISOString())
       .order("data_hora", { ascending: true });
@@ -171,15 +195,6 @@ export function PontoSection() {
     //   • Sem escopo / sem fila → não recorta (deixa o gate da tela cuidar do acesso).
     if (perm.carregando) return lista;
     const escopoPonto = perm.superAdmin ? "all" : perm.escopo("rh_ponto.acessar" as any);
-    // 🐞 DEBUG TEMP — remover depois. Mostra por que o filtro de fila (não) aplica.
-    console.log("🐞 [ponto] filtro fila", {
-      escopoPonto,
-      filaId: perm.filaId,
-      superAdmin: perm.superAdmin,
-      qtdNoMapa: Object.keys(filaPorNome).length,
-      amostraMapa: Object.entries(filaPorNome).slice(0, 5),
-      nomesNaLista: lista.slice(0, 5).map((f) => f.funcionario),
-    });
     if (escopoPonto === "all") return lista;
     if (escopoPonto === "team" && perm.filaId != null) {
       return lista.filter((f) => {
@@ -189,6 +204,71 @@ export function PontoSection() {
     }
     return lista;
   }, [registros, perm.carregando, perm.superAdmin, perm.filaId, filaPorNome]);
+
+  // ── converte "YYYY-MM-DD" + "HH:MM" → ISO local
+  const montarISO = (data: string, hora: string): string | null => {
+    if (!data || !hora) return null;
+    const [a, m, d] = data.split("-").map(Number);
+    const [h, min] = hora.split(":").map(Number);
+    if (!a || !m || !d || isNaN(h) || isNaN(min)) return null;
+    return new Date(a, m - 1, d, h, min, 0).toISOString();
+  };
+  // ── abre o modal pra EDITAR uma batida existente
+  const abrirEditar = (b: Registro) => {
+    const dt = new Date(b.data_hora);
+    const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    const hora = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
+    setEditModal({ modo: "editar", registroId: b.id, funcionario: b.funcionario, cargo: b.cargo || "", data, hora, tipo: b.tipo });
+  };
+  // ── abre o modal pra ADICIONAR uma batida num dia (dia em pt-BR dd/mm/aaaa)
+  const abrirNovo = (funcionario: string, cargo: string, diaBR: string) => {
+    const dt = parseDiaBR(diaBR);
+    const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    setEditModal({ modo: "novo", funcionario, cargo, data, hora: "08:00", tipo: "Entrada" });
+  };
+  // ── salva (insert no modo novo, update no modo editar) — marca como ajuste manual
+  const salvarEdit = async () => {
+    if (!editModal) return;
+    const iso = montarISO(editModal.data, editModal.hora);
+    if (!iso) { alert("Informe data e hora válidas."); return; }
+    setSalvandoEdit(true);
+    try {
+      if (editModal.modo === "editar" && editModal.registroId) {
+        const { error } = await supabase.from("ponto_registros").update({
+          data_hora: iso, tipo: editModal.tipo,
+          ajuste_manual: true, ajuste_por: meuEmail,
+        }).eq("id", editModal.registroId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("ponto_registros").insert({
+          funcionario: editModal.funcionario, cargo: editModal.cargo || "",
+          tipo: editModal.tipo, data_hora: iso,
+          latitude: null, longitude: null, precisao: null, selfie_url: null,
+          ajuste_manual: true, ajuste_por: meuEmail,
+        });
+        if (error) throw error;
+      }
+      setEditModal(null);
+      await carregar(mes);
+    } catch (e: any) {
+      console.error("[ponto] salvar edição", e);
+      alert("Erro ao salvar: " + (e?.message || "tente de novo"));
+    } finally {
+      setSalvandoEdit(false);
+    }
+  };
+  // ── exclui uma batida
+  const excluirBatida = async (b: Registro) => {
+    if (!confirm(`Excluir a batida de ${horaFmt(b.data_hora)} (${b.tipo}) de ${b.funcionario}?`)) return;
+    try {
+      const { error } = await supabase.from("ponto_registros").delete().eq("id", b.id);
+      if (error) throw error;
+      await carregar(mes);
+    } catch (e: any) {
+      console.error("[ponto] excluir", e);
+      alert("Erro ao excluir: " + (e?.message || "tente de novo"));
+    }
+  };
 
   // 🖨️ Gera a folha de ponto do funcionário (mês selecionado) e abre impressão→PDF.
   //    Regras: jornada 8h seg-sex, 4h sáb, 0 dom. Mostra entrada/saída do dia,
@@ -499,9 +579,18 @@ export function PontoSection() {
                           }}
                         >
                           <span style={{ color: "#374151", fontSize: 13, fontWeight: 700 }}>📅 {d.dia}</span>
-                          <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>
-                            {fmtHoras(d.horas)} trabalhadas
-                          </span>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>
+                              {fmtHoras(d.horas)} trabalhadas
+                            </span>
+                            {podeEditar && (
+                              <button onClick={() => abrirNovo(f.funcionario, f.cargo, d.dia)}
+                                title="Adicionar batida neste dia"
+                                style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                + batida
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                           {[...d.batidas]
@@ -571,6 +660,18 @@ export function PontoSection() {
                                       📷
                                     </span>
                                   )}
+                                  {b.ajuste_manual && (
+                                    <span title={`Ajuste manual${b.ajuste_por ? " por " + b.ajuste_por : ""}`}
+                                      style={{ fontSize: 12, marginLeft: 2 }}>✏️</span>
+                                  )}
+                                  {podeEditar && (
+                                    <>
+                                      <button onClick={() => abrirEditar(b)} title="Editar horário/tipo"
+                                        style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, padding: "2px 4px", marginLeft: 2 }}>✏️</button>
+                                      <button onClick={() => excluirBatida(b)} title="Excluir batida"
+                                        style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, padding: "2px 4px", color: "#dc2626" }}>🗑️</button>
+                                    </>
+                                  )}
                                 </div>
                               );
                             })}
@@ -586,6 +687,58 @@ export function PontoSection() {
       )}
 
       {/* LIGHTBOX DA SELFIE */}
+      {/* ✏️ MODAL DE EDIÇÃO / NOVA BATIDA */}
+      {editModal && (
+        <div onClick={() => !salvandoEdit && setEditModal(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", backdropFilter: "blur(3px)", zIndex: 5000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ ...card, width: "100%", maxWidth: 420, padding: 24 }}>
+            <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: "#1f2937" }}>
+              {editModal.modo === "editar" ? "✏️ Editar batida" : "➕ Adicionar batida"}
+            </h3>
+            <p style={{ margin: "0 0 18px", fontSize: 12, color: "#6b7280" }}>
+              {editModal.funcionario}{editModal.cargo ? ` · ${editModal.cargo}` : ""}
+            </p>
+
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Tipo</label>
+            <select value={editModal.tipo} onChange={(e) => setEditModal({ ...editModal, tipo: e.target.value })}
+              style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginBottom: 14, marginTop: 4 }}>
+              {TIPOS_BATIDA.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Data</label>
+                <input type="date" value={editModal.data} onChange={(e) => setEditModal({ ...editModal, data: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
+              </div>
+              <div style={{ width: 120 }}>
+                <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Hora</label>
+                <input type="time" value={editModal.hora} onChange={(e) => setEditModal({ ...editModal, hora: e.target.value })}
+                  style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
+              </div>
+            </div>
+
+            <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 12px", marginBottom: 18 }}>
+              <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
+                ⚠️ Esta batida será marcada como <b>ajuste manual</b> (registrado: {meuEmail || "você"}).
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditModal(null)} disabled={salvandoEdit}
+                style={{ background: "#fff", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Cancelar
+              </button>
+              <button onClick={salvarEdit} disabled={salvandoEdit}
+                style={{ background: salvandoEdit ? "#a5b4fc" : COR, color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 800, cursor: salvandoEdit ? "wait" : "pointer" }}>
+                {salvandoEdit ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {fotoModal && (
         <div
           onClick={() => setFotoModal(null)}
