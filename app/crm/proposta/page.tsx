@@ -143,6 +143,10 @@ function PropostaForm() {
   const podeEditarValores = perm.tem("propostas.editar_valores");
   const podeMarcarInstalada = perm.tem("propostas.marcar_instalada");
   const podeMarcarCancelada = perm.tem("propostas.marcar_cancelada");
+  // 🔒 Vendedor (atendente) NÃO escolhe o status ao criar: fica travado em
+  //    "AGUARDANDO AUDITORIA". Supervisor/admin/super/dono escolhem normal.
+  //    ehAdmin (state) = role admin OU supervisor; resolve no carregamento.
+  const vendedorTravaStatus = !ehAdmin && !ehAdminGeralProp && !ehDono && !perm.superAdmin;
 
   // 🔒 Trava por equipe (Diretor/escopo team) — o conjunto de equipes permitidas
   // é derivado mais abaixo (idsEquipesPermitidas), honrando equipes_acesso do BKO/gerente.
@@ -579,7 +583,8 @@ function PropostaForm() {
       data_agendamento: form.data_agendamento || null,
       periodo_instalacao: form.periodo_instalacao || "",
       vendedor: form.vendedor || "",
-      status_venda: form.status_venda || STATUS_PADRAO,
+      // 🔒 Vendedor sempre grava AGUARDANDO AUDITORIA, ignorando qualquer valor no form.
+      status_venda: vendedorTravaStatus ? STATUS_PADRAO : (form.status_venda || STATUS_PADRAO),
       data_instalacao: form.data_instalacao || null,
       data_cancelamento: form.data_cancelamento || null,
       operadora: form.operadora || "",
@@ -1100,14 +1105,28 @@ function PropostaForm() {
         const placeholderLabel = c.slug === "vencimento" ? "Selecione..." : c.slug === "periodo_instalacao" ? "Selecione..." : c.slug === "forma_pagamento" ? "Selecione..." : null;
         const prefixoVenc = c.slug === "vencimento";
         const ehStatus = c.slug === "status_venda";
-        input = (
-          <select value={valorEfetivo} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)}>
-            {placeholderLabel && <option value="">{placeholderLabel}</option>}
-            {(c.opcoes || []).map(op => (
-              <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : ehStatus ? `${statusEmoji(op)} ${op}` : op}</option>
-            ))}
-          </select>
-        );
+        // 🔒 Vendedor criando: status travado em AGUARDANDO AUDITORIA (sem escolher).
+        if (ehStatus && vendedorTravaStatus) {
+          input = (
+            <div
+              title="O status é definido pela auditoria. Sua proposta entra como Aguardando Auditoria."
+              style={{ ...inputStyleParaCampo(c), display: "flex", alignItems: "center", gap: 8, background: "#f9fafb", color: "#374151", fontWeight: 700, cursor: "not-allowed" }}
+            >
+              <span>{statusEmoji(STATUS_PADRAO)}</span>
+              <span>{STATUS_PADRAO}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "#9ca3af" }}>🔒 definido pela auditoria</span>
+            </div>
+          );
+        } else {
+          input = (
+            <select value={valorEfetivo} onChange={e => set(e.target.value)} style={inputStyleParaCampo(c)}>
+              {placeholderLabel && <option value="">{placeholderLabel}</option>}
+              {(c.opcoes || []).map(op => (
+                <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : ehStatus ? `${statusEmoji(op)} ${op}` : op}</option>
+              ))}
+            </select>
+          );
+        }
       } else if (c.slug === "cpf") {
         input = tipoPessoa === "cnpj"
           ? <input placeholder="00.000.000/0000-00" value={valorEfetivo}
