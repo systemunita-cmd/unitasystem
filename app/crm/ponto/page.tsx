@@ -66,6 +66,8 @@ export default function BaterPontoPage() {
   const [relogio, setRelogio] = useState(new Date());
   const [ultima, setUltima] = useState<{ tipo: string; hora: string; comGps: boolean } | null>(null);
   const [emailLogado, setEmailLogado] = useState("");
+  const [exigeSelfie, setExigeSelfie] = useState(true); // 🤳 lido de usuarios.exige_selfie
+  const [batendoGps, setBatendoGps] = useState(false);
   const [modalSelfie, setModalSelfie] = useState(false);
   const [foto, setFoto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -109,6 +111,15 @@ export default function BaterPontoPage() {
         return;
       }
       setFunc({ nome: f.nome, cargo: f.cargo || "" });
+      // 🤳 Lê a config de selfie do usuário (default = exige, se não achar/for null)
+      try {
+        const { data: u } = await supabase
+          .from("usuarios")
+          .select("exige_selfie")
+          .ilike("email", email)
+          .maybeSingle();
+        setExigeSelfie(u?.exige_selfie !== false);
+      } catch { setExigeSelfie(true); }
       await carregarBatidasHoje(f.nome);
       setCarregando(false);
     })();
@@ -240,6 +251,39 @@ export default function BaterPontoPage() {
     carregarBatidasHoje(func.nome);
   };
 
+  // 🛰️ Bate ponto SÓ com GPS (sem selfie) — pra usuários internos.
+  //    GPS é obrigatório: se negar/falhar a localização, não registra.
+  const baterSoGps = async () => {
+    if (!func) return;
+    setBatendoGps(true);
+    const loc = await pegarLocalizacao();
+    if (!loc) {
+      setBatendoGps(false);
+      alert("Precisamos da sua localização para bater o ponto. Permita o acesso ao GPS e tente de novo.");
+      return;
+    }
+    const tipo = TIPOS[batidasHoje.length] || "Marcação";
+    const agora = new Date();
+    const { error } = await supabase.from("ponto_registros").insert({
+      funcionario: func.nome,
+      cargo: func.cargo,
+      tipo,
+      data_hora: agora.toISOString(),
+      latitude: loc.lat,
+      longitude: loc.lng,
+      precisao: loc.acc,
+      selfie_url: null,
+    });
+    setBatendoGps(false);
+    if (error) {
+      console.error("[ponto] insert gps", error);
+      alert("Erro ao registrar o ponto. Tente de novo.");
+      return;
+    }
+    setUltima({ tipo, hora: hora(agora.toISOString()), comGps: true });
+    carregarBatidasHoje(func.nome);
+  };
+
   const proximoTipo = TIPOS[batidasHoje.length] || "Marcação";
 
   return (
@@ -341,22 +385,28 @@ export default function BaterPontoPage() {
                 Próxima batida: <b style={{ color: TIPO_COR[proximoTipo] || COR }}>{proximoTipo}</b>
               </p>
               <button
-                onClick={abrirCamera}
+                onClick={exigeSelfie ? abrirCamera : baterSoGps}
+                disabled={batendoGps}
                 style={{
                   width: "100%",
-                  background: `linear-gradient(135deg, ${COR} 0%, #3b82f6 100%)`,
+                  background: batendoGps ? "#93c5fd" : `linear-gradient(135deg, ${COR} 0%, #3b82f6 100%)`,
                   color: "white",
                   border: "none",
                   borderRadius: 16,
                   padding: "18px 24px",
                   fontSize: 18,
-                  cursor: "pointer",
+                  cursor: batendoGps ? "wait" : "pointer",
                   fontWeight: 800,
                   boxShadow: `0 8px 24px ${COR}50`,
                 }}
               >
-                📸 Bater Ponto com selfie
+                {exigeSelfie ? "📸 Bater Ponto com selfie" : (batendoGps ? "🛰️ Registrando..." : "🛰️ Bater Ponto (localização)")}
               </button>
+              {!exigeSelfie && (
+                <p style={{ color: "#9ca3af", fontSize: 11, margin: "10px 0 0" }}>
+                  Sua batida usa apenas a localização (GPS).
+                </p>
+              )}
             </div>
 
             {ultima && (

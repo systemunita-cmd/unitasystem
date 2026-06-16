@@ -26,6 +26,7 @@ type Usuario = {
   role: "admin" | "supervisor" | "atendente";
   equipe_id?: number | null;
   fila_id?: number | null; // fila de atendimento (1 por usuário, depende da equipe)
+  exige_selfie?: boolean | null; // 🤳 bater ponto com selfie (true) ou só GPS (false)
   equipes_acesso?: number[] | null; // equipes que o usuário pode VER (BKO/gerente) + libera as filas
   filas_acesso?: number[] | null; // filas (múltiplas) que o usuário atende/vê
   ativo?: boolean;
@@ -607,6 +608,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     role: "atendente" as "admin" | "supervisor" | "atendente",
     grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
+    exige_selfie: true,
     equipes_acesso: [] as number[],
     filas_acesso: [] as number[],
   });
@@ -657,7 +659,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", equipes_acesso: [], filas_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, equipes_acesso: [], filas_acesso: [] });
     setShowForm(true);
   };
 
@@ -683,6 +685,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
       grupo_id: u.grupo_id?.toString() || "",
       ramal: u.ramal || "", telefone: u.telefone || "",
       fila_id: u.fila_id?.toString() || "",
+      exige_selfie: u.exige_selfie !== false, // default true
       equipes_acesso: equipesIniciais,
       filas_acesso: filasIniciais,
     });
@@ -708,6 +711,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
         ramal: formUsuario.ramal.trim() || null,
         telefone: formUsuario.telefone.trim() || null,
         fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
+        exige_selfie: formUsuario.exige_selfie,
         equipes_acesso: formUsuario.equipes_acesso,
         filas_acesso: formUsuario.filas_acesso,
       }).eq("id", editandoUsuario.id);
@@ -744,6 +748,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
           ramal: formUsuario.ramal.trim() || null,
           telefone: formUsuario.telefone.trim() || null,
           fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
+          exige_selfie: formUsuario.exige_selfie,
           equipes_acesso: formUsuario.equipes_acesso,
           filas_acesso: formUsuario.filas_acesso,
         }),
@@ -983,6 +988,22 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
             <div>
               <label style={labelStyle}>Telefone</label>
               <input placeholder="(62) 99999-9999" value={formUsuario.telefone} onChange={e => setFormUsuario({ ...formUsuario, telefone: e.target.value })} style={IS} />
+            </div>
+            {/* 🤳 Selfie no ponto: sim (com foto) ou não (só GPS, p/ internos) */}
+            <div>
+              <label style={labelStyle}>🤳 Selfie ao bater ponto</label>
+              <div
+                onClick={() => setFormUsuario({ ...formUsuario, exige_selfie: !formUsuario.exige_selfie })}
+                style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", background: formUsuario.exige_selfie ? "#eff6ff" : "#f9fafb" }}
+              >
+                <div style={{ width: 40, height: 22, borderRadius: 999, background: formUsuario.exige_selfie ? "#2563eb" : "#cbd5e1", position: "relative", flexShrink: 0, transition: "background 0.15s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: formUsuario.exige_selfie ? 20 : 2, transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: formUsuario.exige_selfie ? "#1d4ed8" : "#6b7280" }}>
+                  {formUsuario.exige_selfie ? "Sim — exige selfie + GPS" : "Não — só localização (GPS)"}
+                </span>
+              </div>
+              <p style={{ color: "#9ca3af", fontSize: 11, margin: "5px 0 0" }}>Funcionários internos podem bater só com localização.</p>
             </div>
             {!editandoUsuario && (
               <div style={{ position: "relative", gridColumn: isMobile ? "1" : "span 2" }}>
