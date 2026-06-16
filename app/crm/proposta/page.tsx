@@ -148,11 +148,6 @@ function PropostaForm() {
   // é derivado mais abaixo (idsEquipesPermitidas), honrando equipes_acesso do BKO/gerente.
   const ehAdminGeralProp = perm.superAdmin || perm.grupoNome === "Administração Geral";
 
-  // 🔒 Vendedor (atendente) NÃO escolhe o status ao criar: fica travado em
-  //    "AGUARDANDO AUDITORIA". Supervisor/admin/super/dono escolhem normal.
-  //    ehAdmin (state) = role admin OU supervisor; resolve no carregamento.
-  const vendedorTravaStatus = !ehAdmin && !ehAdminGeralProp && !ehDono && !perm.superAdmin;
-
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -839,6 +834,11 @@ function PropostaForm() {
   //    não escolhe — fica fixa. BKO/gerente com várias equipes escolhe a fila normalmente.
   const filaForcada = (!ehAdminGeralProp && minhasFilasIds.length === 1 && minhasEquipesAcesso.length <= 1) ? minhasFilasIds[0] : null;
   const travadoFila = filaForcada !== null;
+
+  // 🔒 Vendedor (atendente) NÃO escolhe o status ao criar: fica travado em
+  //    "AGUARDANDO AUDITORIA". Supervisor/admin/super/dono escolhem normal.
+  //    Definido AQUI (após todos os useState) pra não usar ehAdmin antes da hora.
+  const vendedorTravaStatus = !ehAdmin && !ehAdminGeralProp && !ehDono && !perm.superAdmin;
 
   // 👨‍💼 Quem pode ESCOLHER o vendedor (não trava no próprio usuário):
   //   super admin / admin geral / dono / Administrador, ou quem tem permissão de
