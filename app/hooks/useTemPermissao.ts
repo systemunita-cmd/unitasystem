@@ -52,6 +52,7 @@ export type RetornoUseTemPermissao = {
   userEmail: string | null;
   usuarioIdInterno: number | null;
   equipeId: number | null;
+  filaId: number | null;
   grupoId: number | null;
   grupoNome: string | null;
   mapa: MapaPermissoes;
@@ -153,6 +154,14 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
       on(`rh_${k}.acessar`, "all");
     }
   });
+  // 🔐 PONTO POR FILA: checkbox "rh_ponto_fila" dá acesso à tela de ponto, mas
+  //    com escopo "team" (só a própria fila). Se já tem rh_ponto (todo o ponto)
+  //    ou o RH geral, o "all" prevalece (não rebaixa pra team).
+  if ((b as any).rh_ponto_fila && !(b as any).rh_ponto && !b.rh) {
+    on("mod_rh.acessar", "all");
+    on("rh.acessar", "all");
+    on("rh_ponto.acessar", "team");
+  }
   if (b.financeiro_acessar) { on("mod_financeiro.acessar", "all"); on("financeiro.acessar", "all"); }
   if (b.bater_ponto) { on("mod_bater_ponto.acessar", "all"); on("ponto.bater"); }
   if (b.suporte) { on("mod_suporte.acessar", "all"); on("suporte.acessar", "all"); }
@@ -196,6 +205,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [usuarioIdInterno, setUsuarioIdInterno] = useState<number | null>(null);
   const [equipeId, setEquipeId] = useState<number | null>(null);
+  const [filaId, setFilaId] = useState<number | null>(null);
   const [grupoId, setGrupoId] = useState<number | null>(null);
   const [grupoNome, setGrupoNome] = useState<string | null>(null);
   const [adminGeral, setAdminGeral] = useState(false);
@@ -212,7 +222,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setUserId(null); setUserEmail(null); setUsuarioIdInterno(null);
-        setEquipeId(null); setGrupoId(null); setGrupoNome(null);
+        setEquipeId(null); setFilaId(null); setGrupoId(null); setGrupoNome(null);
         setAdminGeral(false); setMapa({}); setBoolMap({});
         setCarregando(false);
         return;
@@ -225,7 +235,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       let usu: any = null;
       const { data: porAuthId } = await supabase
         .from("usuarios")
-        .select("id, equipe_id, grupo_id, ativo")
+        .select("id, equipe_id, fila_id, grupo_id, ativo")
         .eq("auth_user_id", user.id)
         .maybeSingle();
       usu = porAuthId;
@@ -234,7 +244,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       if (!usu && user.email) {
         const { data: porEmail } = await supabase
           .from("usuarios")
-          .select("id, equipe_id, grupo_id, ativo")
+          .select("id, equipe_id, fila_id, grupo_id, ativo")
           .ilike("email", user.email)
           .maybeSingle();
         usu = porEmail;
@@ -242,7 +252,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
 
       if (!usu) {
         // Usuário ainda não cadastrado na tabela `usuarios` (super-admin bypassa por código)
-        setUsuarioIdInterno(null); setEquipeId(null); setGrupoId(null);
+        setUsuarioIdInterno(null); setEquipeId(null); setFilaId(null); setGrupoId(null);
         setGrupoNome(null); setAdminGeral(false); setMapa({}); setBoolMap({});
         setCarregando(false);
         return;
@@ -250,6 +260,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
 
       setUsuarioIdInterno(usu.id);
       setEquipeId(usu.equipe_id ?? null);
+      setFilaId(usu.fila_id ?? null);
       setGrupoId(usu.grupo_id ?? null);
 
       // Sem grupo atribuído → mapa vazio (super-admin bypassa por código)
@@ -365,6 +376,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
     userEmail,
     usuarioIdInterno,
     equipeId,
+    filaId,
     grupoId,
     grupoNome,
     mapa,

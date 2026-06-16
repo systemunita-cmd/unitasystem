@@ -209,7 +209,6 @@ export function usePermissao() {
 
         // ─── 2. Super Admin (email) → sempre tudo, independente de grupo/role ───
         if (ehSuperAdmin) {
-          console.log("🐞 [usePermissao] CAMINHO=superadmin-email", { email: user.email });
           setPerfil("Administrador");
           setIsDono(true);
           setIsSuperAdmin(true);
@@ -249,17 +248,25 @@ export function usePermissao() {
               if (boolMap[k] === true) final[k] = true;
             }
 
+            // 🔓 Porta de entrada do MÓDULO a partir de sub-itens:
+            //    se o grupo tem QUALQUER sub-item de um módulo marcado (ex:
+            //    rh_funcionarios, cobranca_dashboard), liga o booleano-mãe
+            //    (rh / cobranca) pra que o gate de ENTRADA do módulo abra —
+            //    sem precisar marcar o "Acessar tudo". O recorte fino de quais
+            //    telas aparecem continua sendo feito pelo useTemPermissao.
+            const ligaSeAlgum = (prefixo: string, chaveMae: string) => {
+              if (final[chaveMae]) return;
+              for (const k of Object.keys(boolMap)) {
+                if (boolMap[k] === true && k.startsWith(prefixo + "_")) { final[chaveMae] = true; return; }
+              }
+            };
+            ligaSeAlgum("rh", "rh");
+            ligaSeAlgum("cobranca", "cobranca");
+
             setPerfil("Atendente");      // 🔑 força perfil baixo
             setIsDono(false);             // 🔑 desativa checks de "isDono"
             setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"
             setPermissoes(final as Permissoes);
-            // 🐞 DEBUG TEMPORÁRIO — remover depois de diagnosticar o Adnael
-            console.log("🐞 [usePermissao] CAMINHO=grupo-naoadmin", {
-              email: user.email, grupo: nomeGrupo, grupo_id: usr.grupo_id,
-              vendas_todas: final.vendas_todas, vendas_equipe: final.vendas_equipe,
-              vendas_fila: final.vendas_fila, vendas_proprio: final.vendas_proprio,
-              isDono: false, isSuperAdmin: false, perfil: "Atendente",
-            });
           }
           setLoading(false);
           return;

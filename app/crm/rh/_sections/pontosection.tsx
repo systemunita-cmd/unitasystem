@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
+import { useTemPermissao } from "../../../hooks/useTemPermissao";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🧑‍💼 RH · Ponto / Frequência  (CONECTADO — lê 'ponto_registros')
@@ -65,10 +66,36 @@ function horasDoDia(batidas: Registro[]): number {
   return ms / 3600000;
 }
 
+// ── Jornada esperada (regra CLT 44h): seg-sex 8h, sábado 4h, domingo 0 ──
+//    getDay(): 0=domingo, 1=seg ... 6=sábado.
+function jornadaEsperadaDoDia(diaSemana: number): number {
+  if (diaSemana === 0) return 0;   // domingo
+  if (diaSemana === 6) return 4;   // sábado
+  return 8;                         // seg-sex
+}
+// parse "dd/mm/aaaa" (formato pt-BR usado em diaChave) → Date local
+function parseDiaBR(s: string): Date {
+  const [d, m, a] = s.split("/").map(Number);
+  return new Date(a, (m || 1) - 1, d || 1);
+}
+// h decimal → "+1h30" / "-0h45" (com sinal)
+function fmtSaldo(h: number): string {
+  const sinal = h < 0 ? "-" : "+";
+  const abs = Math.abs(h);
+  const horas = Math.floor(abs);
+  const min = Math.round((abs - horas) * 60);
+  return `${sinal}${horas}h${String(min).padStart(2, "0")}`;
+}
+const escapeHtml = (s: string) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+
 export function PontoSection() {
+  const perm = useTemPermissao();
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [mes, setMes] = useState(mesAtual());
+  // 🔐 Mapa nome-do-funcionário → fila_id (via funcionarios.user_email → usuarios.fila_id).
+  //    Usado pra recortar a folha por fila pro supervisor.
+  const [filaPorNome, setFilaPorNome] = useState<Record<string, number | null>>({});
   const [aberto, setAberto] = useState<string | null>(null);
   const [fotoModal, setFotoModal] = useState<{ url: string; mapsUrl: string | null } | null>(null);
 
@@ -95,6 +122,31 @@ export function PontoSection() {
     carregar(mes);
   }, [mes]);
 
+  // Monta o mapa nome → fila_id: funcionarios (nome, user_email) cruzado com
+  // usuarios (email, fila_id). Funcionário sem usuário/fila → null (liderança).
+  useEffect(() => {
+    (async () => {
+      try {
+        const [{ data: funcs }, { data: usrs }] = await Promise.all([
+          supabase.from("funcionarios").select("nome, user_email"),
+          supabase.from("usuarios").select("email, fila_id"),
+        ]);
+        const filaPorEmail: Record<string, number | null> = {};
+        (usrs || []).forEach((u: any) => {
+          if (u.email) filaPorEmail[String(u.email).toLowerCase()] = u.fila_id ?? null;
+        });
+        const mapa: Record<string, number | null> = {};
+        (funcs || []).forEach((f: any) => {
+          const email = (f.user_email || "").toLowerCase();
+          mapa[String(f.nome || "").trim().toLowerCase()] = email ? (filaPorEmail[email] ?? null) : null;
+        });
+        setFilaPorNome(mapa);
+      } catch (e) {
+        console.error("[ponto] erro ao montar mapa de filas:", e);
+      }
+    })();
+  }, []);
+
   // agrupa: funcionário → dia → batidas
   const porFunc = useMemo(() => {
     const m: Record<string, { cargo: string; dias: Record<string, Registro[]> }> = {};
@@ -104,14 +156,149 @@ export function PontoSection() {
       if (!m[r.funcionario].dias[dia]) m[r.funcionario].dias[dia] = [];
       m[r.funcionario].dias[dia].push(r);
     });
-    return Object.entries(m).map(([funcionario, info]) => {
+    const lista = Object.entries(m).map(([funcionario, info]) => {
       const dias = Object.entries(info.dias)
         .map(([dia, batidas]) => ({ dia, batidas, horas: horasDoDia(batidas) }))
         .sort((a, b) => b.dia.localeCompare(a.dia));
       const totalHoras = dias.reduce((s, d) => s + d.horas, 0);
       return { funcionario, cargo: info.cargo, dias, totalHoras };
     });
-  }, [registros]);
+
+    // 🔐 Recorte por FILA:
+    //   • escopo "all" (admin / RH geral / super) → vê TODOS, inclusive liderança (sem fila).
+    //   • escopo "team" (supervisor) com fila definida → vê só funcionários da MESMA fila.
+    //     Liderança (sem fila) NÃO aparece pro supervisor.
+    //   • Sem escopo / sem fila → não recorta (deixa o gate da tela cuidar do acesso).
+    if (perm.carregando) return lista;
+    const escopoPonto = perm.superAdmin ? "all" : perm.escopo("rh_ponto.acessar" as any);
+    if (escopoPonto === "all") return lista;
+    if (escopoPonto === "team" && perm.filaId != null) {
+      return lista.filter((f) => {
+        const filaFunc = filaPorNome[String(f.funcionario).trim().toLowerCase()];
+        return filaFunc != null && Number(filaFunc) === Number(perm.filaId);
+      });
+    }
+    return lista;
+  }, [registros, perm.carregando, perm.superAdmin, perm.filaId, filaPorNome]);
+
+  // 🖨️ Gera a folha de ponto do funcionário (mês selecionado) e abre impressão→PDF.
+  //    Regras: jornada 8h seg-sex, 4h sáb, 0 dom. Mostra entrada/saída do dia,
+  //    horas trabalhadas, jornada esperada, saldo (extra/débito) e totais.
+  const gerarFolhaPonto = (f: { funcionario: string; cargo: string; dias: { dia: string; batidas: Registro[]; horas: number }[]; totalHoras: number }) => {
+    const [ano, mm] = mes.split("-").map(Number);
+    const nomeMes = new Date(ano, mm - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+    // Mapa dia(pt-BR) → batidas, pra montar TODOS os dias do mês (inclusive faltas)
+    const porDia: Record<string, Registro[]> = {};
+    f.dias.forEach((d) => { porDia[d.dia] = d.batidas; });
+
+    const diasNoMes = new Date(ano, mm, 0).getDate();
+    let totalTrab = 0, totalPrev = 0, totalExtra = 0, totalDebito = 0, faltas = 0;
+    const linhas: string[] = [];
+
+    for (let dia = 1; dia <= diasNoMes; dia++) {
+      const dt = new Date(ano, mm - 1, dia);
+      const dow = dt.getDay();
+      const chave = dt.toLocaleDateString("pt-BR");
+      const nomeDow = dt.toLocaleDateString("pt-BR", { weekday: "short" });
+      const esperada = jornadaEsperadaDoDia(dow);
+      const batidas = (porDia[chave] || []).slice().sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+      const trabalhada = batidas.length ? horasDoDia(batidas) : 0;
+
+      // entrada = 1ª batida, saída = última (pra exibição)
+      const entrada = batidas.length ? horaFmt(batidas[0].data_hora) : "—";
+      const saida = batidas.length >= 2 ? horaFmt(batidas[batidas.length - 1].data_hora) : "—";
+      // todas as marcações do dia (pra detalhar almoço)
+      const marcacoes = batidas.map((b) => horaFmt(b.data_hora)).join(" · ") || "—";
+
+      const saldo = trabalhada - esperada;
+      totalTrab += trabalhada;
+      totalPrev += esperada;
+      if (saldo > 0) totalExtra += saldo;
+      if (saldo < 0 && esperada > 0) totalDebito += Math.abs(saldo);
+      const ehFalta = esperada > 0 && trabalhada === 0;
+      if (ehFalta) faltas++;
+
+      const corLinha = dow === 0 ? "background:#f9fafb;color:#9ca3af;"
+        : ehFalta ? "background:#fef2f2;" : "";
+      const saldoTxt = esperada === 0 && trabalhada === 0 ? "—"
+        : ehFalta ? "FALTA" : fmtSaldo(saldo);
+      const saldoCor = ehFalta ? "color:#dc2626;font-weight:700;"
+        : saldo < 0 ? "color:#dc2626;" : saldo > 0 ? "color:#16a34a;" : "color:#6b7280;";
+
+      linhas.push(`<tr style="${corLinha}">
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;white-space:nowrap;">${dia}/${String(mm).padStart(2,"0")} <span style="color:#9ca3af;text-transform:capitalize;">${escapeHtml(nomeDow.replace(".",""))}</span></td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${entrada}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${saida}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;font-size:10px;color:#6b7280;">${escapeHtml(marcacoes)}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${esperada === 0 ? "—" : fmtHoras(esperada)}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${trabalhada === 0 ? "—" : fmtHoras(trabalhada)}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;${saldoCor}">${saldoTxt}</td>
+      </tr>`);
+    }
+
+    const saldoFinal = totalTrab - totalPrev;
+    const win = window.open("", "_blank", "width=820,height=1000");
+    if (!win) { alert("Permita pop-ups pra gerar a folha de ponto."); return; }
+    win.document.write(`<!doctype html><html lang="pt-br"><head><meta charset="utf-8">
+      <title>Folha de Ponto — ${escapeHtml(f.funcionario)} — ${escapeHtml(nomeMes)}</title>
+      <style>
+        * { font-family: Arial, Helvetica, sans-serif; }
+        body { margin: 24px; color: #1f2937; }
+        h1 { font-size: 18px; margin: 0; }
+        .sub { color: #6b7280; font-size: 12px; margin: 2px 0 0; }
+        table { border-collapse: collapse; width: 100%; font-size: 11px; margin-top: 14px; }
+        th { background: #4f46e5; color: #fff; padding: 6px 8px; border: 1px solid #4f46e5; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+        .resumo { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+        .box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 14px; min-width: 120px; }
+        .box .v { font-size: 18px; font-weight: 800; }
+        .box .l { font-size: 10px; color: #6b7280; text-transform: uppercase; }
+        .assin { margin-top: 60px; display: flex; justify-content: space-between; gap: 40px; }
+        .assin div { flex: 1; border-top: 1px solid #1f2937; padding-top: 6px; text-align: center; font-size: 11px; color: #374151; }
+        @media print { body { margin: 12mm; } .noprint { display: none; } }
+      </style></head><body>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #4f46e5;padding-bottom:10px;">
+        <div>
+          <h1>Folha de Ponto</h1>
+          <p class="sub">Grupo Unita · UnitaSystem</p>
+        </div>
+        <div style="text-align:right;">
+          <p class="sub" style="font-size:13px;color:#1f2937;font-weight:700;">${escapeHtml(f.funcionario)}</p>
+          <p class="sub">${escapeHtml(f.cargo || "—")}</p>
+          <p class="sub" style="text-transform:capitalize;">${escapeHtml(nomeMes)}</p>
+        </div>
+      </div>
+      <table>
+        <thead><tr>
+          <th style="text-align:left;">Dia</th>
+          <th>Entrada</th>
+          <th>Saída</th>
+          <th>Marcações</th>
+          <th>Previsto</th>
+          <th>Trabalhado</th>
+          <th>Saldo</th>
+        </tr></thead>
+        <tbody>${linhas.join("")}</tbody>
+      </table>
+      <div class="resumo">
+        <div class="box"><div class="v">${fmtHoras(totalTrab)}</div><div class="l">Total trabalhado</div></div>
+        <div class="box"><div class="v">${fmtHoras(totalPrev)}</div><div class="l">Total previsto</div></div>
+        <div class="box"><div class="v" style="color:#16a34a;">${fmtHoras(totalExtra)}</div><div class="l">Horas extras</div></div>
+        <div class="box"><div class="v" style="color:#dc2626;">${fmtHoras(totalDebito)}</div><div class="l">Débito de horas</div></div>
+        <div class="box"><div class="v" style="color:#dc2626;">${faltas}</div><div class="l">Faltas</div></div>
+        <div class="box"><div class="v" style="${saldoFinal < 0 ? "color:#dc2626;" : "color:#16a34a;"}">${fmtSaldo(saldoFinal)}</div><div class="l">Saldo do mês</div></div>
+      </div>
+      <div class="assin">
+        <div>Assinatura do funcionário</div>
+        <div>Responsável / RH</div>
+      </div>
+      <p class="sub" style="margin-top:20px;font-size:9px;color:#9ca3af;">Documento gerado em ${new Date().toLocaleString("pt-BR")} · Jornada base: 8h seg–sex, 4h sáb (44h/semana). Conferir antes de assinar.</p>
+      <div class="noprint" style="margin-top:24px;text-align:center;">
+        <button onclick="window.print()" style="background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>
+      </div>
+    </body></html>`);
+    win.document.close();
+  };
 
   const stats = useMemo(
     () => ({
@@ -274,6 +461,17 @@ export function PontoSection() {
                     <span style={{ color: "#16a34a", fontSize: 16, fontWeight: 800 }}>
                       {fmtHoras(f.totalHoras)}
                     </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); gerarFolhaPonto(f); }}
+                      title="Gerar folha de ponto pra assinatura (PDF)"
+                      style={{
+                        background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe",
+                        borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700,
+                        cursor: "pointer", whiteSpace: "nowrap",
+                      }}
+                    >
+                      🖨️ Folha
+                    </button>
                     <span style={{ color: "#9ca3af", fontSize: 14 }}>{exp ? "▲" : "▼"}</span>
                   </div>
                 </div>
