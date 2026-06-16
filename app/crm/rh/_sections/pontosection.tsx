@@ -272,7 +272,7 @@ export function PontoSection() {
 
   // 🖨️ Gera a folha de ponto do funcionário (mês selecionado) e abre impressão→PDF.
   //    Regras: jornada 8h seg-sex, 4h sáb, 0 dom. Mostra entrada/saída do dia,
-  //    horas trabalhadas, jornada esperada, saldo (extra/débito) e totais.
+  //    horas trabalhadas, jornada esperada, saldo (crédito/débito no banco) e totais.
   const gerarFolhaPonto = (f: { funcionario: string; cargo: string; dias: { dia: string; batidas: Registro[]; horas: number }[]; totalHoras: number }) => {
     const [ano, mm] = mes.split("-").map(Number);
     const nomeMes = new Date(ano, mm - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
@@ -372,16 +372,16 @@ export function PontoSection() {
       <div class="resumo">
         <div class="box"><div class="v">${fmtHoras(totalTrab)}</div><div class="l">Total trabalhado</div></div>
         <div class="box"><div class="v">${fmtHoras(totalPrev)}</div><div class="l">Total previsto</div></div>
-        <div class="box"><div class="v" style="color:#16a34a;">${fmtHoras(totalExtra)}</div><div class="l">Horas extras</div></div>
-        <div class="box"><div class="v" style="color:#dc2626;">${fmtHoras(totalDebito)}</div><div class="l">Débito de horas</div></div>
+        <div class="box"><div class="v" style="color:#16a34a;">${fmtHoras(totalExtra)}</div><div class="l">Crédito no banco</div></div>
+        <div class="box"><div class="v" style="color:#dc2626;">${fmtHoras(totalDebito)}</div><div class="l">Débito no banco</div></div>
         <div class="box"><div class="v" style="color:#dc2626;">${faltas}</div><div class="l">Faltas</div></div>
-        <div class="box"><div class="v" style="${saldoFinal < 0 ? "color:#dc2626;" : "color:#16a34a;"}">${fmtSaldo(saldoFinal)}</div><div class="l">Saldo do mês</div></div>
+        <div class="box"><div class="v" style="${saldoFinal < 0 ? "color:#dc2626;" : "color:#16a34a;"}">${fmtSaldo(saldoFinal)}</div><div class="l">Saldo do banco</div></div>
       </div>
       <div class="assin">
         <div>Assinatura do funcionário</div>
         <div>Responsável / RH</div>
       </div>
-      <p class="sub" style="margin-top:20px;font-size:9px;color:#9ca3af;">Documento gerado em ${new Date().toLocaleString("pt-BR")} · Jornada base: 8h seg–sex, 4h sáb (44h/semana). Conferir antes de assinar.</p>
+      <p class="sub" style="margin-top:20px;font-size:9px;color:#9ca3af;">Documento gerado em ${new Date().toLocaleString("pt-BR")} · Jornada base: 8h seg–sex, 4h sáb (44h/semana). As horas a mais ou a menos entram no banco de horas. Conferir antes de assinar.</p>
       <div class="noprint" style="margin-top:24px;text-align:center;">
         <button onclick="window.print()" style="background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>
       </div>
