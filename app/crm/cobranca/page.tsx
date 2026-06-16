@@ -17,16 +17,18 @@ const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb"
 export default function CobrancaHub() {
   const router = useRouter();
   const perm = useTemPermissao();
-  const temGeral = perm.superAdmin || perm.escopo("cobranca.acessar") !== "none";
-  // 🔐 Cada card checa seu próprio slug; o acesso geral libera todos.
-  const podeCard = (slug: string) => temGeral || perm.escopo(slug as any) !== "none";
+  // "Acessar a Cobrança" = abre a ENTRADA do hub. Quais cards aparecem é por item.
+  //  Só super admin / Administração Geral veem todos sem marcar item.
+  const veTudo = perm.superAdmin || perm.grupoNome === "Administração Geral";
+  const temEntrada = veTudo || perm.escopo("cobranca.acessar") !== "none";
+  const podeCard = (slug: string) => veTudo || perm.escopo(slug as any) !== "none";
   const cardsLiberados = {
     dashboard: podeCard("cobranca_dashboard.acessar"),
     negociacoes: podeCard("cobranca_negociacoes.acessar"),
     planilha: podeCard("cobranca_planilha.acessar"),
   };
-  // Permitido entrar no hub = tem o geral OU pelo menos um card liberado
-  const permitido = perm.carregando ? null : (temGeral || cardsLiberados.dashboard || cardsLiberados.negociacoes || cardsLiberados.planilha);
+  // Entra no hub se tem a entrada (geral) OU pelo menos um card específico
+  const permitido = perm.carregando ? null : (temEntrada || cardsLiberados.dashboard || cardsLiberados.negociacoes || cardsLiberados.planilha);
 
   const [isMobile, setIsMobile] = useState(false);
   const [contagem, setContagem] = useState<{ pagas: number; pendentes: number; inadimplentes: number } | null>(null);

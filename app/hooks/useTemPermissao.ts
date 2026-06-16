@@ -109,6 +109,9 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   // 💰 COBRANÇA — geral libera tudo; individuais liberam cada card.
   //    Cards: dashboard, negociacoes, planilha.
   const COBRANCA_ITENS = ["dashboard", "negociacoes", "planilha"];
+  // "Acessar a Cobrança" = só ABRE a entrada do módulo. NÃO liga os cards —
+  //  você escolhe card por card o que aparece. (As ações finas tipo mudar_status
+  //  continuam acompanhando o acesso geral, pois não têm checkbox próprio.)
   if (b.cobranca) {
     on("mod_cobranca.acessar", "all");
     on("cobranca.acessar", "all");
@@ -117,7 +120,6 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
     on("cobranca.cancelar_fatura");
     on("cobranca.juridico");
     on("cobranca.protestada");
-    COBRANCA_ITENS.forEach(k => on(`cobranca_${k}.acessar`, "all"));
   }
   // individuais (liberam o módulo + o card específico, sem precisar do geral)
   COBRANCA_ITENS.forEach(k => {
@@ -141,10 +143,12 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
     "documentos", "contratos",
     "config",
   ];
+  // "Acessar o RH" = só ABRE a entrada do módulo. NÃO liga as 24 subtelas —
+  //  você escolhe item por item o que aparece. Sem item marcado, o cara entra
+  //  no RH mas não vê nenhuma tela.
   if (b.rh) {
     on("mod_rh.acessar", "all");
     on("rh.acessar", "all");
-    RH_ITENS.forEach(k => on(`rh_${k}.acessar`, "all"));
   }
   // individuais (liberam o módulo + a subtela específica, sem precisar do geral)
   RH_ITENS.forEach(k => {
@@ -157,7 +161,7 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   // 🔐 PONTO POR FILA: checkbox "rh_ponto_fila" dá acesso à tela de ponto, mas
   //    com escopo "team" (só a própria fila). Se já tem rh_ponto (todo o ponto)
   //    ou o RH geral, o "all" prevalece (não rebaixa pra team).
-  if ((b as any).rh_ponto_fila && !(b as any).rh_ponto && !b.rh) {
+  if ((b as any).rh_ponto_fila && !(b as any).rh_ponto) {
     on("mod_rh.acessar", "all");
     on("rh.acessar", "all");
     on("rh_ponto.acessar", "team");
