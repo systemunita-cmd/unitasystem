@@ -121,7 +121,8 @@ const CATEGORIAS_PERMISSAO = [
     { key: "rh_holerites", label: "↳ Holerites" },
     { key: "rh_encargos", label: "↳ Encargos & Impostos" },
     // Jornada & Tempo
-    { key: "rh_ponto", label: "↳ Ponto / Frequência" },
+    { key: "rh_ponto", label: "↳ Ponto / Frequência (todos)" },
+    { key: "rh_ponto_fila", label: "↳ Ponto / Frequência (só da própria fila)" },
     { key: "rh_ferias", label: "↳ Férias" },
     { key: "rh_afastamentos", label: "↳ Afastamentos" },
     { key: "rh_banco_horas", label: "↳ Banco de Horas" },
