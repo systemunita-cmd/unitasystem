@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 import AuthGuard from "../components/AuthGuard";
 import { useTemPermissao } from "../hooks/useTemPermissao";
 import { usePermissao } from "../hooks/usePermissao";
-import { BaterPontoSection } from "./rh/_sections/baterpontosection";
+import BaterPontoPage from "./ponto/page";
 
 // ═══════════════════════════════════════════════════════════════════════
 // CRM LAYOUT — Grupo Unita (single-tenant)
@@ -210,19 +210,16 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
     return (
       <AuthGuard>
         <div style={{ position: "fixed", inset: 0, background: "#f8fafc", overflowY: "auto", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
-          <div style={{ maxWidth: 760, margin: "0 auto", padding: "32px 16px" }}>
-            <div style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", borderRadius: 16, padding: "28px 24px", textAlign: "center", color: "#fff", marginBottom: 20, boxShadow: "0 10px 30px rgba(79,70,229,0.35)" }}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>🕐</div>
-              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Bata o ponto para liberar o sistema</h1>
-              <p style={{ margin: "8px 0 0", fontSize: 13, opacity: 0.9 }}>
-                Registre sua <b>entrada</b> abaixo. Assim que bater, o sistema libera automaticamente.
-              </p>
+          <div style={{ maxWidth: 760, margin: "0 auto", padding: "20px 16px 32px" }}>
+            <div style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", borderRadius: 12, padding: "14px 20px", color: "#fff", marginBottom: 18, boxShadow: "0 6px 18px rgba(79,70,229,0.3)", display: "flex", alignItems: "center", gap: 12, justifyContent: "center", textAlign: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: 22 }}>🔒</span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Bata o ponto (entrada) para liberar o sistema.</span>
             </div>
-            <BaterPontoSection />
+            <BaterPontoPage />
             <div style={{ textAlign: "center", marginTop: 20, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
               <button onClick={() => { setPontoLiberado(null); }}
                 style={{ background: "#4f46e5", color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                ✅ Já bati o ponto — liberar
+                ✅ Já bati — atualizar e liberar
               </button>
               <button onClick={signOut}
                 style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 10, padding: "12px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
