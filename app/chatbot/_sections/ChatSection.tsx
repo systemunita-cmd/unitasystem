@@ -756,8 +756,14 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
   const WA_BASE = UNITAZAP_URL;  // mesmo backend single-tenant
   // 🆕 Backend wolf-meta — usado pra Instagram/Messenger (rotas /send/*)
   const META_BASE = process.env.NEXT_PUBLIC_META_URL || UNITAZAP_URL;
-  const isAudioMsg = (txt: string) => typeof txt === "string" && txt.startsWith("[audio:") && txt.endsWith("]");
-  const audioFilename = (txt: string) => txt.replace(/^\[audio:/, "").replace(/\]$/, "");
+  const isAudioMsg = (txt: string) => typeof txt === "string" && ((txt.startsWith("[audio:") && txt.endsWith("]")) || /^\[audio\]\s*https?:\/\//i.test(txt));
+  const audioFilename = (txt: string) => {
+    // formato novo: [audio]http://.../arquivo.ogg  → devolve a URL completa
+    const mUrl = String(txt).match(/^\[audio\]\s*(https?:\/\/\S+)/i);
+    if (mUrl) return mUrl[1];
+    // formato antigo: [audio:filename]
+    return txt.replace(/^\[audio:/, "").replace(/\]$/, "");
+  };
 
   // 🔔 ═══════════════════════════════════════════════════════════════════════════
   // FUNÇÕES DE NOTIFICAÇÃO SONORA
@@ -976,13 +982,28 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
   // 🆕 Parsers de mídia nova (img/video/file) — formato: "[tipo:filename]" ou "[tipo:filename]\nlegenda"
   const parseMidia = (txt: string): { tipo: "img" | "video" | "file" | null; filename: string; legenda: string } => {
     if (typeof txt !== "string") return { tipo: null, filename: "", legenda: "" };
+    // ── formato antigo: [img:filename] / [video:filename] / [file:filename]
     const match = txt.match(/^\[(img|video|file):([^\]]+)\](\n([\s\S]*))?$/);
-    if (!match) return { tipo: null, filename: "", legenda: "" };
-    return {
-      tipo: match[1] as "img" | "video" | "file",
-      filename: match[2],
-      legenda: match[4] || ""
-    };
+    if (match) {
+      return { tipo: match[1] as "img" | "video" | "file", filename: match[2], legenda: match[4] || "" };
+    }
+    // ── formato novo (canal WebJS): [midia]URL / [imagem]URL / [arquivo]URL / [documento]URL / [video]URL
+    //    Vem a URL completa; o tipo é inferido pela extensão.
+    const mUrl = txt.match(/^\[(midia|imagem|imagen|image|foto|video|arquivo|documento|doc|file)\]\s*(https?:\/\/\S+)(\n([\s\S]*))?$/i);
+    if (mUrl) {
+      const rotulo = mUrl[1].toLowerCase();
+      const url = mUrl[2];
+      const ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
+      const ehImg = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic"].includes(ext);
+      const ehVid = ["mp4", "mov", "avi", "mkv", "webm", "3gp"].includes(ext);
+      let tipo: "img" | "video" | "file";
+      if (rotulo === "video" || ehVid) tipo = "video";
+      else if (["imagem", "imagen", "image", "foto"].includes(rotulo) || ehImg) tipo = "img";
+      else if (["arquivo", "documento", "doc", "file"].includes(rotulo)) tipo = "file";
+      else tipo = ehImg ? "img" : ehVid ? "video" : "file"; // [midia] → decide pela extensão
+      return { tipo, filename: url, legenda: mUrl[4] || "" };
+    }
+    return { tipo: null, filename: "", legenda: "" };
   };
 
   // Ícone baseado na extensão do arquivo (pra tipo=file)
@@ -1009,6 +1030,17 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
       }
     }
     return `${WA_BASE}/audios/${filename}`;
+  };
+
+  // 🆕 Resolve a URL final de uma mídia. Se já vier URL completa (formato novo
+  //    [midia]http://...), usa ela direto; senão monta via audioUrl (formato antigo).
+  //    Como o sistema roda em HTTPS, troca http:// por https:// pra evitar mixed-content.
+  const urlMidiaFinal = (filenameOuUrl: string, canalId?: number | string | null): string => {
+    let u = /^https?:\/\//i.test(filenameOuUrl) ? filenameOuUrl : audioUrl(filenameOuUrl, canalId);
+    if (typeof window !== "undefined" && window.location.protocol === "https:" && u.startsWith("http://")) {
+      u = "https://" + u.slice("http://".length);
+    }
+    return u;
   };
 
   const wa = async (rota: string, body?: object) => {
@@ -2838,29 +2870,29 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
                               </button>
                             </div>
                           )}
-                          {ehAudio && <AudioPlayer src={audioUrl(audioFilename(msg.mensagem), msg.canal_id)} isOwn={!isCliente} />}
+                          {ehAudio && <AudioPlayer src={urlMidiaFinal(audioFilename(msg.mensagem), msg.canal_id)} isOwn={!isCliente} />}
                           {midia.tipo === "img" && (
                             <div>
-                              <a href={audioUrl(midia.filename, msg.canal_id)} target="_blank" rel="noreferrer">
-                                <img src={audioUrl(midia.filename, msg.canal_id)} alt={midia.filename} style={{ display: "block", maxWidth: "100%", maxHeight: 320, borderRadius: 6, cursor: "pointer", objectFit: "cover" }} />
+                              <a href={urlMidiaFinal(midia.filename, msg.canal_id)} target="_blank" rel="noreferrer">
+                                <img src={urlMidiaFinal(midia.filename, msg.canal_id)} alt="imagem" style={{ display: "block", maxWidth: "100%", maxHeight: 320, borderRadius: 6, cursor: "pointer", objectFit: "cover" }} />
                               </a>
                               {midia.legenda && <p style={{ color: "#1f2937", fontSize: 13.5, margin: "6px 6px 0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{midia.legenda}</p>}
                             </div>
                           )}
                           {midia.tipo === "video" && (
                             <div>
-                              <video src={audioUrl(midia.filename, msg.canal_id)} controls preload="metadata" style={{ display: "block", maxWidth: "100%", maxHeight: 320, borderRadius: 6 }} />
+                              <video src={urlMidiaFinal(midia.filename, msg.canal_id)} controls preload="metadata" style={{ display: "block", maxWidth: "100%", maxHeight: 320, borderRadius: 6 }} />
                               {midia.legenda && <p style={{ color: "#1f2937", fontSize: 13.5, margin: "6px 6px 0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{midia.legenda}</p>}
                             </div>
                           )}
                           {midia.tipo === "file" && (
                             <div>
-                              <a href={audioUrl(midia.filename, msg.canal_id)} target="_blank" rel="noreferrer" download
+                              <a href={urlMidiaFinal(midia.filename, msg.canal_id)} target="_blank" rel="noreferrer" download
                                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: isCliente ? "#1f2a31" : "#00604f", borderRadius: 6, textDecoration: "none" }}>
-                                <span style={{ fontSize: 32 }}>{iconePorExtensao(midia.filename)}</span>
+                                <span style={{ fontSize: 32 }}>{iconePorExtensao(midia.filename.split("?")[0])}</span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                  <p style={{ color: "#1f2937", fontSize: 13, fontWeight: "bold", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{midia.filename.replace(/^midia_\d+_[a-z0-9]+_/, "")}</p>
-                                  <p style={{ color: isCliente ? "#8696a0" : "#a3e4d0", fontSize: 11, margin: "2px 0 0" }}>{(midia.filename.split(".").pop() || "arquivo").toUpperCase()} · clique p/ baixar</p>
+                                  <p style={{ color: "#1f2937", fontSize: 13, fontWeight: "bold", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(midia.filename.split("/").pop() || "arquivo").split("?")[0].replace(/^midia_\d+_[a-z0-9]+_/, "").replace(/^\d+_\d+_\d+\./, "arquivo.")}</p>
+                                  <p style={{ color: isCliente ? "#8696a0" : "#a3e4d0", fontSize: 11, margin: "2px 0 0" }}>{(midia.filename.split("?")[0].split(".").pop() || "arquivo").toUpperCase()} · clique p/ baixar</p>
                                 </div>
                               </a>
                               {midia.legenda && <p style={{ color: "#1f2937", fontSize: 13.5, margin: "6px 6px 0", lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{midia.legenda}</p>}
