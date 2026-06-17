@@ -1033,12 +1033,18 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
   };
 
   // 🆕 Resolve a URL final de uma mídia. Se já vier URL completa (formato novo
-  //    [midia]http://...), usa ela direto; senão monta via audioUrl (formato antigo).
-  //    Como o sistema roda em HTTPS, troca http:// por https:// pra evitar mixed-content.
+  //    [midia]http://...), usa ela; senão monta via audioUrl (formato antigo).
+  //    ⚠️ O backend (IP cru, cert autoassinado) é bloqueado pelo navegador quando
+  //    carregado inline em página HTTPS. Por isso roteamos pelo proxy do próprio
+  //    domínio (/api/midia?u=...), que tem certificado válido e busca o arquivo
+  //    servidor→servidor. Em http (dev/localhost) usa a URL direta.
   const urlMidiaFinal = (filenameOuUrl: string, canalId?: number | string | null): string => {
-    let u = /^https?:\/\//i.test(filenameOuUrl) ? filenameOuUrl : audioUrl(filenameOuUrl, canalId);
-    if (typeof window !== "undefined" && window.location.protocol === "https:" && u.startsWith("http://")) {
-      u = "https://" + u.slice("http://".length);
+    const u = /^https?:\/\//i.test(filenameOuUrl) ? filenameOuUrl : audioUrl(filenameOuUrl, canalId);
+    const ehHttpsPage = typeof window !== "undefined" && window.location.protocol === "https:";
+    // Só faz sentido proxiar URLs absolutas http(s). Em página HTTPS, sempre proxia
+    // (resolve cert autoassinado E mixed-content de uma vez).
+    if (/^https?:\/\//i.test(u) && ehHttpsPage) {
+      return `/api/midia?u=${encodeURIComponent(u)}`;
     }
     return u;
   };
