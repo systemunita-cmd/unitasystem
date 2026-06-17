@@ -20,9 +20,16 @@ export const dynamic = "force-dynamic"; // nunca cachear no build
 // Base permitida (só deixa proxiar o próprio backend, por segurança).
 const BACKEND = process.env.NEXT_PUBLIC_UNITAZAP_URL || process.env.UNITAZAP_URL || "http://2.25.187.204:3001";
 
-// Extrai o "host:porta" do backend pra validar a URL pedida.
-function hostDoBackend(): string {
-  try { return new URL(BACKEND).host; } catch { return "2.25.187.204:3001"; }
+// Hosts permitidos pra proxiar (segurança: não vira proxy aberto).
+// Compara só o HOSTNAME (sem porta), pra não quebrar se a porta/protocolo da
+// env var divergir um pouco. Aceita o hostname do BACKEND + o IP conhecido do VPS.
+function hostnamesPermitidos(): string[] {
+  const set = new Set<string>(["2.25.187.204"]);
+  try { set.add(new URL(BACKEND).hostname); } catch {}
+  // permite também via env extra, separado por vírgula, se algum dia precisar
+  const extra = process.env.MIDIA_HOSTS_PERMITIDOS || "";
+  extra.split(",").map(s => s.trim()).filter(Boolean).forEach(h => set.add(h));
+  return Array.from(set);
 }
 
 // Busca o arquivo (segue http ou https) ignorando certificado autoassinado.
@@ -62,8 +69,8 @@ export async function GET(req: NextRequest) {
   // Segurança: só proxia URLs do próprio backend (não vira proxy aberto pra qualquer site).
   let alvo: URL;
   try { alvo = new URL(u); } catch { return NextResponse.json({ error: "URL inválida." }, { status: 400 }); }
-  if (alvo.host !== hostDoBackend()) {
-    return NextResponse.json({ error: "Host não permitido." }, { status: 403 });
+  if (!hostnamesPermitidos().includes(alvo.hostname)) {
+    return NextResponse.json({ error: "Host não permitido.", hostnameRecebido: alvo.hostname, permitidos: hostnamesPermitidos() }, { status: 403 });
   }
 
   try {
