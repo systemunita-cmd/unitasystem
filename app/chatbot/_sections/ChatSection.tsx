@@ -31,7 +31,8 @@ type Atendimento = {
 type Mensagem = { id?: number; created_at?: string; numero: string; mensagem: string; de: string; canal_id?: number; origem?: string; };
 type Etiqueta = { id: number; nome: string; cor: string; icone: string; };
 type UsuarioWs = { email: string; nome: string; fila?: string | null; };
-type CanalInfo = { id: number; nome: string; tipo: string; };
+type CanalInfo = { id: number; nome: string; tipo: string;   modulos?: string[] | null;
+};
 
 /// 🆕 Papel de parede estilo WhatsApp Light — fundo bege com símbolos sutis (balões, corações, estrela, envelope, relógio, check, presente, câmera, folha)
 const WA_BG_LIGHT = `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><g fill='%23000000' fill-opacity='0.05'><path d='M20 30 q0 -10 10 -10 h40 q10 0 10 10 v15 q0 10 -10 10 h-25 l-10 10 v-10 h-5 q-10 0 -10 -10 z'/><path d='M120 32 q-8 -10 -16 0 q-8 10 8 22 q16 -12 8 -22 z'/><path d='M195 25 l3 8 l9 0 l-7 5 l3 9 l-8 -5 l-8 5 l3 -9 l-7 -5 l9 0 z'/><rect x='100' y='90' width='40' height='25' rx='3' fill='none' stroke='%23000000' stroke-opacity='0.05' stroke-width='2'/><path d='M100 95 l20 14 l20 -14' stroke='%23000000' stroke-opacity='0.05' stroke-width='2' fill='none'/><circle cx='195' cy='105' r='12' fill='none' stroke='%23000000' stroke-opacity='0.05' stroke-width='2'/><path d='M195 97 v8 l5 4' stroke='%23000000' stroke-opacity='0.05' stroke-width='2' fill='none' stroke-linecap='round'/><path d='M35 95 l8 8 l16 -16' stroke='%23000000' stroke-opacity='0.05' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/><rect x='20' y='160' width='30' height='30' rx='2'/><rect x='90' y='155' width='35' height='25' rx='3' fill='none' stroke='%23000000' stroke-opacity='0.05' stroke-width='2'/><circle cx='107' cy='167' r='6' fill='none' stroke='%23000000' stroke-opacity='0.05' stroke-width='2'/><path d='M170 165 q-5 10 5 20 q10 -5 15 -15 q-5 -10 -20 -5 z'/><circle cx='60' cy='200' r='6'/></g></svg>")`;
@@ -232,7 +233,7 @@ function AudioPlayer({ src, isOwn }: { src: string; isOwn: boolean }) {
   );
 }
 
-export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean } = {}) {
+export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { modoCobranca?: boolean; moduloFiltro?: string | null } = {}) {
   // useWorkspace removido (single-tenant Unita)
   // Substituído por auth direto do Supabase pra preservar `user.email` em fluxos
   const workspace = null as any;
@@ -1095,7 +1096,7 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
 
   const fetchCanais = async () => {
     // if (!wsId) return; — removido (single-tenant)
-    const { data } = await supabase.from("conexoes").select("id, nome, tipo");
+    const { data } = await supabase.from("conexoes").select("id, nome, tipo, modulos");
     setCanais(data || []);
   };
 
@@ -1225,7 +1226,19 @@ export function ChatSection({ modoCobranca = false }: { modoCobranca?: boolean }
       }
     }
 
-    setAtendimentos(lista);
+    // 🆕 FILTRO POR MÓDULO: se moduloFiltro setado (ex: "cobranca"), só mostra
+    //    atendimentos de canais que têm esse módulo marcado em conexoes.modulos.
+    let listaFinal = lista;
+    if (moduloFiltro && (canais || []).length > 0) {
+      const canaisDoModulo = new Set(
+        (canais || [])
+          .filter(c => Array.isArray((c as any).modulos) && (c as any).modulos.includes(moduloFiltro))
+          .map(c => String(c.id))
+      );
+      listaFinal = lista.filter(a => canaisDoModulo.has(String((a as any).canal_id)));
+    }
+
+    setAtendimentos(listaFinal);
 
     // 🆕 Dispara auto-limpeza em background (não aguarda).
     // Só dono/supervisor dispara — atendente comum não tem permissão de fazer update em massa.

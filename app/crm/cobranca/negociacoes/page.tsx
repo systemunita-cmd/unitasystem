@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
+import { ChatSection } from "../../../chatbot/_sections/ChatSection";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 💰 COBRANÇA — UnitaSystem
@@ -1332,6 +1333,7 @@ export default function CobrancaPage() {
         <>
           {/* ════════════ ABA: ATENDIMENTOS (retornos do disparo) ════════════ */}
           {aba === "atendimentos" && (
+            <>
             <div style={{ ...cardStyle, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
                 <div>
@@ -1394,6 +1396,18 @@ export default function CobrancaPage() {
                 </div>
               )}
             </div>
+
+            {/* ░░ CHAT COMPLETO — só conversas dos canais de cobrança ░░ */}
+            <div style={{ ...cardStyle, padding: 0, marginTop: 14, overflow: "hidden" }}>
+              <div style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f7" }}>
+                <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Atendimentos dos canais de cobrança</h2>
+                <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Todas as conversas dos canais marcados com o módulo Cobrança.</p>
+              </div>
+              <div style={{ height: "70vh", minHeight: 480 }}>
+                <ChatSection moduloFiltro="cobranca" />
+              </div>
+            </div>
+            </>
           )}
 
           {/* ════════════ ABA: DO CRM ════════════ */}
