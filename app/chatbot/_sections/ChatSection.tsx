@@ -239,6 +239,8 @@ export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { mod
   const workspace = null as any;
   const wsId: string | null = null;
   const [user, setUser] = useState<{ email: string; id?: string; nome?: string } | null>(null);
+  // 📡 Canais que o usuário pode ver (soma usuário + grupo). null = ainda carregando.
+  const [canaisPermitidos, setCanaisPermitidos] = useState<Set<number> | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -246,10 +248,23 @@ export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { mod
       if (!alive || !data.user) return;
       // busca nome na tabela usuarios
       let nome = data.user.email?.split("@")[0] || "";
+      let canaisUser: number[] = [];
+      let grupoId: number | null = null;
       try {
-        const { data: u } = await supabase.from("usuarios").select("nome").eq("auth_user_id", data.user.id).maybeSingle();
+        const { data: u } = await supabase.from("usuarios").select("nome, canais_acesso, grupo_id").eq("auth_user_id", data.user.id).maybeSingle();
         if (u?.nome) nome = u.nome;
+        if (Array.isArray(u?.canais_acesso)) canaisUser = u!.canais_acesso as number[];
+        grupoId = (u as any)?.grupo_id ?? null;
       } catch {}
+      // 📡 Soma os canais do grupo (canais_acesso do grupo) com os do usuário.
+      let canaisGrupo: number[] = [];
+      if (grupoId) {
+        try {
+          const { data: g } = await supabase.from("grupos_permissao").select("canais_acesso").eq("id", grupoId).maybeSingle();
+          if (Array.isArray(g?.canais_acesso)) canaisGrupo = g!.canais_acesso as number[];
+        } catch {}
+      }
+      if (alive) setCanaisPermitidos(new Set([...canaisUser, ...canaisGrupo].map(Number)));
       setUser({ email: data.user.email || "", id: data.user.id, nome });
     })();
     return () => { alive = false; };
@@ -1236,6 +1251,12 @@ export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { mod
           .map(c => String(c.id))
       );
       listaFinal = lista.filter(a => canaisDoModulo.has(String((a as any).canal_id)));
+    }
+    // 📡 2ª TRAVA: acesso por canal (usuário + grupo). Dono/super/chat_todos ignora.
+    //    Se não é dono e o Set já carregou, só vê canais que estão no Set.
+    const veTudoCanais = isDono || perm.superAdmin || !!permissoes.chat_todos;
+    if (!veTudoCanais && canaisPermitidos) {
+      listaFinal = listaFinal.filter(a => canaisPermitidos.has(Number((a as any).canal_id)));
     }
 
     setAtendimentos(listaFinal);

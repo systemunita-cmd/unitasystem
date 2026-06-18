@@ -30,6 +30,7 @@ type Usuario = {
   exige_ponto?: boolean | null;  // 🕐 precisa bater ponto pra acessar o sistema (true) ou não (false)
   equipes_acesso?: number[] | null; // equipes que o usuário pode VER (BKO/gerente) + libera as filas
   filas_acesso?: number[] | null; // filas (múltiplas) que o usuário atende/vê
+  canais_acesso?: number[] | null; // 📡 canais (conexões) que o usuário pode ver/atender
   ativo?: boolean;
   primeiro_acesso?: boolean;
   ramal?: string | null;
@@ -257,6 +258,7 @@ export default function Configuracoes() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [filas, setFilas] = useState<Fila[]>([]);
+  const [canais, setCanais] = useState<{ id: number; nome: string; tipo: string }[]>([]);
   const [gruposPermissao, setGruposPermissao] = useState<GrupoPermissao[]>([]);
   const [loadingInicial, setLoadingInicial] = useState(true);
   const [tabelasFaltando, setTabelasFaltando] = useState<string[]>([]);
@@ -301,6 +303,10 @@ export default function Configuracoes() {
     const { data, error } = await supabase.from("filas").select("*").eq("ativo", true).order("nome", { ascending: true });
     if (error?.code === "PGRST205") { setTabelasFaltando(p => p.includes("filas") ? p : [...p, "filas"]); return; }
     if (data) setFilas(data);
+    try {
+      const { data: cx } = await supabase.from("conexoes").select("id, nome, tipo").order("nome", { ascending: true });
+      if (cx) setCanais(cx);
+    } catch {}
   };
   const fetchGrupos = async () => {
     const { data, error } = await supabase.from("grupos_permissao").select("*").order("created_at", { ascending: false });
@@ -524,6 +530,7 @@ export default function Configuracoes() {
               usuarios={usuariosVisiveis}
               equipes={equipesVisiveis}
               filas={filasVisiveis}
+              canais={canais}
               gruposPermissao={gruposPermissao}
               equipeById={equipeById}
               isMobile={isMobile}
@@ -563,6 +570,7 @@ export default function Configuracoes() {
           )}
           {abaAtiva === "permissoes" && (
             <AbaPermissoes
+              canais={canais}
               gruposPermissao={gruposPermissao}
               podeEditar={podeGerenciarGrupos}
               onRefetch={fetchGrupos}
@@ -597,7 +605,7 @@ function deriveRoleFromGrupo(nomeGrupo: string): "admin" | "supervisor" | "atend
   return "atendente";
 }
 
-function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
+function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipeById, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
   const [busca, setBusca] = useState("");
   const [filtroRole, setFiltroRole] = useState<"todos" | "admin" | "supervisor" | "atendente">("todos");
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
@@ -613,6 +621,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     exige_ponto: true,
     equipes_acesso: [] as number[],
     filas_acesso: [] as number[],
+    canais_acesso: [] as number[],
   });
   const [showSenha, setShowSenha] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -661,7 +670,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [], canais_acesso: [] });
     setShowForm(true);
   };
 
@@ -691,6 +700,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
       exige_ponto: u.exige_ponto !== false,   // default true
       equipes_acesso: equipesIniciais,
       filas_acesso: filasIniciais,
+      canais_acesso: Array.isArray(u.canais_acesso) ? u.canais_acesso : [],
     });
     setShowForm(true);
   };
@@ -718,6 +728,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
         exige_ponto: formUsuario.exige_ponto,
         equipes_acesso: formUsuario.equipes_acesso,
         filas_acesso: formUsuario.filas_acesso,
+        canais_acesso: formUsuario.canais_acesso,
       }).eq("id", editandoUsuario.id);
       setSalvando(false);
       if (error) { alert("Erro: " + error.message); return; }
@@ -756,6 +767,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
           exige_ponto: formUsuario.exige_ponto,
           equipes_acesso: formUsuario.equipes_acesso,
           filas_acesso: formUsuario.filas_acesso,
+          canais_acesso: formUsuario.canais_acesso,
         }),
       });
       if (resp.status === 404) {
@@ -994,7 +1006,46 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
               <label style={labelStyle}>Telefone</label>
               <input placeholder="(62) 99999-9999" value={formUsuario.telefone} onChange={e => setFormUsuario({ ...formUsuario, telefone: e.target.value })} style={IS} />
             </div>
-            {/* 🤳 Selfie no ponto: sim (com foto) ou não (só GPS, p/ internos) */}
+            {/* 📡 Canais (conexões) que o usuário pode ver/atender no chat.
+                Soma com o que vier do grupo. Vazio aqui E no grupo = não vê nenhum canal. */}
+            <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
+              <label style={labelStyle}>📡 Canais que pode atender</label>
+              {(!canais || canais.length === 0) ? (
+                <div style={{ background: "#f9fafb", border: "1px dashed #e5e7eb", borderRadius: 10, padding: "10px 12px", color: "#9ca3af", fontSize: 12 }}>
+                  Nenhum canal criado ainda — crie em Chatbot → Conexões.
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
+                    {canais.map((c: { id: number; nome: string; tipo: string }) => {
+                      const on = (formUsuario.canais_acesso || []).includes(c.id);
+                      return (
+                        <button key={c.id} type="button"
+                          onClick={() => setFormUsuario(prev => {
+                            const estava = (prev.canais_acesso || []).includes(c.id);
+                            return { ...prev, canais_acesso: estava ? prev.canais_acesso.filter((x: number) => x !== c.id) : [...prev.canais_acesso, c.id] };
+                          })}
+                          style={{
+                            padding: "8px 14px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                            border: "1px solid " + (on ? "#2563eb" : "#e5e7eb"),
+                            background: on ? "#eff6ff" : "#ffffff",
+                            color: on ? "#1d4ed8" : "#6b7280",
+                            boxShadow: on ? "0 2px 8px rgba(37,99,235,0.20)" : "none",
+                            transition: "all 0.12s",
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                          }}>
+                          {on ? "\u2713 " : ""}{c.tipo === "waba" ? "🟢" : "💬"} {c.nome}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
+                    Marque os canais que este usuário pode ver no chat. Soma com os canais do grupo dele.
+                  </p>
+                </>
+              )}
+            </div>
+                        {/* 🤳 Selfie no ponto: sim (com foto) ou não (só GPS, p/ internos) */}
             <div>
               <label style={labelStyle}>🤳 Selfie ao bater ponto</label>
               <div
@@ -1803,12 +1854,13 @@ function BloqueioPosFinalizacao({ podeGerenciar, IS, cardStyle, labelStyle }: an
 // 🔐 AbaPermissoes — editor de grupos no estilo Wolf (categorias + checkboxes)
 // Grava o mapa booleano em grupos_permissao.permissoes
 // ═══════════════════════════════════════════════════════════════════════
-function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardStyle }: any) {
+function AbaPermissoes({ gruposPermissao, canais, podeEditar, onRefetch, isMobile, cardStyle }: any) {
   const [selId, setSelId] = useState<number | null>(null);
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
   const [descricao, setDescricao] = useState("");
   const [perms, setPerms] = useState<Record<string, boolean>>({ ...PERMISSOES_PADRAO });
+  const [canaisGrupo, setCanaisGrupo] = useState<number[]>([]);
   const [orig, setOrig] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; txt: string } | null>(null);
@@ -1820,7 +1872,9 @@ function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardS
     setDescricao(g.descricao || "");
     const pp = { ...PERMISSOES_PADRAO, ...(g.permissoes || {}) };
     setPerms(pp);
-    setOrig(JSON.stringify({ nome: g.nome || "", descricao: g.descricao || "", perms: pp }));
+    const cg = Array.isArray(g.canais_acesso) ? g.canais_acesso : [];
+    setCanaisGrupo(cg);
+    setOrig(JSON.stringify({ nome: g.nome || "", descricao: g.descricao || "", perms: pp, canais: cg }));
     setMsg(null);
   }
   function novo() {
@@ -1830,7 +1884,8 @@ function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardS
     setDescricao("");
     const pp = { ...PERMISSOES_PADRAO };
     setPerms(pp);
-    setOrig(JSON.stringify({ nome: "", descricao: "", perms: pp }));
+    setCanaisGrupo([]);
+    setOrig(JSON.stringify({ nome: "", descricao: "", perms: pp, canais: [] }));
     setMsg(null);
   }
 
@@ -1839,7 +1894,7 @@ function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardS
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gruposPermissao.length]);
 
-  const dirty = JSON.stringify({ nome, descricao, perms }) !== orig;
+  const dirty = JSON.stringify({ nome, descricao, perms, canais: canaisGrupo }) !== orig;
   const toggle = (key: string) => { if (podeEditar) setPerms((p) => ({ ...p, [key]: !p[key] })); };
   const marcarCat = (cat: any, val: boolean) => {
     if (!podeEditar) return;
@@ -1851,10 +1906,10 @@ function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardS
     setSalvando(true);
     try {
       if (criando) {
-        const { error } = await supabase.from("grupos_permissao").insert([{ nome: nome.trim(), descricao, permissoes: perms }]);
+        const { error } = await supabase.from("grupos_permissao").insert([{ nome: nome.trim(), descricao, permissoes: perms, canais_acesso: canaisGrupo }]);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("grupos_permissao").update({ nome: nome.trim(), descricao, permissoes: perms }).eq("id", selId);
+        const { error } = await supabase.from("grupos_permissao").update({ nome: nome.trim(), descricao, permissoes: perms, canais_acesso: canaisGrupo }).eq("id", selId);
         if (error) throw error;
       }
       setMsg({ ok: true, txt: "Salvo com sucesso." });
@@ -1902,6 +1957,42 @@ function AbaPermissoes({ gruposPermissao, podeEditar, onRefetch, isMobile, cardS
               <label style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>DESCRIÇÃO</label>
               <input value={descricao} onChange={(e) => setDescricao(e.target.value)} disabled={!podeEditar} placeholder="Ex: Acesso a vendas e chat"
                 style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid #e5e7eb", borderRadius: 10, fontSize: 13, marginTop: 4 }} />
+            </div>
+          </div>
+
+          {/* 📡 Canais que o GRUPO pode atender (soma com os canais do usuário) */}
+          <div style={{ border: "1px solid #bfdbfe", borderRadius: 12, overflow: "hidden", marginTop: 4 }}>
+            <div style={{ padding: "10px 14px", background: "#eff6ff" }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "#1d4ed8" }}>📡 Canais que este grupo pode atender</span>
+            </div>
+            <div style={{ padding: 14 }}>
+              {(!canais || canais.length === 0) ? (
+                <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>Nenhum canal criado ainda — crie em Chatbot → Conexões.</p>
+              ) : (
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
+                    {canais.map((c: { id: number; nome: string; tipo: string }) => {
+                      const on = canaisGrupo.includes(c.id);
+                      return (
+                        <button key={c.id} type="button" disabled={!podeEditar}
+                          onClick={() => { if (!podeEditar) return; setCanaisGrupo(prev => prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]); }}
+                          style={{
+                            padding: "8px 14px", borderRadius: 999, fontSize: 12.5, fontWeight: 700, cursor: podeEditar ? "pointer" : "default",
+                            border: "1px solid " + (on ? "#2563eb" : "#e5e7eb"),
+                            background: on ? "#eff6ff" : "#ffffff",
+                            color: on ? "#1d4ed8" : "#6b7280",
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                          }}>
+                          {on ? "\u2713 " : ""}{c.tipo === "waba" ? "🟢" : "💬"} {c.nome}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "8px 0 0" }}>
+                    Todos os usuários deste grupo poderão ver estes canais. Soma com os canais marcados em cada usuário.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
