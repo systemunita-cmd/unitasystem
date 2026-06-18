@@ -40,6 +40,7 @@ const FB_CONFIG_ID = process.env.NEXT_PUBLIC_FB_CONFIG_ID || "";
 
 type Conexao = {
   id: number; nome: string; tipo: string; status: string; numero: string;
+  modulos?: string[] | null;
   modo: string; ia: string; fluxo_id: string; fluxo_nome: string;
   fila: string; api_key: string; prompt: string; parar_se_atendente: boolean;
   phone_number_id?: string; waba_id?: string; token_waba?: string; webhook_token?: string;
@@ -93,7 +94,7 @@ export function ConexoesSection() {
   const [encerrandoMassa, setEncerrandoMassa] = useState(false);
   const [registrandoWaba, setRegistrandoWaba] = useState(false);
 
-  const formInicial = { nome: "", tipo: "webjs", phoneNumberId: "", wabaId: "", token: "", webhookToken: "", modo: "nenhum", ia: "gpt", apiKey: "", prompt: "", fluxoId: "", equipeId: "", fila: "", pararSeAtendente: true, typebot_url: "", typebot_msg_invalida: "", typebot_msg_boas_vindas: "" };
+  const formInicial = { nome: "", tipo: "webjs", phoneNumberId: "", wabaId: "", token: "", webhookToken: "", modo: "nenhum", ia: "gpt", apiKey: "", prompt: "", fluxoId: "", equipeId: "", fila: "", pararSeAtendente: true, typebot_url: "", typebot_msg_invalida: "", typebot_msg_boas_vindas: "", modulos: [] as string[] };
   const [form, setForm] = useState(formInicial);
 
   const [apiKeyTocada, setApiKeyTocada] = useState(false);
@@ -314,7 +315,7 @@ export function ConexoesSection() {
   const abrirEditar = (c: Conexao) => {
     setEditandoId(c.id);
     const equipeDaFila = filasBanco.find(f => f.nome === c.fila)?.equipe_id;
-    setForm({ nome: c.nome, tipo: c.tipo, phoneNumberId: c.phone_number_id || "", wabaId: c.waba_id || "", token: "", webhookToken: c.webhook_token || "", modo: c.modo, ia: c.ia, apiKey: "", prompt: c.prompt || "", fluxoId: c.fluxo_id || "", equipeId: equipeDaFila ? String(equipeDaFila) : (travadoEquipe && equipeForcadaCon ? equipeForcadaCon : ""), fila: c.fila || "", pararSeAtendente: c.parar_se_atendente, typebot_url: c.typebot_url || "", typebot_msg_invalida: c.typebot_msg_invalida || "", typebot_msg_boas_vindas: c.typebot_msg_boas_vindas || "" });
+    setForm({ nome: c.nome, tipo: c.tipo, phoneNumberId: c.phone_number_id || "", wabaId: c.waba_id || "", token: "", webhookToken: c.webhook_token || "", modo: c.modo, ia: c.ia, apiKey: "", prompt: c.prompt || "", fluxoId: c.fluxo_id || "", equipeId: equipeDaFila ? String(equipeDaFila) : (travadoEquipe && equipeForcadaCon ? equipeForcadaCon : ""), fila: c.fila || "", pararSeAtendente: c.parar_se_atendente, typebot_url: c.typebot_url || "", typebot_msg_invalida: c.typebot_msg_invalida || "", typebot_msg_boas_vindas: c.typebot_msg_boas_vindas || "", modulos: Array.isArray(c.modulos) ? c.modulos : [] });
     setApiKeyTocada(false); setTokenTocado(false); setShowModalNovoCanal(true); setShowMenuEngrenagem(null);
     fetchFluxos(); fetchFilas(); fetchEquipes();
   };
@@ -388,6 +389,7 @@ export function ConexoesSection() {
         typebot_url: form.typebot_url || "",
         typebot_msg_invalida: form.typebot_msg_invalida || "Desculpe, não entendi sua resposta. Pode tentar de novo?",
         typebot_msg_boas_vindas: form.typebot_msg_boas_vindas || "",
+        modulos: form.modulos || [],
       };
       if (apiKeyTocada || !editandoId) payload.api_key = form.apiKey;
 
@@ -607,6 +609,33 @@ export function ConexoesSection() {
               <div>
                 <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 8px" }}>{editandoId ? "1" : "2"}. Nome do Canal</p>
                 <input placeholder="Ex: WhatsApp Vendas..." value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))} style={IS} />
+                {/* 📂 Módulos onde este canal aparece. Vazio = não aparece em lugar nenhum. */}
+                <div style={{ marginTop: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 }}>📂 Aparece nos módulos</label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {([
+                      { id: "cobranca", label: "💰 Cobrança" },
+                      { id: "rh", label: "👥 RH" },
+                      { id: "suporte", label: "🛟 Suporte" },
+                      { id: "chatbot", label: "🤖 Chatbot / Vendas" },
+                    ] as { id: string; label: string }[]).map(m => {
+                      const marcado = (form.modulos || []).includes(m.id);
+                      return (
+                        <button key={m.id} type="button"
+                          onClick={() => setForm(p => {
+                            const atual = p.modulos || [];
+                            return { ...p, modulos: marcado ? atual.filter(x => x !== m.id) : [...atual, m.id] };
+                          })}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 9, border: `1.5px solid ${marcado ? "#16a34a" : "#e5e7eb"}`, background: marcado ? "#f0fdf4" : "#fff", color: marcado ? "#15803d" : "#6b7280", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                          <span style={{ fontSize: 13 }}>{marcado ? "☑" : "☐"}</span> {m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
+                    Marque onde as conversas deste canal devem aparecer. Sem nenhum marcado, o canal não aparece em nenhum módulo.
+                  </p>
+                </div>
               </div>
               {editandoId && (form.tipo === "instagram" || form.tipo === "messenger") && (
                 <div style={{ background: "#f0fdf4", borderRadius: 12, padding: 14, border: "1px solid #bbf7d0" }}>
