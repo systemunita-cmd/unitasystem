@@ -111,6 +111,17 @@ export default function CRMLayout({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setPontoLiberado(true); return; }
 
+      // 🕐 Config por usuário: se exige_ponto = false, NÃO trava (acessa direto).
+      //    Padrão (true / não configurado) mantém a regra normal abaixo.
+      try {
+        const { data: u } = await supabase
+          .from("usuarios")
+          .select("exige_ponto")
+          .ilike("email", user.email || "")
+          .maybeSingle();
+        if (u && u.exige_ponto === false) { setPontoLiberado(true); return; }
+      } catch { /* se falhar a leitura, segue a regra padrão abaixo */ }
+
       // Busca o cadastro de funcionário (o ponto é gravado por nome)
       let nomeFunc: string | null = null;
       try {

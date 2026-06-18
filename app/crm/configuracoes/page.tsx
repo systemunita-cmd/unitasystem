@@ -27,6 +27,7 @@ type Usuario = {
   equipe_id?: number | null;
   fila_id?: number | null; // fila de atendimento (1 por usuário, depende da equipe)
   exige_selfie?: boolean | null; // 🤳 bater ponto com selfie (true) ou só GPS (false)
+  exige_ponto?: boolean | null;  // 🕐 precisa bater ponto pra acessar o sistema (true) ou não (false)
   equipes_acesso?: number[] | null; // equipes que o usuário pode VER (BKO/gerente) + libera as filas
   filas_acesso?: number[] | null; // filas (múltiplas) que o usuário atende/vê
   ativo?: boolean;
@@ -609,6 +610,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
     grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
     exige_selfie: true,
+    exige_ponto: true,
     equipes_acesso: [] as number[],
     filas_acesso: [] as number[],
   });
@@ -659,7 +661,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, equipes_acesso: [], filas_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [] });
     setShowForm(true);
   };
 
@@ -686,6 +688,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
       ramal: u.ramal || "", telefone: u.telefone || "",
       fila_id: u.fila_id?.toString() || "",
       exige_selfie: u.exige_selfie !== false, // default true
+      exige_ponto: u.exige_ponto !== false,   // default true
       equipes_acesso: equipesIniciais,
       filas_acesso: filasIniciais,
     });
@@ -712,6 +715,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
         telefone: formUsuario.telefone.trim() || null,
         fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
         exige_selfie: formUsuario.exige_selfie,
+        exige_ponto: formUsuario.exige_ponto,
         equipes_acesso: formUsuario.equipes_acesso,
         filas_acesso: formUsuario.filas_acesso,
       }).eq("id", editandoUsuario.id);
@@ -749,6 +753,7 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
           telefone: formUsuario.telefone.trim() || null,
           fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
           exige_selfie: formUsuario.exige_selfie,
+          exige_ponto: formUsuario.exige_ponto,
           equipes_acesso: formUsuario.equipes_acesso,
           filas_acesso: formUsuario.filas_acesso,
         }),
@@ -1004,6 +1009,22 @@ function AbaUsuarios({ usuarios, equipes, filas, gruposPermissao, equipeById, is
                 </span>
               </div>
               <p style={{ color: "#9ca3af", fontSize: 11, margin: "5px 0 0" }}>Funcionários internos podem bater só com localização.</p>
+            </div>
+            {/* 🕐 Exige bater ponto pra acessar: sim (trava até bater) ou não (acessa direto) */}
+            <div>
+              <label style={labelStyle}>🕐 Bater ponto para acessar</label>
+              <div
+                onClick={() => setFormUsuario({ ...formUsuario, exige_ponto: !formUsuario.exige_ponto })}
+                style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 12px", background: formUsuario.exige_ponto ? "#fdf2f8" : "#f9fafb" }}
+              >
+                <div style={{ width: 40, height: 22, borderRadius: 999, background: formUsuario.exige_ponto ? "#db2777" : "#cbd5e1", position: "relative", flexShrink: 0, transition: "background 0.15s" }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: formUsuario.exige_ponto ? 20 : 2, transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                </div>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: formUsuario.exige_ponto ? "#be185d" : "#6b7280" }}>
+                  {formUsuario.exige_ponto ? "Sim — precisa bater ponto pra entrar" : "Não — acessa direto (sem bater ponto)"}
+                </span>
+              </div>
+              <p style={{ color: "#9ca3af", fontSize: 11, margin: "5px 0 0" }}>Logins administrativos podem acessar sem bater ponto.</p>
             </div>
             {!editandoUsuario && (
               <div style={{ position: "relative", gridColumn: isMobile ? "1" : "span 2" }}>
