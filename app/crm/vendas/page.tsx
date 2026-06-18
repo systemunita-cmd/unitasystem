@@ -1402,6 +1402,9 @@ export default function Vendas() {
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => !buscaDebounced || p.nome?.toLowerCase().includes(buscaDebounced.toLowerCase()) || p.cpf?.includes(buscaDebounced) || nomeVendedor(p.vendedor).toLowerCase().includes(buscaDebounced.toLowerCase()))
     .filter(p => {
+      // 🔎 Se há busca por nome/CPF/vendedor, IGNORA o filtro de data —
+      //    procura em qualquer período. Sem busca, o filtro de data vale normal.
+      if (buscaDebounced.trim()) return true;
       if (!filtroDataInicio && !filtroDataFim) return true;
       // passa se a DATA DA PROPOSTA *ou* a data de CADASTRO (created_at, em hora
       // local) cair no período — venda que subiu hoje nunca some do "Hoje"
