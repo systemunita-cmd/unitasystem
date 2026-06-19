@@ -141,9 +141,9 @@ export function parseData(v: any): Date | null {
   if (m) {
     const a = Number(m[1]), b = Number(m[2]), ano = Number(m[3]);
     let dia: number, mes: number;
-    if (a > 12) { dia = a; mes = b; }        // BR explícito
-    else if (b > 12) { mes = a; dia = b; }   // US explícito
-    else { mes = a; dia = b; }               // ambíguo → US (mm/dd) do Excel
+    if (a > 12) { dia = a; mes = b; }        // 1º campo > 12 → é dia → BR (dd/mm)
+    else if (b > 12) { mes = a; dia = b; }   // 2º campo > 12 → é dia → US (mm/dd)
+    else { dia = a; mes = b; }               // ambíguo → BR (dd/mm) — a planilha da Unita é pt-BR
     return new Date(ano, mes - 1, dia);
   }
   // 🆕 mês abreviado em português: "jan/26", "mai/26", "set/25", "dez/2025"
