@@ -20,6 +20,16 @@ const label = { color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: 
 const btnPri = { background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontSize: 13, cursor: "pointer", fontWeight: 700, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" };
 const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
 
+// Converte uma data local para YYYY-MM-DD sem passar por UTC.
+// Evita que toISOString() altere o dia por causa do fuso horário.
+const dataParaISO = (d: Date | null | undefined): string | null => {
+  if (!d || isNaN(d.getTime())) return null;
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+};
+
 export default function CobrancaAtualizacao() {
   const router = useRouter();
   const perm = useTemPermissao();
@@ -74,10 +84,15 @@ export default function CobrancaAtualizacao() {
     reader.onload = ev => {
       try {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-        // 🔧 SEM cellDates → as datas vêm como NÚMERO SERIAL do Excel (ex: 46032),
-        //    e o parseData converte por fórmula matemática (imune a fuso/formato).
-        //    Isso mata de vez o bug do dia/mês invertido na leitura de string.
-        const wb = XLSX.read(data, { type: "array" });
+        // CSV precisa ser lido como texto cru. Caso contrário, o SheetJS tenta
+        // interpretar 07/09/2025 no padrão americano antes de parseData receber o valor.
+        const ehCsv = f.name.toLowerCase().endsWith(".csv");
+        const wb = ehCsv
+          ? XLSX.read(
+              new TextDecoder("utf-8").decode(data).replace(/^\uFEFF/, ""),
+              { type: "string", raw: true }
+            )
+          : XLSX.read(data, { type: "array", cellDates: false });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: "" });
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
@@ -120,12 +135,12 @@ export default function CobrancaAtualizacao() {
         const detalhe = mapCols.detalhamento >= 0 ? String(linha[mapCols.detalhamento] || "").trim() : null;
         const fat: FaturaPlan = {
           ref: venc ? refDe(venc) : "", status: cls.status, bucket: cls.bucket, venc,
-          pag: pagD ? pagD.toISOString().slice(0, 10) : null, diasPagamento: diasPag,
+          pag: dataParaISO(pagD), diasPagamento: diasPag,
           numeroFatura: Number.isFinite(numFatRaw) ? numFatRaw : null,
           codigo: codigoStatusStr(statusTxt),
           statusPlanilha: statusTxt || null,
           detalhamento: detalhe || null,
-          mesGross: mapCols.mes_gross >= 0 ? (parseData(linha[mapCols.mes_gross])?.toISOString().slice(0, 10) || null) : null,
+          mesGross: mapCols.mes_gross >= 0 ? dataParaISO(parseData(linha[mapCols.mes_gross])) : null,
           observacao: mapCols.observacao >= 0 ? (String(linha[mapCols.observacao] || "").trim() || null) : null,
           suspensaoFraude: mapCols.suspensao_fraude >= 0 ? simNao(linha[mapCols.suspensao_fraude]) : null,
           churn: mapCols.churn >= 0 ? simNao(linha[mapCols.churn]) : null,
@@ -245,7 +260,7 @@ export default function CobrancaAtualizacao() {
             codigo_status: f.codigo,
             status_planilha: f.statusPlanilha,
             detalhamento: f.detalhamento,
-            data_vencimento: f.venc ? f.venc.toISOString().slice(0, 10) : null,
+            data_vencimento: dataParaISO(f.venc),
             data_pagamento: f.pag,
             mes_gross: f.mesGross,
             observacao: f.observacao,
