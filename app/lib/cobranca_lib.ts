@@ -120,57 +120,75 @@ export const formatData = (d: Date | string | null | undefined) => {
 
 export function parseData(v: any): Date | null {
   if (v == null || v === "") return null;
-  // 🔧 NÚMERO SERIAL do Excel (ex: 46032) — é como o XLSX entrega datas com raw:true.
-  //    Conversão matemática pura: dias desde 1899-12-30. Imune a fuso e a formato.
-  //    Resolve de vez o bug do mês invertido (dia/mês trocados na leitura de string).
-  if (typeof v === "number" && isFinite(v) && v > 59 && v < 600000) {
-    const ms = Math.round((v - 25569) * 86400 * 1000); // 25569 = 1899-12-30 → 1970-01-01
-    const u = new Date(ms);
-    if (!isNaN(u.getTime())) return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
-  }
-  if (v instanceof Date && !isNaN(v.getTime())) return v;
-  const s = String(v).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  // 🔧 n/n/yyyy — o Excel/SheetJS exporta no formato AMERICANO mm/dd/yyyy.
-  //    Detecta dia vs mês pra não inverter (bug do "mês 10"):
-  //      • 1º campo > 12  → é dia  → BR (dd/mm/yyyy)
-  //      • 2º campo > 12  → é dia  → US (mm/dd/yyyy)
-  //      • ambos ≤ 12 (ambíguo) → assume US (mm/dd), que é como o Excel gera
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) {
-    const a = Number(m[1]), b = Number(m[2]), ano = Number(m[3]);
-    let dia: number, mes: number;
-    if (a > 12) { dia = a; mes = b; }        // 1º campo > 12 → é dia → BR (dd/mm)
-    else if (b > 12) { mes = a; dia = b; }   // 2º campo > 12 → é dia → US (mm/dd)
-    else { dia = a; mes = b; }               // ambíguo → BR (dd/mm) — a planilha da Unita é pt-BR
-    return new Date(ano, mes - 1, dia);
-  }
-  // 🆕 mês abreviado em português: "jan/26", "mai/26", "set/25", "dez/2025"
-  //    (o XLSX no navegador entrega a coluna MÊS GROSS nesse formato)
-  const MESES_PT: Record<string, number> = {
-    jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5,
-    jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11,
+  const criarData = (ano: number, mes: number, dia: number) => {
+    const d = new Date(ano, mes - 1, dia);
+    // Impede datas inválidas como 31/02
+    return d.getFullYear() === ano &&
+      d.getMonth() === mes - 1 &&
+      d.getDate() === dia
+      ? d
+      : null;
   };
-  m = s.toLowerCase().match(/^([a-zç]{3,})[\/\-\s.]+(\d{2,4})$/);
-  if (m) {
-    const mesAbrev = m[1].slice(0, 3);
-    if (mesAbrev in MESES_PT) {
-      let ano = Number(m[2]);
-      if (ano < 100) ano += 2000; // "26" -> 2026
-      return new Date(ano, MESES_PT[mesAbrev], 1);
-    }
+  // Número serial do Excel
+  if (typeof v === "number" && isFinite(v) && v > 59 && v < 600000) {
+    const ms = Math.round((v - 25569) * 86400000);
+    const utc = new Date(ms);
+    return criarData(
+      utc.getUTCFullYear(),
+      utc.getUTCMonth() + 1,
+      utc.getUTCDate()
+    );
   }
-  // "01/26" ou "01/2026" (mês/ano numérico, sem dia)
-  m = s.match(/^(\d{1,2})[\/\-](\d{2,4})$/);
+  if (v instanceof Date && !isNaN(v.getTime())) {
+    return criarData(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  }
+  const s = String(v).trim();
+  // ISO: 2025-08-07
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (m) {
+    return criarData(Number(m[1]), Number(m[2]), Number(m[3]));
+  }
+  // Brasileiro: 07/08/25 ou 07/08/2025
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+  if (m) {
+    const dia = Number(m[1]);
+    const mes = Number(m[2]);
+    let ano = Number(m[3]);
+    if (ano < 100) ano += 2000;
+    return criarData(ano, mes, dia);
+  }
+  // Meses em português: ago/25, set/2025
+  const meses: Record<string, number> = {
+    jan: 1,
+    fev: 2,
+    mar: 3,
+    abr: 4,
+    mai: 5,
+    jun: 6,
+    jul: 7,
+    ago: 8,
+    set: 9,
+    out: 10,
+    nov: 11,
+    dez: 12,
+  };
+  m = s.toLowerCase().match(/^([a-z\u00e7]{3,})[\/\-\s.]+(\d{2}|\d{4})$/);
+  if (m) {
+    const mes = meses[m[1].slice(0, 3)];
     let ano = Number(m[2]);
     if (ano < 100) ano += 2000;
-    const mes = Number(m[1]);
-    if (mes >= 1 && mes <= 12) return new Date(ano, mes - 1, 1);
+    if (mes) return criarData(ano, mes, 1);
   }
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  // Mês/ano: 08/25 ou 08/2025
+  m = s.match(/^(\d{1,2})[\/-](\d{2}|\d{4})$/);
+  if (m) {
+    const mes = Number(m[1]);
+    let ano = Number(m[2]);
+    if (ano < 100) ano += 2000;
+    if (mes >= 1 && mes <= 12) return criarData(ano, mes, 1);
+  }
+  // Não usar new Date(s) em datas ambíguas
+  return null;
 }
 
 export const codigoStatus = (txt: string): number | null => {
