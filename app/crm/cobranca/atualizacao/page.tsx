@@ -30,6 +30,62 @@ const dataParaISO = (d: Date | null | undefined): string | null => {
   return `${ano}-${mes}-${dia}`;
 };
 
+// Lê o CSV como TEXTO, sem permitir que o SheetJS/JavaScript converta datas.
+// O arquivo da operadora usa ponto e vírgula, aspas e valores como ="1.234".
+const lerCSVSemConverterDatas = (conteudo: string): string[][] => {
+  const texto = conteudo.replace(/^\uFEFF/, "");
+  const linhas: string[][] = [];
+  let linha: string[] = [];
+  let campo = "";
+  let dentroDeAspas = false;
+
+  const normalizarCampo = (valor: string) => {
+    const formulaTexto = valor.match(/^="([\s\S]*)"$/);
+    return formulaTexto ? formulaTexto[1].replace(/""/g, '"') : valor;
+  };
+
+  const adicionarCampo = () => {
+    linha.push(normalizarCampo(campo));
+    campo = "";
+  };
+
+  const adicionarLinha = () => {
+    adicionarCampo();
+    if (linha.some(celula => celula !== "")) linhas.push(linha);
+    linha = [];
+  };
+
+  for (let i = 0; i < texto.length; i++) {
+    const caractere = texto[i];
+
+    if (caractere === '"') {
+      if (dentroDeAspas && texto[i + 1] === '"') {
+        campo += '"';
+        i++;
+      } else {
+        dentroDeAspas = !dentroDeAspas;
+      }
+      continue;
+    }
+
+    if (caractere === ";" && !dentroDeAspas) {
+      adicionarCampo();
+      continue;
+    }
+
+    if ((caractere === "\n" || caractere === "\r") && !dentroDeAspas) {
+      adicionarLinha();
+      if (caractere === "\r" && texto[i + 1] === "\n") i++;
+      continue;
+    }
+
+    campo += caractere;
+  }
+
+  if (campo !== "" || linha.length > 0) adicionarLinha();
+  return linhas;
+};
+
 export default function CobrancaAtualizacao() {
   const router = useRouter();
   const perm = useTemPermissao();
@@ -84,17 +140,18 @@ export default function CobrancaAtualizacao() {
     reader.onload = ev => {
       try {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-        // CSV precisa ser lido como texto cru. Caso contrário, o SheetJS tenta
-        // interpretar 07/09/2025 no padrão americano antes de parseData receber o valor.
         const ehCsv = f.name.toLowerCase().endsWith(".csv");
-        const wb = ehCsv
-          ? XLSX.read(
-              new TextDecoder("utf-8").decode(data).replace(/^\uFEFF/, ""),
-              { type: "string", raw: true }
-            )
-          : XLSX.read(data, { type: "array", cellDates: false });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: "" });
+        let rows: any[][];
+
+        if (ehCsv) {
+          // Não passa o CSV pelo XLSX.read: ele troca dia/mês antes do parseData.
+          rows = lerCSVSemConverterDatas(new TextDecoder("utf-8").decode(data));
+        } else {
+          const wb = XLSX.read(data, { type: "array", cellDates: false });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: "" });
+        }
+
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
         setLinhas(rows); setPagina(1);
         const head = (rows[0] || []).map((c: any) => String(c || "").toLowerCase().trim());
