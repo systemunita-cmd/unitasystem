@@ -120,6 +120,14 @@ export const formatData = (d: Date | string | null | undefined) => {
 
 export function parseData(v: any): Date | null {
   if (v == null || v === "") return null;
+  // 🔧 NÚMERO SERIAL do Excel (ex: 46032) — é como o XLSX entrega datas com raw:true.
+  //    Conversão matemática pura: dias desde 1899-12-30. Imune a fuso e a formato.
+  //    Resolve de vez o bug do mês invertido (dia/mês trocados na leitura de string).
+  if (typeof v === "number" && isFinite(v) && v > 59 && v < 600000) {
+    const ms = Math.round((v - 25569) * 86400 * 1000); // 25569 = 1899-12-30 → 1970-01-01
+    const u = new Date(ms);
+    if (!isNaN(u.getTime())) return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate());
+  }
   if (v instanceof Date && !isNaN(v.getTime())) return v;
   const s = String(v).trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);

@@ -74,9 +74,10 @@ export default function CobrancaAtualizacao() {
     reader.onload = ev => {
       try {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-        // 🆕 cellDates + raw:true → datas vêm como objeto Date REAL (não o texto "set/25").
-        //    Resolve o bug do MÊS GROSS virar 2001: a célula tem a data completa por baixo.
-        const wb = XLSX.read(data, { type: "array", cellDates: true });
+        // 🔧 SEM cellDates → as datas vêm como NÚMERO SERIAL do Excel (ex: 46032),
+        //    e o parseData converte por fórmula matemática (imune a fuso/formato).
+        //    Isso mata de vez o bug do dia/mês invertido na leitura de string.
+        const wb = XLSX.read(data, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: true, defval: "" });
         if (!rows || rows.length === 0) { setFeedback({ tipo: "aviso", titulo: "Planilha vazia", msg: "Não consegui ler nenhuma linha." }); return; }
