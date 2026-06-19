@@ -919,9 +919,7 @@ export default function CobrancaPage() {
       payload.promessa_data = null;
     }
 
-    const { error } = await supabase.from("faturas_status").upsert(payload, {
-      onConflict: "proposta_id,numero_referencia",
-    });
+    const error = await salvarStatusFatura(payload);
     if (error) {
       setFeedback({ tipo: "erro", titulo: "Não foi possível salvar", mensagem: error.message });
       return;
@@ -930,12 +928,37 @@ export default function CobrancaPage() {
     await fetchStatusFaturas();
   };
 
+  // 💾 Salva o status da fatura SEM upsert/onConflict (a tabela não tem constraint
+  //    única em proposta_id+numero_referencia, e ainda há duplicatas da importação).
+  //    Estratégia: UPDATE por (proposta_id, numero_referencia); se não existir, INSERT.
+  //    Atualiza TODAS as linhas dessa referência (cobre duplicatas) pra ficar consistente.
+  const salvarStatusFatura = async (payload: any): Promise<{ message: string } | null> => {
+    try {
+      // tenta atualizar as linhas existentes dessa fatura
+      const { data: upd, error: e1 } = await supabase
+        .from("faturas_status")
+        .update(payload)
+        .eq("proposta_id", payload.proposta_id)
+        .eq("numero_referencia", payload.numero_referencia)
+        .select("id");
+      if (e1) return { message: e1.message };
+      // se nenhuma linha existia, insere
+      if (!upd || upd.length === 0) {
+        const { error: e2 } = await supabase.from("faturas_status").insert(payload);
+        if (e2) return { message: e2.message };
+      }
+      return null;
+    } catch (e: any) {
+      return { message: e?.message || "erro desconhecido" };
+    }
+  };
+
   const marcarAPagar = async (f: Fatura) => {
-    const { error } = await supabase.from("faturas_status").upsert({
+    const error = await salvarStatusFatura({
       proposta_id: f.proposta.id, numero_referencia: f.numero_referencia,
       status: "pendente", data_pagamento: null, valor_pago: null, promessa_data: null,
       atualizado_por: userEmail || null,
-    }, { onConflict: "proposta_id,numero_referencia" });
+    });
     if (error) {
       setFeedback({ tipo: "erro", titulo: "Erro ao atualizar", mensagem: error.message });
       return;
@@ -1403,8 +1426,10 @@ export default function CobrancaPage() {
                 <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Atendimentos dos canais de cobrança</h2>
                 <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Todas as conversas dos canais marcados com o módulo Cobrança.</p>
               </div>
-              <div style={{ height: "70vh", minHeight: 480 }}>
-                <ChatSection moduloFiltro="cobranca" />
+              <div style={{ height: 560, maxHeight: "75vh", position: "relative", overflow: "hidden", borderRadius: 0 }}>
+                <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
+                  <ChatSection moduloFiltro="cobranca" />
+                </div>
               </div>
             </div>
             </>

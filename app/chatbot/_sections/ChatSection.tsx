@@ -2427,7 +2427,7 @@ export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { mod
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, height: "100vh" }}>
+    <div style={{ display: "flex", flex: 1, height: moduloFiltro ? "100%" : "100vh" }}>
       {/* 🔔 CSS de animação da bolinha azul piscando (notificação não lida) */}
       <style>{`
         @keyframes pulseBlue {
