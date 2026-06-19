@@ -124,8 +124,20 @@ export function parseData(v: any): Date | null {
   const s = String(v).trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  // 🔧 n/n/yyyy — o Excel/SheetJS exporta no formato AMERICANO mm/dd/yyyy.
+  //    Detecta dia vs mês pra não inverter (bug do "mês 10"):
+  //      • 1º campo > 12  → é dia  → BR (dd/mm/yyyy)
+  //      • 2º campo > 12  → é dia  → US (mm/dd/yyyy)
+  //      • ambos ≤ 12 (ambíguo) → assume US (mm/dd), que é como o Excel gera
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]), ano = Number(m[3]);
+    let dia: number, mes: number;
+    if (a > 12) { dia = a; mes = b; }        // BR explícito
+    else if (b > 12) { mes = a; dia = b; }   // US explícito
+    else { mes = a; dia = b; }               // ambíguo → US (mm/dd) do Excel
+    return new Date(ano, mes - 1, dia);
+  }
   // 🆕 mês abreviado em português: "jan/26", "mai/26", "set/25", "dez/2025"
   //    (o XLSX no navegador entrega a coluna MÊS GROSS nesse formato)
   const MESES_PT: Record<string, number> = {
