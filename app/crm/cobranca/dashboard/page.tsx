@@ -7,25 +7,31 @@ import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
 import {
   type Proposta, type FaturaStatusDB, type Bucket,
-  BUCKET_META, formatNum, pctOf,
+  formatNum, pctOf,
   carregarPropostas, carregarFaturasStatus,
 } from "../../../lib/cobranca_lib";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 📊 DASHBOARD DE COBRANÇA — UnitaSystem
-// Contagem de pagas / pendentes / inadimplentes + evolução mês a mês.
-// Lê de faturas_status (populada pela página de Atualização).
+// 📊 DASHBOARD DE COBRANÇA — UnitaSystem (reestruturado)
+// KPIs grandes + R$ em aberto, ticket médio, fraude/churn + evolução mensal.
+// Gráficos em SVG puro (Recharts 3.8 quebra com React 19). Lê de faturas_status.
 // ═══════════════════════════════════════════════════════════════════════════
 
-const card = { background: "#fff", borderRadius: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)" };
-const btnSec = { background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600 };
-const sectionTitle = { color: "#1f2937", fontSize: 15, fontWeight: 700, margin: "0 0 18px 0", display: "flex", alignItems: "center", gap: 8 };
+// ─── helpers visuais ─────────────────────────────────────────────────────────
+const money = (v: number) =>
+  (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const moneyFull = (v: number) =>
+  (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 });
 
 const bucketDoStatus = (s: string): Bucket | null => {
   if (s === "paga" || s === "paga_atraso") return "paga";
   if (s === "pendente") return "pendente";
   if (s === "atrasada") return "inadimplente";
-  return null; // promessa/acordo/negociação/cancelada ficam fora da contagem
+  return null;
+};
+const simSN = (v: any) => {
+  const s = String(v ?? "").trim().toLowerCase();
+  return s === "sim" || s === "s" || s === "true" || s === "1";
 };
 
 const MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -35,92 +41,150 @@ const mesLabel = (ref: string) => {
   return `${MESES[Number(m[2]) - 1]}/${m[1].slice(2)}`;
 };
 
-// ─── Gráficos em SVG puro (sem recharts — a v3.8 quebra com React 19 no <Bar>) ───
-type Serie = { mes: string; Pagas: number; Pendentes: number; Inadimplentes: number; total: number; pctPago: number };
+// paleta (identidade UnitaSystem: indigo/azul + semáforo de status)
+const C = {
+  ink: "#0f172a", sub: "#64748b", line: "#e2e8f0", soft: "#f1f5f9",
+  brand: "#4f46e5", brand2: "#6366f1",
+  pago: "#16a34a", pend: "#d97706", inad: "#dc2626",
+  fraude: "#b91c1c", churn: "#9333ea",
+};
 
-function GraficoBarras({ data, mobile }: { data: Serie[]; mobile: boolean }) {
-  const H = mobile ? 260 : 330, padL = 34, padB = 26, padT = 10, padR = 8;
-  const W = Math.max(data.length * (mobile ? 38 : 54) + padL + padR, 320);
+const shell: React.CSSProperties = {
+  background: "#fff", borderRadius: 16, border: `1px solid ${C.line}`,
+  boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.04)",
+};
+const btnSec: React.CSSProperties = {
+  background: "#fff", color: "#334155", border: `1px solid ${C.line}`, borderRadius: 10,
+  padding: "10px 16px", fontSize: 13, cursor: "pointer", fontWeight: 600,
+};
+const num: React.CSSProperties = { fontVariantNumeric: "tabular-nums" };
+
+// ─── gráfico de ÁREA empilhada (SVG, com gradiente) ──────────────────────────
+type Serie = { mes: string; ref: string; Pagas: number; Pendentes: number; Inadimplentes: number; total: number; pctPago: number; rAberto: number };
+
+function GraficoArea({ data, mobile }: { data: Serie[]; mobile: boolean }) {
+  const H = mobile ? 240 : 300, padL = 38, padB = 28, padT = 14, padR = 14;
+  const W = Math.max(data.length * (mobile ? 46 : 68) + padL + padR, 320);
   const maxV = Math.max(1, ...data.map(d => d.total));
   const passos = 4, plotH = H - padT - padB, plotW = W - padL - padR;
-  const bw = Math.min(mobile ? 22 : 34, (plotW / data.length) * 0.6);
-  const y = (v: number) => padT + plotH * (1 - v / maxV);
-  const cores: [keyof Serie, string][] = [["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]];
-  return (
-    <div style={{ width: "100%", overflowX: "auto" }}>
-      <svg width={W} height={H} style={{ minWidth: "100%", display: "block" }}>
-        {Array.from({ length: passos + 1 }).map((_, i) => {
-          const v = (maxV / passos) * i, yy = y(v);
-          return (
-            <g key={i}>
-              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e5e7eb" strokeDasharray="3 3" />
-              <text x={padL - 6} y={yy + 3} textAnchor="end" fontSize={10} fill="#9ca3af">{Math.round(v)}</text>
-            </g>
-          );
-        })}
-        {data.map((d, i) => {
-          const cx = padL + (plotW / data.length) * (i + 0.5);
-          let acc = 0;
-          return (
-            <g key={d.mes}>
-              {cores.map(([k, cor]) => {
-                const val = d[k] as number;
-                if (!val) return null;
-                const hSeg = (val / maxV) * plotH;
-                const yTop = y(acc + val); acc += val;
-                return <rect key={k} x={cx - bw / 2} y={yTop} width={bw} height={Math.max(hSeg, 0)} fill={cor} rx={2}><title>{`${d.mes} — ${k}: ${val}`}</title></rect>;
-              })}
-              <text x={cx} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="#6b7280">{d.mes}</text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-function GraficoLinha({ data, mobile, series, height, pct }: { data: Serie[]; mobile: boolean; series: [keyof Serie, string][]; height?: number; pct?: boolean }) {
-  const H = height ?? (mobile ? 260 : 330), padL = 36, padB = 26, padT = 10, padR = 10;
-  const W = Math.max(data.length * (mobile ? 40 : 60) + padL + padR, 320);
-  const maxV = pct ? 100 : Math.max(1, ...data.flatMap(d => series.map(([k]) => d[k] as number)));
-  const passos = pct ? 5 : 4, plotH = H - padT - padB, plotW = W - padL - padR;
   const x = (i: number) => padL + (data.length <= 1 ? plotW / 2 : (plotW * i) / (data.length - 1));
   const y = (v: number) => padT + plotH * (1 - v / maxV);
+  const camadas: [keyof Serie, string, string][] = [
+    ["Pagas", C.pago, "gPago"], ["Pendentes", C.pend, "gPend"], ["Inadimplentes", C.inad, "gInad"],
+  ];
+  // empilhamento: acumula de baixo (pagas) pra cima
+  const acumulado = data.map(() => 0);
   return (
     <div style={{ width: "100%", overflowX: "auto" }}>
       <svg width={W} height={H} style={{ minWidth: "100%", display: "block" }}>
+        <defs>
+          {camadas.map(([, cor, id]) => (
+            <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={cor} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={cor} stopOpacity={0.04} />
+            </linearGradient>
+          ))}
+        </defs>
         {Array.from({ length: passos + 1 }).map((_, i) => {
           const v = (maxV / passos) * i, yy = y(v);
           return (
             <g key={i}>
-              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e5e7eb" strokeDasharray="3 3" />
-              <text x={padL - 6} y={yy + 3} textAnchor="end" fontSize={10} fill="#9ca3af">{Math.round(v)}{pct ? "%" : ""}</text>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke={C.line} strokeDasharray="2 4" />
+              <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize={10} fill={C.sub} style={num}>{Math.round(v)}</text>
             </g>
           );
         })}
-        {series.map(([k, cor]) => {
-          const pts = data.map((d, i) => `${x(i)},${y(d[k] as number)}`).join(" ");
+        {camadas.map(([k, cor, id]) => {
+          const base = data.map((_, i) => acumulado[i]);
+          const topo = data.map((d, i) => acumulado[i] + (d[k] as number));
+          for (let i = 0; i < data.length; i++) acumulado[i] = topo[i];
+          const linhaTopo = topo.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+          const linhaBase = base.map((v, i) => `${x(i)},${y(v)}`).reverse().join(" ");
           return (
             <g key={k}>
-              <polyline points={pts} fill="none" stroke={cor} strokeWidth={2.5} />
-              {pct && data.map((d, i) => <circle key={i} cx={x(i)} cy={y(d[k] as number)} r={3} fill={cor}><title>{`${d.mes}: ${d[k]}%`}</title></circle>)}
+              <polygon points={`${linhaTopo} ${linhaBase}`} fill={`url(#${id})`} />
+              <polyline points={topo.map((v, i) => `${x(i)},${y(v)}`).join(" ")} fill="none" stroke={cor} strokeWidth={2.5} />
+              {topo.map((v, i) => (
+                <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill="#fff" stroke={cor} strokeWidth={1.5}>
+                  <title>{`${data[i].mes} — ${String(k)}: ${data[i][k]}`}</title>
+                </circle>
+              ))}
             </g>
           );
         })}
-        {data.map((d, i) => <text key={d.mes} x={x(i)} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="#6b7280">{d.mes}</text>)}
+        {data.map((d, i) => (
+          <text key={d.ref} x={x(i)} y={H - padB + 16} textAnchor="middle" fontSize={10} fill={C.sub}>{d.mes}</text>
+        ))}
       </svg>
     </div>
   );
 }
 
-function LegendaSerie({ itens }: { itens: [string, string][] }) {
+// ─── gráfico de LINHA simples (% pago) ───────────────────────────────────────
+function GraficoPct({ data, mobile }: { data: Serie[]; mobile: boolean }) {
+  const H = mobile ? 180 : 200, padL = 38, padB = 26, padT = 12, padR = 12;
+  const W = Math.max(data.length * (mobile ? 44 : 60) + padL + padR, 320);
+  const passos = 5, plotH = H - padT - padB, plotW = W - padL - padR;
+  const x = (i: number) => padL + (data.length <= 1 ? plotW / 2 : (plotW * i) / (data.length - 1));
+  const y = (v: number) => padT + plotH * (1 - v / 100);
+  const pts = data.map((d, i) => `${x(i)},${y(d.pctPago)}`).join(" ");
+  const area = `${pts} ${x(data.length - 1)},${y(0)} ${x(0)},${y(0)}`;
   return (
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10, justifyContent: "center" }}>
-      {itens.map(([l, cor]) => (
-        <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b7280", fontSize: 11.5, fontWeight: 600 }}>
-          <span style={{ width: 12, height: 4, borderRadius: 2, background: cor }} /> {l}
-        </span>
-      ))}
+    <div style={{ width: "100%", overflowX: "auto" }}>
+      <svg width={W} height={H} style={{ minWidth: "100%", display: "block" }}>
+        <defs>
+          <linearGradient id="gPct" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={C.pago} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={C.pago} stopOpacity={0.03} />
+          </linearGradient>
+        </defs>
+        {Array.from({ length: passos + 1 }).map((_, i) => {
+          const v = (100 / passos) * i, yy = y(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke={C.line} strokeDasharray="2 4" />
+              <text x={padL - 8} y={yy + 3} textAnchor="end" fontSize={10} fill={C.sub} style={num}>{Math.round(v)}%</text>
+            </g>
+          );
+        })}
+        {data.length > 1 && <polygon points={area} fill="url(#gPct)" />}
+        <polyline points={pts} fill="none" stroke={C.pago} strokeWidth={2.5} />
+        {data.map((d, i) => (
+          <circle key={i} cx={x(i)} cy={y(d.pctPago)} r={3.5} fill="#fff" stroke={C.pago} strokeWidth={2}>
+            <title>{`${d.mes}: ${d.pctPago}% pago`}</title>
+          </circle>
+        ))}
+        {data.map((d, i) => <text key={d.ref} x={x(i)} y={H - padB + 14} textAnchor="middle" fontSize={10} fill={C.sub}>{d.mes}</text>)}
+      </svg>
+    </div>
+  );
+}
+
+// ─── DONUT de proporção ──────────────────────────────────────────────────────
+function Donut({ segmentos, centro, sub }: { segmentos: { valor: number; cor: string }[]; centro: string; sub: string }) {
+  const R = 56, sw = 18, C2 = 2 * Math.PI * R;
+  const total = segmentos.reduce((s, x) => s + x.valor, 0) || 1;
+  let off = 0;
+  return (
+    <div style={{ position: "relative", width: 140, height: 140, flexShrink: 0 }}>
+      <svg width={140} height={140} viewBox="0 0 140 140">
+        <circle cx={70} cy={70} r={R} fill="none" stroke={C.soft} strokeWidth={sw} />
+        {segmentos.map((s, i) => {
+          const frac = s.valor / total;
+          const dash = frac * C2;
+          const el = (
+            <circle key={i} cx={70} cy={70} r={R} fill="none" stroke={s.cor} strokeWidth={sw}
+              strokeDasharray={`${dash} ${C2 - dash}`} strokeDashoffset={-off}
+              transform="rotate(-90 70 70)" strokeLinecap="butt" />
+          );
+          off += dash;
+          return el;
+        })}
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 24, fontWeight: 800, color: C.ink, ...num }}>{centro}</span>
+        <span style={{ fontSize: 10.5, color: C.sub, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>{sub}</span>
+      </div>
     </div>
   );
 }
@@ -134,7 +198,6 @@ export default function CobrancaDashboard() {
   const [isMobile, setIsMobile] = useState(false);
   const [propostas, setPropostas] = useState<Proposta[]>([]);
   const [faturas, setFaturas] = useState<FaturaStatusDB[]>([]);
-  const [tipoGrafico, setTipoGrafico] = useState<"barras" | "linha">("barras");
 
   useEffect(() => {
     const ck = () => setIsMobile(window.innerWidth < 768);
@@ -154,36 +217,54 @@ export default function CobrancaDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── KPIs (contagem) ────────────────────────────────────────────────────────
+  // mapa proposta_id -> valor do plano (pra R$ e ticket)
+  const valorPorProposta = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const p of propostas) m.set(p.id, Number(p.valor_plano || 0));
+    return m;
+  }, [propostas]);
+
+  // ─── KPIs ──────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     let pagas = 0, pendentes = 0, inadimplentes = 0;
+    let rAberto = 0, rRecebido = 0, fraude = 0, churn = 0;
     const clientesInad = new Set<number>();
     const clientesTot = new Set<number>();
     for (const f of faturas) {
       const b = bucketDoStatus(f.status);
+      const valor = valorPorProposta.get(f.proposta_id) || 0;
+      if (simSN((f as any).suspensao_fraude)) fraude++;
+      if (simSN((f as any).churn)) churn++;
       if (!b) continue;
       clientesTot.add(f.proposta_id);
-      if (b === "paga") pagas++;
-      else if (b === "pendente") pendentes++;
-      else { inadimplentes++; clientesInad.add(f.proposta_id); }
+      if (b === "paga") { pagas++; rRecebido += valor; }
+      else if (b === "pendente") { pendentes++; rAberto += valor; }
+      else { inadimplentes++; clientesInad.add(f.proposta_id); rAberto += valor; }
     }
     const total = pagas + pendentes + inadimplentes;
-    return { pagas, pendentes, inadimplentes, total, clientesInad: clientesInad.size, clientesTot: clientesTot.size, pctInad: pctOf(inadimplentes, total) };
-  }, [faturas]);
+    const ticket = total > 0 ? (rAberto + rRecebido) / total : 0;
+    return {
+      pagas, pendentes, inadimplentes, total,
+      rAberto, rRecebido, ticket, fraude, churn,
+      clientesInad: clientesInad.size, clientesTot: clientesTot.size,
+      pctInad: pctOf(inadimplentes, total), pctPago: pctOf(pagas, total),
+    };
+  }, [faturas, valorPorProposta]);
 
-  // ─── EVOLUÇÃO MÊS A MÊS ─────────────────────────────────────────────────────
-  const serieMensal = useMemo(() => {
-    const porMes = new Map<string, { pagas: number; pendentes: number; inadimplentes: number }>();
+  // ─── série mensal ────────────────────────────────────────────────────────────
+  const serieMensal = useMemo<Serie[]>(() => {
+    const porMes = new Map<string, { pagas: number; pendentes: number; inadimplentes: number; rAberto: number }>();
     for (const f of faturas) {
       const b = bucketDoStatus(f.status);
       if (!b) continue;
-      const ref = (f.numero_referencia || "").slice(0, 7); // "YYYY-MM"
+      const ref = (f.numero_referencia || "").slice(0, 7);
       if (!/^\d{4}-\d{2}$/.test(ref)) continue;
       let r = porMes.get(ref);
-      if (!r) { r = { pagas: 0, pendentes: 0, inadimplentes: 0 }; porMes.set(ref, r); }
+      if (!r) { r = { pagas: 0, pendentes: 0, inadimplentes: 0, rAberto: 0 }; porMes.set(ref, r); }
+      const valor = valorPorProposta.get(f.proposta_id) || 0;
       if (b === "paga") r.pagas++;
-      else if (b === "pendente") r.pendentes++;
-      else r.inadimplentes++;
+      else if (b === "pendente") { r.pendentes++; r.rAberto += valor; }
+      else { r.inadimplentes++; r.rAberto += valor; }
     }
     return Array.from(porMes.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
@@ -192,10 +273,10 @@ export default function CobrancaDashboard() {
         Pagas: v.pagas, Pendentes: v.pendentes, Inadimplentes: v.inadimplentes,
         total: v.pagas + v.pendentes + v.inadimplentes,
         pctPago: pctOf(v.pagas, v.pagas + v.pendentes + v.inadimplentes),
+        rAberto: v.rAberto,
       }));
-  }, [faturas]);
+  }, [faturas, valorPorProposta]);
 
-  // top meses com mais inadimplência + melhor mês de pagamento
   const destaques = useMemo(() => {
     if (serieMensal.length === 0) return null;
     const piorInad = [...serieMensal].sort((a, b) => b.Inadimplentes - a.Inadimplentes)[0];
@@ -203,152 +284,211 @@ export default function CobrancaDashboard() {
     return { piorInad, melhorPago };
   }, [serieMensal]);
 
-  if (permitido === null || loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: "#6b7280" }}>Carregando dashboard...</div>;
+  if (permitido === null || loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", color: C.sub }}>Carregando dashboard...</div>;
   if (!permitido) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
-      <div style={{ ...card, padding: 48, textAlign: "center", maxWidth: 460 }}>
+      <div style={{ ...shell, padding: 48, textAlign: "center", maxWidth: 460 }}>
         <div style={{ fontSize: 40, marginBottom: 8 }}>🔒</div>
-        <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Acesso restrito</h1>
-        <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>Você não tem permissão para ver a Cobrança.</p>
+        <h1 style={{ color: C.ink, fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Acesso restrito</h1>
+        <p style={{ color: C.sub, fontSize: 13, margin: 0 }}>Você não tem permissão para ver a Cobrança.</p>
       </div>
     </div>
   );
 
   const vazio = kpis.total === 0;
+  const gap = isMobile ? 14 : 18;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap }}>
 
       {/* ═══ HEADER ═══ */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>
-            <span style={{ filter: "saturate(0) brightness(2)" }}>📊</span>
+          <div style={{ width: 50, height: 50, borderRadius: 14, background: `linear-gradient(135deg, ${C.brand}, ${C.brand2})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: `0 6px 18px ${C.brand}44` }}>
+            <span style={{ filter: "saturate(0) brightness(2.5)" }}>📊</span>
           </div>
           <div>
-            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0, letterSpacing: -0.3 }}>Dashboard de Cobrança</h1>
-            <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-              <b style={{ color: "#2563eb" }}>{formatNum(kpis.total)}</b> faturas · <b style={{ color: "#16a34a" }}>{formatNum(kpis.pagas)}</b> pagas · <b style={{ color: "#dc2626" }}>{formatNum(kpis.inadimplentes)}</b> inadimplentes
+            <h1 style={{ color: C.ink, fontSize: isMobile ? 21 : 26, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>Cobrança · Visão geral</h1>
+            <p style={{ color: C.sub, fontSize: 12.5, margin: "3px 0 0" }}>
+              <b style={{ color: C.brand }}>{formatNum(kpis.total)}</b> faturas acompanhadas · atualizado pela planilha de status
             </p>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => router.push("/crm/cobranca/negociacoes")} style={btnSec}>🤝 Negociações</button>
-          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={btnSec}>📤 Atualizar planilha</button>
+          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={{ ...btnSec, background: C.brand, color: "#fff", border: "none" }}>📤 Atualizar planilha</button>
         </div>
       </div>
 
       {vazio && (
-        <div style={{ background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", border: "1px solid #bfdbfe", borderLeft: "4px solid #2563eb", borderRadius: 12, padding: "12px 18px" }}>
-          <p style={{ color: "#1e40af", fontSize: 13, margin: 0, fontWeight: 700 }}>💡 Ainda não há faturas com status gravado</p>
-          <p style={{ color: "#3b82f6", fontSize: 12, margin: "2px 0 0" }}>Suba a planilha de pagamento em <b>📤 Atualizar planilha</b> — o dashboard popula sozinho.</p>
+        <div style={{ background: "linear-gradient(135deg, #eef2ff, #e0e7ff)", border: `1px solid #c7d2fe`, borderLeft: `4px solid ${C.brand}`, borderRadius: 12, padding: "14px 18px" }}>
+          <p style={{ color: "#3730a3", fontSize: 13.5, margin: 0, fontWeight: 800 }}>Ainda não há faturas com status</p>
+          <p style={{ color: C.brand, fontSize: 12.5, margin: "3px 0 0" }}>Suba a planilha de pagamento em <b>Atualizar planilha</b> — o painel popula sozinho.</p>
         </div>
       )}
 
-      {/* ═══ CARDS DE CONTAGEM ═══ */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
-        {([
-          { k: "pendente" as const, qtd: kpis.pendentes, sub: `${pctOf(kpis.pendentes, kpis.total)}% das faturas` },
-          { k: "inadimplente" as const, qtd: kpis.inadimplentes, sub: `${formatNum(kpis.clientesInad)} cliente(s) inadimplente(s)` },
-          { k: "paga" as const, qtd: kpis.pagas, sub: `${pctOf(kpis.pagas, kpis.total)}% das faturas` },
-        ]).map(c => {
-          const meta = BUCKET_META[c.k];
-          return (
-            <div key={c.k} style={{ ...card, padding: isMobile ? 14 : 18, borderTop: `4px solid ${meta.cor}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: meta.bg, border: `1px solid ${meta.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>{meta.icone}</div>
-                <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>{c.k === "pendente" ? "Pendentes de pagamento" : meta.label}</p>
-              </div>
-              <p style={{ color: meta.cor, fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{formatNum(c.qtd)}</p>
-              <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>{c.sub}</p>
-            </div>
-          );
-        })}
-        <div style={{ ...card, padding: isMobile ? 14 : 18, borderTop: "4px solid #4f46e5" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: "#eef2ff", border: "1px solid #c7d2fe", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>📉</div>
-            <p style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>Inadimplência</p>
+      {/* ═══ FAIXA DE DESTAQUE: R$ em aberto + recebido (hero) ═══ */}
+      {!vazio && (
+        <div style={{ ...shell, padding: 0, overflow: "hidden", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1.4fr 1fr 1fr", gap: 0 }}>
+          {/* R$ em aberto — o número que mais importa pra cobrança */}
+          <div style={{ padding: isMobile ? 20 : 26, background: `linear-gradient(135deg, ${C.brand}, ${C.brand2})`, color: "#fff", position: "relative" }}>
+            <p style={{ fontSize: 11.5, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.6, opacity: 0.85 }}>Valor em aberto</p>
+            <p style={{ fontSize: isMobile ? 34 : 42, fontWeight: 800, margin: "6px 0 0", letterSpacing: -1, ...num }}>{money(kpis.rAberto)}</p>
+            <p style={{ fontSize: 12.5, margin: "8px 0 0", opacity: 0.9 }}>
+              {formatNum(kpis.pendentes + kpis.inadimplentes)} fatura(s) a receber · {formatNum(kpis.clientesInad)} cliente(s) inadimplente(s)
+            </p>
           </div>
-          <p style={{ color: "#4f46e5", fontSize: isMobile ? 24 : 30, fontWeight: 800, margin: 0, letterSpacing: -0.5 }}>{kpis.pctInad}%</p>
-          <p style={{ color: "#9ca3af", fontSize: 11.5, margin: "3px 0 0", fontWeight: 500 }}>inadimplentes / total de faturas</p>
+          {/* recebido */}
+          <div style={{ padding: isMobile ? 20 : 26, borderLeft: isMobile ? "none" : `1px solid ${C.line}`, borderTop: isMobile ? `1px solid ${C.line}` : "none" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, margin: 0, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>Já recebido</p>
+            <p style={{ fontSize: isMobile ? 26 : 30, fontWeight: 800, margin: "6px 0 0", color: C.pago, letterSpacing: -0.5, ...num }}>{money(kpis.rRecebido)}</p>
+            <p style={{ fontSize: 12, margin: "6px 0 0", color: C.sub }}>{formatNum(kpis.pagas)} fatura(s) paga(s)</p>
+          </div>
+          {/* ticket médio */}
+          <div style={{ padding: isMobile ? 20 : 26, borderLeft: isMobile ? "none" : `1px solid ${C.line}`, borderTop: isMobile ? `1px solid ${C.line}` : "none" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, margin: 0, color: C.sub, textTransform: "uppercase", letterSpacing: 0.5 }}>Ticket médio</p>
+            <p style={{ fontSize: isMobile ? 26 : 30, fontWeight: 800, margin: "6px 0 0", color: C.ink, letterSpacing: -0.5, ...num }}>{moneyFull(kpis.ticket)}</p>
+            <p style={{ fontSize: 12, margin: "6px 0 0", color: C.sub }}>por fatura acompanhada</p>
+          </div>
         </div>
+      )}
+
+      {/* ═══ KPIs DE CONTAGEM (4 cards) ═══ */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap }}>
+        {([
+          { label: "Pagas", qtd: kpis.pagas, cor: C.pago, bg: "#f0fdf4", icone: "✓", sub: `${kpis.pctPago}% do total` },
+          { label: "Pendentes", qtd: kpis.pendentes, cor: C.pend, bg: "#fffbeb", icone: "◷", sub: `${pctOf(kpis.pendentes, kpis.total)}% do total` },
+          { label: "Inadimplentes", qtd: kpis.inadimplentes, cor: C.inad, bg: "#fef2f2", icone: "!", sub: `${formatNum(kpis.clientesInad)} cliente(s)` },
+          { label: "Inadimplência", qtd: -1, cor: C.brand, bg: "#eef2ff", icone: "%", sub: "do total de faturas", valorTexto: `${kpis.pctInad}%` },
+        ]).map(c => (
+          <div key={c.label} style={{ ...shell, padding: isMobile ? 16 : 20, position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, width: 4, height: "100%", background: c.cor }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, background: c.bg, color: c.cor, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800 }}>{c.icone}</div>
+              <p style={{ color: C.sub, fontSize: 11, fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: 0.4 }}>{c.label}</p>
+            </div>
+            <p style={{ color: c.cor, fontSize: isMobile ? 26 : 32, fontWeight: 800, margin: 0, letterSpacing: -0.8, ...num }}>
+              {c.valorTexto ?? formatNum(c.qtd)}
+            </p>
+            <p style={{ color: "#94a3b8", fontSize: 11.5, margin: "4px 0 0", fontWeight: 500 }}>{c.sub}</p>
+          </div>
+        ))}
       </div>
 
-      {/* ═══ BARRA DE PROPORÇÃO ═══ */}
+      {/* ═══ PROPORÇÃO (donut) + FRAUDE/CHURN ═══ */}
       {!vazio && (
-        <div style={{ ...card, padding: isMobile ? 16 : 20 }}>
-          <p style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 10px" }}>📊 Proporção das faturas</p>
-          <div style={{ display: "flex", height: 28, borderRadius: 8, overflow: "hidden", border: "1px solid #e5e7eb" }}>
-            {([{ q: kpis.pagas, cor: "#16a34a" }, { q: kpis.pendentes, cor: "#d97706" }, { q: kpis.inadimplentes, cor: "#dc2626" }]).map((s, i) => {
-              const p = pctOf(s.q, kpis.total);
-              return s.q > 0 ? <div key={i} style={{ width: `${p}%`, background: s.cor, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>{p >= 8 ? `${p}%` : ""}</div> : null;
-            })}
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap }}>
+          {/* donut */}
+          <div style={{ ...shell, padding: isMobile ? 18 : 24 }}>
+            <p style={{ color: C.sub, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 16px" }}>Distribuição das faturas</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap", justifyContent: isMobile ? "center" : "flex-start" }}>
+              <Donut
+                centro={`${kpis.pctPago}%`} sub="pago"
+                segmentos={[
+                  { valor: kpis.pagas, cor: C.pago },
+                  { valor: kpis.pendentes, cor: C.pend },
+                  { valor: kpis.inadimplentes, cor: C.inad },
+                ]}
+              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 160 }}>
+                {([
+                  { l: "Pagas", q: kpis.pagas, cor: C.pago },
+                  { l: "Pendentes", q: kpis.pendentes, cor: C.pend },
+                  { l: "Inadimplentes", q: kpis.inadimplentes, cor: C.inad },
+                ]).map(x => (
+                  <div key={x.l} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: x.cor, flexShrink: 0 }} />
+                    <span style={{ color: "#334155", fontSize: 13, fontWeight: 600, flex: 1 }}>{x.l}</span>
+                    <span style={{ color: C.ink, fontSize: 14, fontWeight: 800, ...num }}>{formatNum(x.q)}</span>
+                    <span style={{ color: C.sub, fontSize: 12, width: 38, textAlign: "right", ...num }}>{pctOf(x.q, kpis.total)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap" }}>
-            {([{ l: "Pagas", cor: "#16a34a" }, { l: "Pendentes", cor: "#d97706" }, { l: "Inadimplentes", cor: "#dc2626" }]).map(x => (
-              <span key={x.l} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#6b7280", fontSize: 11.5, fontWeight: 600 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 3, background: x.cor }} /> {x.l}
+
+          {/* fraude + churn */}
+          <div style={{ ...shell, padding: isMobile ? 18 : 24 }}>
+            <p style={{ color: C.sub, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 16px" }}>Risco da carteira</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div style={{ borderRadius: 12, border: `1px solid #fecaca`, background: "#fef2f2", padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 18 }}>🛑</span>
+                  <span style={{ color: C.fraude, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>Suspeita de fraude</span>
+                </div>
+                <p style={{ color: C.fraude, fontSize: 28, fontWeight: 800, margin: 0, ...num }}>{formatNum(kpis.fraude)}</p>
+                <p style={{ color: "#b91c1c99", fontSize: 11.5, margin: "2px 0 0", fontWeight: 600 }}>fatura(s) marcada(s)</p>
+              </div>
+              <div style={{ borderRadius: 12, border: `1px solid #e9d5ff`, background: "#faf5ff", padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 18 }}>📉</span>
+                  <span style={{ color: C.churn, fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.4 }}>Churn</span>
+                </div>
+                <p style={{ color: C.churn, fontSize: 28, fontWeight: 800, margin: 0, ...num }}>{formatNum(kpis.churn)}</p>
+                <p style={{ color: "#9333ea99", fontSize: 11.5, margin: "2px 0 0", fontWeight: 600 }}>fatura(s) marcada(s)</p>
+              </div>
+            </div>
+            <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 10, background: C.soft, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>👥</span>
+              <span style={{ color: "#334155", fontSize: 12.5, fontWeight: 600, flex: 1 }}>Clientes com faturas acompanhadas</span>
+              <span style={{ color: C.ink, fontSize: 16, fontWeight: 800, ...num }}>{formatNum(kpis.clientesTot)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ EVOLUÇÃO MENSAL (área empilhada) ═══ */}
+      {serieMensal.length > 0 && (
+        <div style={{ ...shell, padding: isMobile ? 18 : 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 18, flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <h3 style={{ color: C.ink, fontSize: 16, fontWeight: 800, margin: 0 }}>Evolução mês a mês</h3>
+              <p style={{ color: C.sub, fontSize: 12, margin: "2px 0 0" }}>Faturas por status, empilhadas por mês de referência</p>
+            </div>
+          </div>
+          <GraficoArea data={serieMensal} mobile={isMobile} />
+          <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            {([["Pagas", C.pago], ["Pendentes", C.pend], ["Inadimplentes", C.inad]] as [string, string][]).map(([l, cor]) => (
+              <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.sub, fontSize: 11.5, fontWeight: 600 }}>
+                <span style={{ width: 12, height: 4, borderRadius: 2, background: cor }} /> {l}
               </span>
             ))}
           </div>
         </div>
       )}
 
-      {/* ═══ GRÁFICO: EVOLUÇÃO DOS PAGAMENTOS MÊS A MÊS ═══ */}
-      {serieMensal.length > 0 && (
-        <div style={{ ...card, padding: isMobile ? 16 : 24 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-            <h3 style={{ ...sectionTitle, margin: 0 }}>
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: "#eff6ff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>📈</span>
-              Evolução dos pagamentos mês a mês
-            </h3>
-            <div style={{ display: "flex", gap: 4 }}>
-              {(["barras", "linha"] as const).map(t => (
-                <button key={t} onClick={() => setTipoGrafico(t)} style={{ borderRadius: 20, padding: "6px 13px", fontSize: 12, cursor: "pointer", fontWeight: tipoGrafico === t ? 700 : 600, border: `1px solid ${tipoGrafico === t ? "#2563eb" : "#e5e7eb"}`, background: tipoGrafico === t ? "#eff6ff" : "#fff", color: tipoGrafico === t ? "#2563eb" : "#6b7280" }}>{t === "barras" ? "📊 Barras" : "📈 Linha"}</button>
-              ))}
-            </div>
-          </div>
-          {tipoGrafico === "barras"
-            ? <GraficoBarras data={serieMensal} mobile={isMobile} />
-            : <GraficoLinha data={serieMensal} mobile={isMobile} series={[["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]]} />}
-          <LegendaSerie itens={[["Pagas", "#16a34a"], ["Pendentes", "#d97706"], ["Inadimplentes", "#dc2626"]]} />
-        </div>
-      )}
-
       {/* ═══ % PAGO POR MÊS + DESTAQUES ═══ */}
       {serieMensal.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 14 }}>
-          <div style={{ ...card, padding: isMobile ? 16 : 24 }}>
-            <h3 style={{ ...sectionTitle, fontSize: 14 }}>
-              <span style={{ width: 28, height: 28, borderRadius: 8, background: "#f0fdf4", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✅</span>
-              % de faturas pagas por mês
-            </h3>
-            <GraficoLinha data={serieMensal} mobile={isMobile} height={200} pct series={[["pctPago", "#16a34a"]]} />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap }}>
+          <div style={{ ...shell, padding: isMobile ? 18 : 24 }}>
+            <h3 style={{ color: C.ink, fontSize: 15, fontWeight: 800, margin: "0 0 4px" }}>Taxa de pagamento</h3>
+            <p style={{ color: C.sub, fontSize: 12, margin: "0 0 16px" }}>% de faturas pagas por mês</p>
+            <GraficoPct data={serieMensal} mobile={isMobile} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap }}>
             {destaques?.melhorPago && (
-              <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #16a34a" }}>
+              <div style={{ ...shell, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: `4px solid ${C.pago}` }}>
                 <div style={{ fontSize: 26 }}>🏆</div>
                 <div>
-                  <p style={{ color: "#16a34a", fontSize: 16, fontWeight: 800, margin: 0 }}>{destaques.melhorPago.mes} · {destaques.melhorPago.pctPago}% pago</p>
-                  <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>melhor mês de pagamento</p>
+                  <p style={{ color: C.pago, fontSize: 16, fontWeight: 800, margin: 0, ...num }}>{destaques.melhorPago.mes} · {destaques.melhorPago.pctPago}%</p>
+                  <p style={{ color: C.sub, fontSize: 11.5, margin: 0, fontWeight: 600 }}>melhor mês de pagamento</p>
                 </div>
               </div>
             )}
             {destaques?.piorInad && destaques.piorInad.Inadimplentes > 0 && (
-              <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #dc2626" }}>
+              <div style={{ ...shell, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: `4px solid ${C.inad}` }}>
                 <div style={{ fontSize: 26 }}>🚨</div>
                 <div>
-                  <p style={{ color: "#dc2626", fontSize: 16, fontWeight: 800, margin: 0 }}>{destaques.piorInad.mes} · {formatNum(destaques.piorInad.Inadimplentes)} inadimplentes</p>
-                  <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>mês com mais inadimplência</p>
+                  <p style={{ color: C.inad, fontSize: 16, fontWeight: 800, margin: 0, ...num }}>{destaques.piorInad.mes} · {formatNum(destaques.piorInad.Inadimplentes)}</p>
+                  <p style={{ color: C.sub, fontSize: 11.5, margin: 0, fontWeight: 600 }}>mês com mais inadimplência</p>
                 </div>
               </div>
             )}
-            <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: "4px solid #2563eb" }}>
-              <div style={{ fontSize: 26 }}>👥</div>
+            <div style={{ ...shell, padding: 16, display: "flex", alignItems: "center", gap: 12, borderLeft: `4px solid ${C.brand}` }}>
+              <div style={{ fontSize: 26 }}>📅</div>
               <div>
-                <p style={{ color: "#2563eb", fontSize: 16, fontWeight: 800, margin: 0 }}>{formatNum(kpis.clientesTot)} cliente(s)</p>
-                <p style={{ color: "#6b7280", fontSize: 11.5, margin: 0, fontWeight: 600 }}>com faturas acompanhadas</p>
+                <p style={{ color: C.brand, fontSize: 16, fontWeight: 800, margin: 0, ...num }}>{serieMensal.length} {serieMensal.length === 1 ? "mês" : "meses"}</p>
+                <p style={{ color: C.sub, fontSize: 11.5, margin: 0, fontWeight: 600 }}>de histórico acompanhado</p>
               </div>
             </div>
           </div>
