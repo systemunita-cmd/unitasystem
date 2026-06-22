@@ -42,6 +42,15 @@ type Registro = {
 
 // Tipos de batida (mesma ordem do app de bater ponto)
 const TIPOS_BATIDA = ["Entrada", "Saída p/ almoço", "Retorno do almoço", "Saída", "Marcação"];
+// 🏷️ Marcações de AUSÊNCIA (dia inteiro ou com hora). Não contam como batida de horário.
+const TIPOS_AUSENCIA = ["Folga", "Falta", "Falta justificada", "Atestado"];
+const ehAusencia = (tipo: string) => TIPOS_AUSENCIA.includes(tipo);
+const AUSENCIA_COR: Record<string, { cor: string; bg: string }> = {
+  "Folga":             { cor: "#0369a1", bg: "#e0f2fe" },
+  "Falta":             { cor: "#b91c1c", bg: "#fee2e2" },
+  "Falta justificada": { cor: "#a16207", bg: "#fef9c3" },
+  "Atestado":          { cor: "#7c3aed", bg: "#ede9fe" },
+};
 
 function mesAtual() {
   const d = new Date();
@@ -63,7 +72,8 @@ const fmtHoras = (h: number) => {
 
 // soma os intervalos (entrada→saída em pares) de um dia
 function horasDoDia(batidas: Registro[]): number {
-  const ord = [...batidas].sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+  // marcações de ausência (folga/falta/atestado) não entram no cálculo de horas
+  const ord = [...batidas].filter((b) => !ehAusencia(b.tipo)).sort((a, b) => a.data_hora.localeCompare(b.data_hora));
   let ms = 0;
   for (let i = 0; i + 1 < ord.length; i += 2) {
     ms += new Date(ord[i + 1].data_hora).getTime() - new Date(ord[i].data_hora).getTime();
@@ -110,6 +120,8 @@ export function PontoSection() {
   // modal de edição/criação: { modo, registro?, funcionario, cargo, dia(YYYY-MM-DD), tipo, hora(HH:MM) }
   const [editModal, setEditModal] = useState<null | {
     modo: "editar" | "novo";
+    ausencia?: boolean;   // 🏷️ true quando o lançamento é folga/falta/atestado
+    semHora?: boolean;    // 🏷️ true = marcação de dia inteiro (sem horário)
     registroId?: string;
     funcionario: string;
     cargo: string;
@@ -226,11 +238,19 @@ export function PontoSection() {
     const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     setEditModal({ modo: "novo", funcionario, cargo, data, hora: "08:00", tipo: "Entrada" });
   };
+  // ── abre o modal pra lançar uma AUSÊNCIA (folga/falta/atestado) num dia
+  const abrirAusencia = (funcionario: string, cargo: string, diaBR: string) => {
+    const dt = parseDiaBR(diaBR);
+    const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    setEditModal({ modo: "novo", ausencia: true, semHora: true, funcionario, cargo, data, hora: "08:00", tipo: "Folga" });
+  };
   // ── salva (insert no modo novo, update no modo editar) — marca como ajuste manual
   const salvarEdit = async () => {
     if (!editModal) return;
-    const iso = montarISO(editModal.data, editModal.hora);
-    if (!iso) { alert("Informe data e hora válidas."); return; }
+    // ausência de dia inteiro grava no início do dia (00:00); com hora usa a hora informada
+    const horaUsar = (editModal.ausencia && editModal.semHora) ? "00:00" : editModal.hora;
+    const iso = montarISO(editModal.data, horaUsar);
+    if (!iso) { alert("Informe uma data válida."); return; }
     setSalvandoEdit(true);
     try {
       if (editModal.modo === "editar" && editModal.registroId) {
@@ -291,7 +311,9 @@ export function PontoSection() {
       const chave = dt.toLocaleDateString("pt-BR");
       const nomeDow = dt.toLocaleDateString("pt-BR", { weekday: "short" });
       const esperada = jornadaEsperadaDoDia(dow);
-      const batidas = (porDia[chave] || []).slice().sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+      const todasDoDia = (porDia[chave] || []).slice().sort((a, b) => a.data_hora.localeCompare(b.data_hora));
+      const ausenciaDoDia = todasDoDia.find((b) => ehAusencia(b.tipo));
+      const batidas = todasDoDia.filter((b) => !ehAusencia(b.tipo));
       const trabalhada = batidas.length ? horasDoDia(batidas) : 0;
 
       // entrada = 1ª batida, saída = última (pra exibição)
@@ -305,14 +327,18 @@ export function PontoSection() {
       totalPrev += esperada;
       if (saldo > 0) totalExtra += saldo;
       if (saldo < 0 && esperada > 0) totalDebito += Math.abs(saldo);
-      const ehFalta = esperada > 0 && trabalhada === 0;
+      const ehFalta = esperada > 0 && trabalhada === 0 && !ausenciaDoDia;
       if (ehFalta) faltas++;
 
       const corLinha = dow === 0 ? "background:#f9fafb;color:#9ca3af;"
+        : ausenciaDoDia ? "background:#fffbeb;"
         : ehFalta ? "background:#fef2f2;" : "";
-      const saldoTxt = esperada === 0 && trabalhada === 0 ? "—"
+      // marcação de ausência aparece no lugar do saldo (FOLGA/FALTA/ATESTADO)
+      const saldoTxt = ausenciaDoDia ? ausenciaDoDia.tipo.toUpperCase()
+        : esperada === 0 && trabalhada === 0 ? "—"
         : ehFalta ? "FALTA" : fmtSaldo(saldo);
-      const saldoCor = ehFalta ? "color:#dc2626;font-weight:700;"
+      const saldoCor = ausenciaDoDia ? "color:#b45309;font-weight:700;"
+        : ehFalta ? "color:#dc2626;font-weight:700;"
         : saldo < 0 ? "color:#dc2626;" : saldo > 0 ? "color:#16a34a;" : "color:#6b7280;";
 
       linhas.push(`<tr style="${corLinha}">
@@ -321,7 +347,7 @@ export function PontoSection() {
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${saida}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;font-size:10px;color:#6b7280;">${escapeHtml(marcacoes)}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${esperada === 0 ? "—" : fmtHoras(esperada)}</td>
-        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${trabalhada === 0 ? "—" : fmtHoras(trabalhada)}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${trabalhada > 0 ? fmtHoras(trabalhada) : ausenciaDoDia ? `<span style="color:#b45309;font-weight:700;">${escapeHtml(ausenciaDoDia.tipo)}</span>` : "—"}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;${saldoCor}">${saldoTxt}</td>
       </tr>`);
     }
@@ -584,11 +610,18 @@ export function PontoSection() {
                               {fmtHoras(d.horas)} trabalhadas
                             </span>
                             {podeEditar && (
-                              <button onClick={() => abrirNovo(f.funcionario, f.cargo, d.dia)}
-                                title="Adicionar batida neste dia"
-                                style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                + batida
-                              </button>
+                              <>
+                                <button onClick={() => abrirNovo(f.funcionario, f.cargo, d.dia)}
+                                  title="Adicionar batida neste dia"
+                                  style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                  + batida
+                                </button>
+                                <button onClick={() => abrirAusencia(f.funcionario, f.cargo, d.dia)}
+                                  title="Lançar folga, falta ou atestado neste dia"
+                                  style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                  + ausência
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>
@@ -596,6 +629,25 @@ export function PontoSection() {
                           {[...d.batidas]
                             .sort((a, b) => a.data_hora.localeCompare(b.data_hora))
                             .map((b) => {
+                              // 🏷️ marcação de ausência → chip colorido próprio, sem GPS/selfie/horas
+                              if (ehAusencia(b.tipo)) {
+                                const am = AUSENCIA_COR[b.tipo] || { cor: "#6b7280", bg: "#f3f4f6" };
+                                const temHora = !b.data_hora.endsWith("T00:00:00") && new Date(b.data_hora).getHours() !== 0;
+                                return (
+                                  <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, background: am.bg, border: `1px solid ${am.cor}40`, borderRadius: 10, padding: "6px 12px" }}>
+                                    <span style={{ fontSize: 13 }}>🏷️</span>
+                                    <div>
+                                      <p style={{ color: am.cor, fontSize: 13, fontWeight: 800, margin: 0 }}>{b.tipo}</p>
+                                      <p style={{ color: am.cor, fontSize: 10, margin: 0, opacity: 0.8 }}>{temHora ? horaFmt(b.data_hora) : "dia inteiro"}</p>
+                                    </div>
+                                    {b.ajuste_por && <span title={`Lançado por ${b.ajuste_por}`} style={{ fontSize: 11, marginLeft: 2 }}>✏️</span>}
+                                    {podeEditar && (
+                                      <button onClick={() => excluirBatida(b)} title="Remover esta marcação"
+                                        style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, padding: "2px 4px", color: "#dc2626", marginLeft: 2 }}>🗑️</button>
+                                    )}
+                                  </div>
+                                );
+                              }
                               const cor = TIPO_COR[b.tipo] || "#6b7280";
                               const temGps = b.latitude != null && b.longitude != null;
                               const mapsUrl = temGps
@@ -694,17 +746,23 @@ export function PontoSection() {
           <div onClick={(e) => e.stopPropagation()}
             style={{ ...card, width: "100%", maxWidth: 420, padding: 24 }}>
             <h3 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 800, color: "#1f2937" }}>
-              {editModal.modo === "editar" ? "✏️ Editar batida" : "➕ Adicionar batida"}
+              {editModal.ausencia ? "🏷️ Lançar ausência" : editModal.modo === "editar" ? "✏️ Editar batida" : "➕ Adicionar batida"}
             </h3>
             <p style={{ margin: "0 0 18px", fontSize: 12, color: "#6b7280" }}>
               {editModal.funcionario}{editModal.cargo ? ` · ${editModal.cargo}` : ""}
             </p>
 
-            <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Tipo</label>
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>{editModal.ausencia ? "Tipo de ausência" : "Tipo"}</label>
             <select value={editModal.tipo} onChange={(e) => setEditModal({ ...editModal, tipo: e.target.value })}
               style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginBottom: 14, marginTop: 4 }}>
-              {TIPOS_BATIDA.map((t) => <option key={t} value={t}>{t}</option>)}
+              {(editModal.ausencia ? TIPOS_AUSENCIA : TIPOS_BATIDA).map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+            {editModal.ausencia && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer", fontSize: 13, color: "#374151", fontWeight: 600 }}>
+                <input type="checkbox" checked={!!editModal.semHora} onChange={(e) => setEditModal({ ...editModal, semHora: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#c2410c" }} />
+                Dia inteiro (sem horário específico)
+              </label>
+            )}
 
             <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
               <div style={{ flex: 1 }}>
@@ -712,16 +770,18 @@ export function PontoSection() {
                 <input type="date" value={editModal.data} onChange={(e) => setEditModal({ ...editModal, data: e.target.value })}
                   style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
               </div>
-              <div style={{ width: 120 }}>
-                <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Hora</label>
-                <input type="time" value={editModal.hora} onChange={(e) => setEditModal({ ...editModal, hora: e.target.value })}
-                  style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
-              </div>
+              {!(editModal.ausencia && editModal.semHora) && (
+                <div style={{ width: 120 }}>
+                  <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Hora</label>
+                  <input type="time" value={editModal.hora} onChange={(e) => setEditModal({ ...editModal, hora: e.target.value })}
+                    style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
+                </div>
+              )}
             </div>
 
             <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 12px", marginBottom: 18 }}>
               <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
-                ⚠️ Esta batida será marcada como <b>ajuste manual</b> (registrado: {meuEmail || "você"}).
+                ⚠️ {editModal.ausencia ? "Esta ausência" : "Esta batida"} será registrada manualmente (por: {meuEmail || "você"}).
               </p>
             </div>
 
