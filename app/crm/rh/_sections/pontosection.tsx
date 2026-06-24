@@ -198,7 +198,9 @@ export function PontoSection() {
         .sort((a, b) => b.dia.localeCompare(a.dia));
       const totalHoras = dias.reduce((s, d) => s + d.horas, 0);
       return { funcionario, cargo: info.cargo, dias, totalHoras };
-    });
+    })
+      // 🔤 funcionários em ordem alfabética pelo nome (pt-BR, ignora maiúsculas/acentos)
+      .sort((a, b) => a.funcionario.localeCompare(b.funcionario, "pt-BR", { sensitivity: "base" }));
 
     // 🔐 Recorte por FILA:
     //   • escopo "all" (admin / RH geral / super) → vê TODOS, inclusive liderança (sem fila).

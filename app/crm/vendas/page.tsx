@@ -1400,7 +1400,35 @@ export default function Vendas() {
       return !!rv && String(rv.fila_id ?? "") === String(filaFiltro);
     })
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
-    .filter(p => !buscaDebounced || p.nome?.toLowerCase().includes(buscaDebounced.toLowerCase()) || p.cpf?.includes(buscaDebounced) || nomeVendedor(p.vendedor).toLowerCase().includes(buscaDebounced.toLowerCase()))
+    .filter(p => {
+      // 🔎 Busca geral: varre QUALQUER dado do cliente (nome, cpf, telefones,
+      //    email, endereço, cidade, rg, vendedor e todos os campos customizados).
+      if (!buscaDebounced) return true;
+      const q = buscaDebounced.toLowerCase().trim();
+      const soDigitos = q.replace(/\D/g, "");
+      const campos: (string | null | undefined)[] = [
+        p.nome, p.cpf, p.rg, p.email, p.endereco, p.cidade, p.estado, p.cep,
+        p.telefone1, p.telefone2, p.telefone3, p.operadora, p.plano,
+        nomeVendedor(p.vendedor), p.status_venda,
+      ];
+      // campos customizados (qualquer valor texto/número)
+      if (p.dados_customizados) {
+        for (const v of Object.values(p.dados_customizados)) {
+          if (v != null && typeof v !== "object") campos.push(String(v));
+        }
+      }
+      return campos.some(c => {
+        if (!c) return false;
+        const cl = String(c).toLowerCase();
+        if (cl.includes(q)) return true;
+        // pra telefone/cpf: compara só os dígitos (ignora máscara/espaços)
+        if (soDigitos.length >= 3) {
+          const cd = String(c).replace(/\D/g, "");
+          if (cd && cd.includes(soDigitos)) return true;
+        }
+        return false;
+      });
+    })
     .filter(p => {
       // 🔎 Se há busca por nome/CPF/vendedor, IGNORA o filtro de data —
       //    procura em qualquer período. Sem busca, o filtro de data vale normal.
