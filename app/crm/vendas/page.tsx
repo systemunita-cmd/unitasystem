@@ -189,6 +189,15 @@ export default function Vendas() {
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
+  // 🏷️ Opções do filtro de status = lista fixa (STATUS_OPCOES) + QUALQUER status
+  //    que exista de fato nas propostas (ex: ANULADA, CTOP, RECOMPRA...). Sem isso,
+  //    status reais que não estão na lista fixa não apareciam no filtro.
+  const statusOpcoesFiltro = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of (STATUS_OPCOES as string[])) { const v = String(s || "").trim(); if (v) set.add(v); }
+    for (const p of propostas) { const v = String(p.status_venda || "").trim(); if (v) set.add(v); }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR", { sensitivity: "base" }));
+  }, [propostas]);
   // 📅 Padrao = HOJE. Toggles rapidos (Hoje / 7 / 30 / 90 dias / Personalizado) controlam o range.
   const [filtroDataInicio, setFiltroDataInicio] = useState(() => isoLocal(new Date()));
   const [filtroDataFim, setFiltroDataFim] = useState(() => isoLocal(new Date()));
@@ -1814,7 +1823,7 @@ export default function Vendas() {
           style={{ ...inputStyle, maxWidth: 360, flex: "1 1 200px", borderRadius: 20 }} />
         <select value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)} style={{ ...inputStyle, maxWidth: 220 }}>
           <option value="todos">Status: Todos</option>
-          {STATUS_OPCOES.map(s => <option key={s} value={s}>{statusMeta(s).emoji} {s}</option>)}
+          {statusOpcoesFiltro.map(s => <option key={s} value={s}>{statusMeta(s).emoji} {s}</option>)}
         </select>
         {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
