@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { usePermissao } from "../../hooks/usePermissao";
 import {
   CAMPOS_FIXOS,
   CAMPOS_FIXOS_MAP,
@@ -96,6 +97,8 @@ const getSecaoKey = (campos: CampoUnificado[], idx: number): string => {
 
 export default function EditorProposta() {
   const router = useRouter();
+  // 🔐 Fonte canônica de permissão (mesma do resto do sistema): admin/dono/super.
+  const { isDono, isSuperAdmin, perfil, loading: permCarregando } = usePermissao();
   const [ehAdmin, setEhAdmin] = useState<boolean | null>(null);
   const [campos, setCampos] = useState<CampoUnificado[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,26 +136,29 @@ export default function EditorProposta() {
     boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
   };
 
-  // 🔐 Verifica admin
+  // 🔐 Verifica admin usando o usePermissao (consistente com o resto do sistema):
+  //    dono, super admin OU perfil "Administrador" podem editar os campos.
+  //    Mantém fallback de primeira instalação (sem tabela / sem usuários → libera).
   useEffect(() => {
+    if (permCarregando) return; // espera a permissão carregar
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/"); return; }
-      const { data: me, error } = await supabase.from("usuarios").select("role").eq("auth_user_id", user.id).maybeSingle();
-      if (error?.code === "PGRST205") {
-        // Tabela `usuarios` não existe ainda → assume admin (primeira instalação)
-        setEhAdmin(true);
-        return;
-      }
-      if (!me) {
-        // Fallback: se for o primeiro usuário, vira admin
+
+      // Caminho normal: o hook já sabe se é admin/dono/super.
+      if (isDono || isSuperAdmin || perfil === "Administrador") { setEhAdmin(true); return; }
+
+      // Fallbacks de primeira instalação (tabela ausente ou vazia → libera o 1º).
+      try {
+        const { error } = await supabase.from("usuarios").select("role").eq("auth_user_id", user.id).maybeSingle();
+        if (error?.code === "PGRST205") { setEhAdmin(true); return; }
         const { count } = await supabase.from("usuarios").select("*", { count: "exact", head: true });
-        setEhAdmin((count || 0) === 0);
-        return;
-      }
-      setEhAdmin(me.role === "admin");
+        if ((count || 0) === 0) { setEhAdmin(true); return; }
+      } catch { /* segue como não-admin */ }
+
+      setEhAdmin(false);
     })();
-  }, [router]);
+  }, [router, permCarregando, isDono, isSuperAdmin, perfil]);
 
   const fetchCampos = async () => {
     setLoading(true);
