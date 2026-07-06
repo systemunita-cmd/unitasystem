@@ -623,7 +623,7 @@ export default function CobrancaPage() {
   };
 
   const todasFaturas = useMemo<Fatura[]>(() => {
-    const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase() === "INSTALADA");
+    const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase().includes("INSTALAD"));
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     const CICLO = 10; // 10 faturas por cliente a partir do mês gross
@@ -654,7 +654,10 @@ export default function CobrancaPage() {
         porNum.set(Number(r.numero_fatura), r);
       }
 
-      // 2) descobre o MÊS GROSS e o DIA DE VENCIMENTO do cliente (a partir da planilha)
+      // 2) descobre o MÊS GROSS e o DIA DE VENCIMENTO do cliente.
+      //    Prioridade:
+      //    - Planilha, quando existir, porque ela é o acerto financeiro oficial.
+      //    - Data de instalação do CRM, quando ainda não existe planilha para o cliente.
       let mesGrossDate: Date | null = null;
       const diasVenc: number[] = [];
       for (const r of hist) {
@@ -672,7 +675,14 @@ export default function CobrancaPage() {
       }
       if (!diaVenc || diaVenc < 1 || diaVenc > 31) diaVenc = 10;
 
-      // se não tem mês gross nenhum (cliente sem planilha), não há ciclo a gerar
+      // Cliente sem planilha também precisa aparecer na cobrança:
+      // usa o mês da instalação do CRM como mês gross inicial.
+      if (!mesGrossDate) {
+        const dataInst = parseDataBR(p.data_instalacao);
+        if (dataInst) mesGrossDate = new Date(dataInst.getFullYear(), dataInst.getMonth(), 1);
+      }
+
+      // Se não tem planilha nem data de instalação, ainda não dá para montar o ciclo.
       if (!mesGrossDate) continue;
 
       // 3) gera o CICLO de 10 faturas: fatura N vence (mês gross + N meses) no dia de venc.
@@ -1835,7 +1845,7 @@ export default function CobrancaPage() {
                     <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
                     <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhum cliente nesse filtro</p>
                     <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 14px" }}>
-                      As faturas vêm da planilha de status (uma linha por fatura). Suba a planilha em <b>Atualizar planilha</b> pra preencher os dados.<br/>
+                      A cobrança vem das vendas instaladas no CRM; a planilha entra como complemento para acertar status, pagamento e FPD.<br/>
                       Confira também os filtros ativos acima — eles se somam.
                     </p>
                     <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); }}
