@@ -62,6 +62,28 @@ const classificarSuporte = (status?: string | null): keyof typeof SUPORTE_STATUS
   return "ativo";
 };
 
+const DESCONTO_META: Record<"todos" | "ativo" | "sem", { label: string; cor: string; bg: string; border: string }> = {
+  todos: { label: "Desconto: Todos", cor: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+  ativo: { label: "Desconto ativo", cor: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
+  sem: { label: "Sem desconto", cor: "#64748b", bg: "#f8fafc", border: "#cbd5e1" },
+};
+
+const textoNormalizado = (v: any): string =>
+  String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+
+const valorAtivoLike = (v: any): boolean => {
+  if (v === true) return true;
+  if (v === false || v === null || v === undefined) return false;
+  if (typeof v === "number") return v > 0;
+  const s = textoNormalizado(v);
+  if (!s) return false;
+  if (["NAO", "N", "NO", "FALSE", "FALSO", "0", "SEM", "SEM DESCONTO", "INATIVO"].includes(s)) return false;
+  if (["SIM", "S", "YES", "TRUE", "VERDADEIRO", "1", "ATIVO", "COM DESCONTO"].includes(s)) return true;
+  const numero = Number(s.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", "."));
+  if (!Number.isNaN(numero) && numero > 0) return true;
+  return /DESCONTO|BONIFICACAO|PROMO|PROMOCIONAL/.test(s);
+};
+
 // 🎨 Cor + emoji de cada status — casa pelo nome exato (sem acento) e cai em
 //    palavras-chave pra status novos criados no Editor de Proposta
 const STATUS_VENDA_META: Record<string, { cor: string; emoji: string }> = {
@@ -207,6 +229,7 @@ export default function Vendas() {
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [filtroSuporte, setFiltroSuporte] = useState<"todos" | "ativo" | "pendente" | "finalizado" | "sem">("todos");
+  const [filtroDesconto, setFiltroDesconto] = useState<"todos" | "ativo" | "sem">("todos");
   // 🏷️ Opções do filtro de status = lista fixa (STATUS_OPCOES) + QUALQUER status
   //    que exista de fato nas propostas (ex: ANULADA, CTOP, RECOMPRA...). Sem isso,
   //    status reais que não estão na lista fixa não apareciam no filtro.
@@ -367,12 +390,58 @@ export default function Vendas() {
     return m;
   }, [chamadosSuporte]);
 
+  const suporteCrmDaProposta = (p: Proposta): keyof typeof SUPORTE_STATUS_META => {
+    const dc = p.dados_customizados || {};
+    const bruto =
+      (p as any).suporte_status ??
+      (p as any).status_suporte ??
+      (p as any).suporte ??
+      dc.suporte_status ??
+      dc.status_suporte ??
+      dc.suporte ??
+      dc.situacao_suporte;
+    if (valorAtivoLike((p as any).suporte_ativo) || valorAtivoLike(dc.suporte_ativo) || valorAtivoLike(dc.tem_suporte)) return "ativo";
+    return classificarSuporte(bruto);
+  };
+
+  const descontoDaProposta = (p: Proposta) => {
+    const dc = p.dados_customizados || {};
+    const candidatos = [
+      (p as any).desconto,
+      (p as any).desconto_ativo,
+      (p as any).tem_desconto,
+      (p as any).possui_desconto,
+      dc.desconto,
+      dc.desconto_ativo,
+      dc.tem_desconto,
+      dc.possui_desconto,
+      dc.desconto_aplicado,
+      dc.com_desconto,
+      dc.valor_desconto,
+    ];
+    const bruto = candidatos.find(v => v !== null && v !== undefined && String(v).trim() !== "");
+    const ativo = candidatos.some(valorAtivoLike);
+    const meta = ativo ? DESCONTO_META.ativo : DESCONTO_META.sem;
+    return { ativo, bruto, meta };
+  };
+
   const suporteDaProposta = (p: Proposta) => {
     const chamados = chamadosSuportePorProposta.get(p.id) || [];
     const ultimo = chamados[0];
-    const tipo = classificarSuporte(ultimo?.status);
+    const tipo = ultimo ? classificarSuporte(ultimo.status) : suporteCrmDaProposta(p);
     const meta = SUPORTE_STATUS_META[tipo];
-    return { chamados, ultimo, tipo, meta };
+    if (ultimo || tipo === "sem") return { chamados, ultimo, tipo, meta };
+    const origemCrm: ChamadoSuporte = {
+      id: 0,
+      proposta_id: p.id,
+      status: meta.label,
+      observacoes: "Informado no CRM",
+      solucao: null,
+      pendencia: null,
+      criado_por: p.atualizado_por || p.criado_por || null,
+      created_at: p.updated_at || p.created_at,
+    };
+    return { chamados, ultimo: origemCrm, tipo, meta };
   };
 
   // 🔄 Recarrega os dados da tela sem precisar de F5
@@ -576,6 +645,18 @@ export default function Vendas() {
       : v.dados_customizados?.[c.slug];
 
     // Estilizações especiais por slug
+    if (String(c.slug).toLowerCase().includes("desconto")) {
+      const d = descontoDaProposta(v);
+      const texto = d.ativo ? (d.bruto ? `✓ ${String(d.bruto)}` : "✓ Ativo") : "Sem desconto";
+      return (
+        <span style={{
+          background: d.meta.bg, color: d.meta.cor, border: `1px solid ${d.meta.border}`,
+          padding: "3px 9px", borderRadius: 10, fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap",
+        }}>
+          {texto}
+        </span>
+      );
+    }
     if (c.slug === "status_venda") {
       if (!raw) return <span style={{ color: "#d1d5db" }}>—</span>;
       const m = statusMeta(raw);
@@ -717,7 +798,7 @@ export default function Vendas() {
           {info.meta.label}
         </span>
         <span style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 600, display: "block", marginTop: 2 }}>
-          {info.ultimo.status} · {info.chamados.length} chamado(s)
+          {info.ultimo.status} · {info.chamados.length > 0 ? `${info.chamados.length} chamado(s)` : "CRM"}
         </span>
       </span>
     );
@@ -1505,6 +1586,7 @@ export default function Vendas() {
     })
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => filtroSuporte === "todos" || suporteDaProposta(p).tipo === filtroSuporte)
+    .filter(p => filtroDesconto === "todos" || descontoDaProposta(p).ativo === (filtroDesconto === "ativo"))
     .filter(p => {
       // 🔎 Busca geral: varre QUALQUER dado do cliente (nome, cpf, telefones,
       //    email, endereço, cidade, rg, vendedor e todos os campos customizados).
@@ -1517,7 +1599,9 @@ export default function Vendas() {
         nomeVendedor(p.vendedor), p.status_venda,
       ];
       const suporte = suporteDaProposta(p);
+      const desconto = descontoDaProposta(p);
       campos.push(suporte.meta.label, suporte.ultimo?.status, suporte.ultimo?.observacoes, suporte.ultimo?.pendencia, suporte.ultimo?.solucao);
+      campos.push(desconto.meta.label, desconto.bruto != null ? String(desconto.bruto) : "");
       // campos customizados (qualquer valor texto/número)
       if (p.dados_customizados) {
         for (const v of Object.values(p.dados_customizados)) {
@@ -1566,7 +1650,7 @@ export default function Vendas() {
     })
     ,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, filtroSuporte, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados, chamadosSuportePorProposta]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, filtroSuporte, filtroDesconto, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados, chamadosSuportePorProposta]
   );
 
   // 🔎 Lista FINAL = base no escopo + filtros de coluna (a linha "filtrar..." de cada coluna)
@@ -1654,7 +1738,7 @@ export default function Vendas() {
   }, [busca]);
 
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtroSuporte, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtroSuporte, filtroDesconto, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
@@ -1679,7 +1763,10 @@ export default function Vendas() {
     return { instaladas, aguardando, canceladas, ticketMedio, receita, receitaAguardando };
   }, [propostasFiltradas]);
 
-  const colunasExportaveis = colunasRender.map(c => ({ slug: c.slug, label: String(c.label || c.slug), campo: c }));
+  const colunasExportaveis = [
+    ...colunasRender.map(c => ({ slug: c.slug, label: String(c.label || c.slug), campo: c })),
+    { slug: "__desconto_ativo", label: "Desconto ativo", campo: { slug: "__desconto_ativo", label: "Desconto ativo", origem: "fixo", especial: "desconto" } as any },
+  ];
 
   const abrirExportacao = () => {
     setExportCampos(colunasExportaveis.map(c => c.slug));
@@ -1697,7 +1784,11 @@ export default function Vendas() {
     }
     if (c.especial === "suporte") {
       const s = suporteDaProposta(p);
-      return s.ultimo ? `${s.meta.label} - ${s.ultimo.status} (${s.chamados.length} chamado(s))` : "Sem suporte";
+      return s.ultimo ? `${s.meta.label} - ${s.ultimo.status} (${s.chamados.length > 0 ? `${s.chamados.length} chamado(s)` : "CRM"})` : "Sem suporte";
+    }
+    if (c.especial === "desconto") {
+      const d = descontoDaProposta(p);
+      return d.ativo ? `Ativo${d.bruto ? ` - ${String(d.bruto)}` : ""}` : "Sem desconto";
     }
     const raw = c.origem === "fixo" ? (p as any)[c.slug] : p.dados_customizados?.[c.slug];
     if (raw === null || raw === undefined) return "";
@@ -2099,6 +2190,32 @@ export default function Vendas() {
         {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           {([
+            { k: "todos", l: DESCONTO_META.todos.label, cor: DESCONTO_META.todos.cor, bg: DESCONTO_META.todos.bg, border: DESCONTO_META.todos.border },
+            { k: "ativo", l: "Ativo", cor: DESCONTO_META.ativo.cor, bg: DESCONTO_META.ativo.bg, border: DESCONTO_META.ativo.border },
+            { k: "sem", l: "Sem desconto", cor: DESCONTO_META.sem.cor, bg: DESCONTO_META.sem.bg, border: DESCONTO_META.sem.border },
+          ] as { k: "todos" | "ativo" | "sem"; l: string; cor: string; bg: string; border: string }[]).map(o => {
+            const at = filtroDesconto === o.k;
+            return (
+              <button key={o.k} onClick={() => setFiltroDesconto(o.k)}
+                style={{
+                  background: at ? o.cor : o.bg,
+                  color: at ? "#ffffff" : o.cor,
+                  border: `1px solid ${at ? o.cor : o.border}`,
+                  borderRadius: 20,
+                  padding: "7px 13px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  boxShadow: at ? `0 4px 10px ${o.cor}30` : "none",
+                }}>
+                {o.l}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {([
             { k: "hoje", l: "Hoje" },
             { k: "7d", l: "7 dias" },
             { k: "mes", l: "Este mês" },
@@ -2132,8 +2249,8 @@ export default function Vendas() {
           <option value="7d">🕘 Modificadas nos últimos 7 dias</option>
           <option value="30d">🕘 Modificadas nos últimos 30 dias</option>
         </select>
-        {(busca || filtroStatus !== "todos" || filtroSuporte !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || filaFiltro || Object.keys(filtrosColuna).length > 0) && (
-          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltroSuporte("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); setFilaFiltro(""); aplicarRange("hoje"); }}
+        {(busca || filtroStatus !== "todos" || filtroSuporte !== "todos" || filtroDesconto !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || filaFiltro || Object.keys(filtrosColuna).length > 0) && (
+          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltroSuporte("todos"); setFiltroDesconto("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); setFilaFiltro(""); aplicarRange("hoje"); }}
             style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 10, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
             ✕ Limpar filtros
           </button>
