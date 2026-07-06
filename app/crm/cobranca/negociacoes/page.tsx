@@ -8,14 +8,14 @@ import { supabase } from "../../../lib/supabase";
 import { useTemPermissao } from "../../../hooks/useTemPermissao";
 import { ChatSection } from "../../../chatbot/_sections/ChatSection";
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 💰 COBRANÇA — UnitaSystem
-// ───────────────────────────────────────────────────────────────────────────
-// Single-tenant · Cores azul Unita · Mantém 12 status de fatura e disparos
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸ’° COBRANÃ‡A â€” UnitaSystem
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Single-tenant Â· Cores azul Unita Â· MantÃ©m 12 status de fatura e disparos
 // Duas fontes:
-//   • "Do CRM"     → puxa propostas com status INSTALADA, gera faturas dinâmicas
-//   • "Da planilha" → upload CSV/XLSX
-// ═══════════════════════════════════════════════════════════════════════════
+//   â€¢ "Do CRM"     â†’ puxa propostas com status INSTALADA, gera faturas dinÃ¢micas
+//   â€¢ "Da planilha" â†’ upload CSV/XLSX
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 type Proposta = {
   id: number;
@@ -35,7 +35,7 @@ type Proposta = {
   created_at: string;
 };
 
-// 🔍 Busca de cliente: nome, telefone, plano, CPF (com ou sem pontos) e OS do CRM
+// ðŸ” Busca de cliente: nome, telefone, plano, CPF (com ou sem pontos) e OS do CRM
 const buscaMatch = (p: Proposta, termo: string): boolean => {
   const t = termo.toLowerCase();
   const dig = termo.replace(/\D/g, "");
@@ -86,10 +86,10 @@ type Fatura = {
   data_pagamento?: string | null;
   observacoes?: string | null;
   dias_atraso: number;
-  // 🆕 dados CRUS da planilha (uma fatura = uma linha real da planilha)
+  // ðŸ†• dados CRUS da planilha (uma fatura = uma linha real da planilha)
   numero_fatura?: number | null;     // 1..10
   codigo_status?: string | null;     // "01".."05"
-  status_planilha?: string | null;   // texto cru "02 - PAGOU ATÉ 30 DIAS..."
+  status_planilha?: string | null;   // texto cru "02 - PAGOU ATÃ‰ 30 DIAS..."
   detalhamento?: string | null;
   mes_gross?: string | null;
   nome_banco?: string | null;
@@ -103,7 +103,7 @@ type Fatura = {
 type AbaKey = "do_crm" | "planilha" | "campanhas" | "atendimentos";
 type FiltroVenc = "todos" | "hoje" | "vencendo_7d" | "vencidos" | "este_mes";
 
-// ─── HELPERS ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const formatBRL = (v: number) =>
   `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -116,9 +116,9 @@ const formatBRLCompacto = (v: number): string => {
 };
 
 const formatData = (d: Date | string | null | undefined) => {
-  if (!d) return "—";
+  if (!d) return "â€”";
   const dt = typeof d === "string" ? new Date(d + (d.length === 10 ? "T00:00:00" : "")) : d;
-  if (isNaN(dt.getTime())) return "—";
+  if (isNaN(dt.getTime())) return "â€”";
   return dt.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" });
 };
 
@@ -135,9 +135,9 @@ const aplicarStatusEAtrasos = (faturas: Fatura[], statusMap: Map<string, FaturaS
     const chave = `${f.proposta.id}_${f.numero_referencia}`;
     const db = statusMap.get(chave);
     const diasAtraso = Math.round((hoje.getTime() - f.data_vencimento.getTime()) / 86400000);
-    // 🆕 fatura que veio da planilha já carrega o status correto (código 01..05).
-    //    Só deixamos o operador SOBRESCREVER quando ele mexeu manualmente — ou seja,
-    //    quando há uma linha de status com atualizado_por preenchido (ação humana).
+    // ðŸ†• fatura que veio da planilha jÃ¡ carrega o status correto (cÃ³digo 01..05).
+    //    SÃ³ deixamos o operador SOBRESCREVER quando ele mexeu manualmente â€” ou seja,
+    //    quando hÃ¡ uma linha de status com atualizado_por preenchido (aÃ§Ã£o humana).
     if (f.daPlanilha && (!db || !db.atualizado_por)) {
       return { ...f, dias_atraso: diasAtraso };
     }
@@ -155,18 +155,18 @@ const STATUS_META: Record<StatusFatura, {
   label: string; icone: string; bg: string; border: string; color: string;
   recebido: boolean; pendencia: boolean; descricao: string;
 }> = {
-  pendente:     { label: "Em vencer",          icone: "⏳", bg: "#fffbeb", border: "#fde68a", color: "#d97706", recebido: false, pendencia: true,  descricao: "Ainda não venceu" },
-  atrasada:     { label: "Em aberto",          icone: "🔴", bg: "#fef2f2", border: "#fecaca", color: "#dc2626", recebido: false, pendencia: true,  descricao: "Venceu e não foi paga" },
-  paga:         { label: "Paga",               icone: "✅", bg: "#f0fdf4", border: "#bbf7d0", color: "#16a34a", recebido: true,  pendencia: false, descricao: "Paga em dia" },
-  paga_atraso:  { label: "Paga c/ atraso",     icone: "⏰", bg: "#ecfdf5", border: "#a7f3d0", color: "#059669", recebido: true,  pendencia: false, descricao: "Paga depois do vencimento" },
-  paga_parcial: { label: "Paga parcial",       icone: "💰", bg: "#fffbeb", border: "#fcd34d", color: "#b45309", recebido: true,  pendencia: true,  descricao: "Pagou só parte do valor" },
-  promessa:     { label: "Promessa pagto",     icone: "🤝", bg: "#eff6ff", border: "#bfdbfe", color: "#2563eb", recebido: false, pendencia: true,  descricao: "Cliente prometeu pagar" },
-  negociacao:   { label: "Em negociação",      icone: "📞", bg: "#f5f3ff", border: "#ddd6fe", color: "#7c3aed", recebido: false, pendencia: true,  descricao: "Renegociando prazo/valor" },
-  acordo:       { label: "Acordo / Parcelada", icone: "📋", bg: "#f0f9ff", border: "#bae6fd", color: "#0284c7", recebido: false, pendencia: true,  descricao: "Acordo de parcelamento ativo" },
-  nao_pagara:   { label: "Não vai pagar",      icone: "❌", bg: "#fef2f2", border: "#fca5a5", color: "#991b1b", recebido: false, pendencia: false, descricao: "Cliente recusou pagar" },
-  cancelada:    { label: "Cancelada",          icone: "🚫", bg: "#f3f4f6", border: "#d1d5db", color: "#6b7280", recebido: false, pendencia: false, descricao: "Fatura anulada / cortesia" },
-  juridico:     { label: "Jurídico",           icone: "⚖️", bg: "#fef2f2", border: "#fca5a5", color: "#7f1d1d", recebido: false, pendencia: true,  descricao: "Escalonada pro jurídico" },
-  protestada:   { label: "Protestada",         icone: "📋", bg: "#fef2f2", border: "#fca5a5", color: "#7f1d1d", recebido: false, pendencia: true,  descricao: "Em protesto em cartório" },
+  pendente:     { label: "Em vencer",          icone: "â³", bg: "#fffbeb", border: "#fde68a", color: "#d97706", recebido: false, pendencia: true,  descricao: "Ainda nÃ£o venceu" },
+  atrasada:     { label: "Em aberto",          icone: "ðŸ”´", bg: "#fef2f2", border: "#fecaca", color: "#dc2626", recebido: false, pendencia: true,  descricao: "Venceu e nÃ£o foi paga" },
+  paga:         { label: "Paga",               icone: "âœ…", bg: "#f0fdf4", border: "#bbf7d0", color: "#16a34a", recebido: true,  pendencia: false, descricao: "Paga em dia" },
+  paga_atraso:  { label: "Paga c/ atraso",     icone: "â°", bg: "#ecfdf5", border: "#a7f3d0", color: "#059669", recebido: true,  pendencia: false, descricao: "Paga depois do vencimento" },
+  paga_parcial: { label: "Paga parcial",       icone: "ðŸ’°", bg: "#fffbeb", border: "#fcd34d", color: "#b45309", recebido: true,  pendencia: true,  descricao: "Pagou sÃ³ parte do valor" },
+  promessa:     { label: "Promessa pagto",     icone: "ðŸ¤", bg: "#eff6ff", border: "#bfdbfe", color: "#2563eb", recebido: false, pendencia: true,  descricao: "Cliente prometeu pagar" },
+  negociacao:   { label: "Em negociaÃ§Ã£o",      icone: "ðŸ“ž", bg: "#f5f3ff", border: "#ddd6fe", color: "#7c3aed", recebido: false, pendencia: true,  descricao: "Renegociando prazo/valor" },
+  acordo:       { label: "Acordo / Parcelada", icone: "ðŸ“‹", bg: "#f0f9ff", border: "#bae6fd", color: "#0284c7", recebido: false, pendencia: true,  descricao: "Acordo de parcelamento ativo" },
+  nao_pagara:   { label: "NÃ£o vai pagar",      icone: "âŒ", bg: "#fef2f2", border: "#fca5a5", color: "#991b1b", recebido: false, pendencia: false, descricao: "Cliente recusou pagar" },
+  cancelada:    { label: "Cancelada",          icone: "ðŸš«", bg: "#f3f4f6", border: "#d1d5db", color: "#6b7280", recebido: false, pendencia: false, descricao: "Fatura anulada / cortesia" },
+  juridico:     { label: "JurÃ­dico",           icone: "âš–ï¸", bg: "#fef2f2", border: "#fca5a5", color: "#7f1d1d", recebido: false, pendencia: true,  descricao: "Escalonada pro jurÃ­dico" },
+  protestada:   { label: "Protestada",         icone: "ðŸ“‹", bg: "#fef2f2", border: "#fca5a5", color: "#7f1d1d", recebido: false, pendencia: true,  descricao: "Em protesto em cartÃ³rio" },
 };
 
 const corStatus = (s: StatusFatura) => {
@@ -182,7 +182,7 @@ const normalizarTelefone = (t: string | null | undefined): string => {
 const substituirVars = (texto: string, vars: Record<string, string>): string =>
   texto.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
 
-// ─── ESTILOS ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ ESTILOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const cardStyle = {
   background: "#ffffff",
   borderRadius: 14,
@@ -210,12 +210,12 @@ const btnSecundario = {
 };
 
 const CAMPOS_PLANILHA = [
-  { key: "telefone", label: "📱 Telefone (obrigatório)", obrigatorio: true },
-  { key: "nome",     label: "👤 Nome do cliente",         obrigatorio: false },
-  { key: "valor",    label: "💰 Valor da fatura",         obrigatorio: false },
-  { key: "vencimento", label: "📅 Vencimento",            obrigatorio: false },
-  { key: "plano",    label: "📦 Plano / produto",         obrigatorio: false },
-  { key: "codigo",   label: "🔖 Código / identificador",  obrigatorio: false },
+  { key: "telefone", label: "ðŸ“± Telefone (obrigatÃ³rio)", obrigatorio: true },
+  { key: "nome",     label: "ðŸ‘¤ Nome do cliente",         obrigatorio: false },
+  { key: "valor",    label: "ðŸ’° Valor da fatura",         obrigatorio: false },
+  { key: "vencimento", label: "ðŸ“… Vencimento",            obrigatorio: false },
+  { key: "plano",    label: "ðŸ“¦ Plano / produto",         obrigatorio: false },
+  { key: "codigo",   label: "ðŸ”– CÃ³digo / identificador",  obrigatorio: false },
 ] as const;
 
 export default function CobrancaPage() {
@@ -223,7 +223,7 @@ export default function CobrancaPage() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
 
-  // 🛡️ Sistema novo de permissões
+  // ðŸ›¡ï¸ Sistema novo de permissÃµes
   const perm = useTemPermissao();
   const escopoCobranca = perm.escopo("cobranca.acessar");
   const podeMudarStatus = perm.escopo("cobranca.mudar_status") !== "none" || perm.superAdmin;
@@ -245,7 +245,7 @@ export default function CobrancaPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
 
-  // 💬 ATENDIMENTOS DA COBRANÇA — leads que RESPONDERAM os disparos
+  // ðŸ’¬ ATENDIMENTOS DA COBRANÃ‡A â€” leads que RESPONDERAM os disparos
   const [respostasCob, setRespostasCob] = useState<any[]>([]);
   const [carregandoResp, setCarregandoResp] = useState(false);
   const [convAberta, setConvAberta] = useState<string | null>(null);
@@ -256,13 +256,13 @@ export default function CobrancaPage() {
   const fetchRespostasCobranca = async () => {
     setCarregandoResp(true);
     try {
-      // 1. desde quando vale: o PRIMEIRO disparo de cobrança
+      // 1. desde quando vale: o PRIMEIRO disparo de cobranÃ§a
       const { data: disp } = await supabase.from("disparos")
         .select("created_at").eq("origem", "cobranca")
         .order("created_at", { ascending: true }).limit(1);
       const desde = disp && disp[0] ? disp[0].created_at : null;
       if (!desde) { setRespostasCob([]); setCarregandoResp(false); return; }
-      // 2. mapa telefone(8 últimos dígitos) -> proposta (clientes da cobrança)
+      // 2. mapa telefone(8 Ãºltimos dÃ­gitos) -> proposta (clientes da cobranÃ§a)
       const mapaTel = new Map<string, Proposta>();
       for (const pr of propostas) {
         if ((pr.status_venda || "").toUpperCase() !== "INSTALADA") continue;
@@ -271,7 +271,7 @@ export default function CobrancaPage() {
           if (k.length === 8 && !mapaTel.has(k)) mapaTel.set(k, pr);
         }
       }
-      // 3. atendimentos mexidos depois do disparo, casados com cliente da cobrança
+      // 3. atendimentos mexidos depois do disparo, casados com cliente da cobranÃ§a
       const { data: ats } = await supabase.from("atendimentos").select("*")
         .gte("updated_at", desde)
         .order("updated_at", { ascending: false })
@@ -281,7 +281,7 @@ export default function CobrancaPage() {
         .filter((x: any) => !!x.cli);
       setRespostasCob(lista);
     } catch (e) {
-      console.error("[Cobrança] respostas:", e);
+      console.error("[CobranÃ§a] respostas:", e);
       setRespostasCob([]);
     }
     setCarregandoResp(false);
@@ -309,14 +309,17 @@ export default function CobrancaPage() {
   const [filtroBusca, setFiltroBusca] = useState("");
   const [selecionadasFat, setSelecionadasFat] = useState<Set<string>>(new Set());
   const [filtroStatus, setFiltroStatus] = useState<string>("todas");
-  // 🆕 MENU LATERAL de clientes: abre/fecha (libera a tabela em largura total)
+  // ðŸ†• MENU LATERAL de clientes: abre/fecha (libera a tabela em largura total)
   const [showSidebar, setShowSidebar] = useState(false);
-  // 🆕 DROPDOWN de vencimento detectado da base (dia + mês reais)
+  // ðŸ†• DROPDOWN de vencimento detectado da base (dia + mÃªs reais)
   //    "" = todos | "dia:10" = todas que vencem dia 10 | "mes:2026-05" = vencem em mai/26
   const [filtroVencSel, setFiltroVencSel] = useState("");
-  // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês) — opcional, segue existindo
+  // ðŸ†• filtro por MÃŠS DE INSTALAÃ‡ÃƒO (mÃªs a mÃªs) â€” opcional, segue existindo
   const [mesInst, setMesInst] = useState("");
-  // 🆕 filtros por coluna (cabeçalho da tabela)
+  const [dataInstInicio, setDataInstInicio] = useState("");
+  const [dataInstFim, setDataInstFim] = useState("");
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+  // ðŸ†• filtros por coluna (cabeÃ§alho da tabela)
   const [colNome, setColNome] = useState("");
   const [colOs, setColOs] = useState("");
   const [colCust, setColCust] = useState("");
@@ -324,10 +327,10 @@ export default function CobrancaPage() {
   const [colChurn, setColChurn] = useState("");    // "" todos | "sim" | "nao"
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
-  // 🆕 paginação da tabela principal (10 por página pra não pesar)
+  // ðŸ†• paginaÃ§Ã£o da tabela principal (10 por pÃ¡gina pra nÃ£o pesar)
   const [pagina, setPagina] = useState(1);
   const TAM_PAGINA = 10;
-  // 🆕 Histórico REAL da planilha (colunas numero_fatura/codigo_status/detalhamento/datas)
+  // ðŸ†• HistÃ³rico REAL da planilha (colunas numero_fatura/codigo_status/detalhamento/datas)
   const [histPlanilha, setHistPlanilha] = useState<Map<number, any[]>>(new Map());
   const [buscaCliente, setBuscaCliente] = useState("");
 
@@ -346,7 +349,7 @@ export default function CobrancaPage() {
   const [selecionadosPlanilha, setSelecionadosPlanilha] = useState<Set<number>>(new Set());
   const inputArquivoRef = useRef<HTMLInputElement>(null);
 
-  // ✏️ ADIÇÃO: edição COMPLETA do cliente (igual nas vendas)
+  // âœï¸ ADIÃ‡ÃƒO: ediÃ§Ã£o COMPLETA do cliente (igual nas vendas)
   const [editCliente, setEditCliente] = useState<Proposta | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [salvandoEdit, setSalvandoEdit] = useState(false);
@@ -387,12 +390,12 @@ export default function CobrancaPage() {
     const { error } = await supabase.from("proposta").update(payload).eq("id", editCliente.id);
     setSalvandoEdit(false);
     if (error) {
-      setFeedback({ tipo: "erro", titulo: "Não foi possível salvar", mensagem: error.message });
+      setFeedback({ tipo: "erro", titulo: "NÃ£o foi possÃ­vel salvar", mensagem: error.message });
       return;
     }
     setEditCliente(null);
     await fetchPropostas();
-    setFeedback({ tipo: "sucesso", titulo: "Cliente atualizado", mensagem: `Dados de ${editForm.nome || "—"} salvos.` });
+    setFeedback({ tipo: "sucesso", titulo: "Cliente atualizado", mensagem: `Dados de ${editForm.nome || "â€”"} salvos.` });
   };
 
   const [showEnvio, setShowEnvio] = useState(false);
@@ -401,13 +404,13 @@ export default function CobrancaPage() {
   const [envioCanalId, setEnvioCanalId] = useState<number | null>(null);
   const [envioTipo, setEnvioTipo] = useState<"webjs" | "waba">("webjs");
   const [envioTemplateId, setEnvioTemplateId] = useState<number | null>(null);
-  // 🆕 seleção de CLIENTES na tabela principal + modo de disparo (por cliente ou por fatura)
+  // ðŸ†• seleÃ§Ã£o de CLIENTES na tabela principal + modo de disparo (por cliente ou por fatura)
   const [clientesSel, setClientesSel] = useState<Set<number>>(new Set());
   const [envioModo, setEnvioModo] = useState<"cliente" | "fatura">("cliente");
   const [envioModoTrocavel, setEnvioModoTrocavel] = useState(true); // origem permite trocar o modo?
   const [envioOrigemClientes, setEnvioOrigemClientes] = useState<any[]>([]); // clientes que originaram o disparo
   const [envioMensagem, setEnvioMensagem] = useState(
-    "Olá {{nome}}! 👋\n\nLembrete: sua fatura referente a {{mes_referencia}} no valor de {{valor}} vence em {{vencimento}}.\n\nPara evitar atrasos, faça o pagamento até o vencimento.\n\nQualquer dúvida, estou à disposição!\n\nGrupo Unita"
+    "OlÃ¡ {{nome}}! ðŸ‘‹\n\nLembrete: sua fatura referente a {{mes_referencia}} no valor de {{valor}} vence em {{vencimento}}.\n\nPara evitar atrasos, faÃ§a o pagamento atÃ© o vencimento.\n\nQualquer dÃºvida, estou Ã  disposiÃ§Ã£o!\n\nGrupo Unita"
   );
   const [envioNomeCampanha, setEnvioNomeCampanha] = useState("");
   const [envioDelayMin, setEnvioDelayMin] = useState(30);
@@ -427,7 +430,7 @@ export default function CobrancaPage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // 🔐 Pega só os dados básicos do user logado (permissão vem do hook acima)
+  // ðŸ” Pega sÃ³ os dados bÃ¡sicos do user logado (permissÃ£o vem do hook acima)
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -464,7 +467,7 @@ export default function CobrancaPage() {
   }
 
   async function fetchStatusFaturas(faltando?: string[]) {
-    // ⚠️ Mesmo corte de 1000 linhas — pagina tudo (já temos 1500+ faturas com status)
+    // âš ï¸ Mesmo corte de 1000 linhas â€” pagina tudo (jÃ¡ temos 1500+ faturas com status)
     const PAGE_SIZE = 1000;
     let data: any[] = [];
     let error: any = null;
@@ -497,7 +500,7 @@ export default function CobrancaPage() {
     const m = new Map<string, FaturaStatusDB>();
     for (const r of (data || [])) m.set(`${r.proposta_id}_${r.numero_referencia}`, r);
     setStatusMap(m);
-    // 🆕 Histórico por proposta: só as linhas que vieram da planilha (têm numero_fatura)
+    // ðŸ†• HistÃ³rico por proposta: sÃ³ as linhas que vieram da planilha (tÃªm numero_fatura)
     const h = new Map<number, any[]>();
     for (const r of (data || [])) {
       if (r.numero_fatura == null) continue;
@@ -509,8 +512,8 @@ export default function CobrancaPage() {
   }
 
   async function fetchPropostas(faltando?: string[]) {
-    // ⚠️ Sem paginação o Supabase devolve no máximo 1000 linhas — com 2k+ vendas
-    //    os clientes mais antigos sumiam da cobrança. Busca TODAS as páginas em paralelo.
+    // âš ï¸ Sem paginaÃ§Ã£o o Supabase devolve no mÃ¡ximo 1000 linhas â€” com 2k+ vendas
+    //    os clientes mais antigos sumiam da cobranÃ§a. Busca TODAS as pÃ¡ginas em paralelo.
     const PAGE_SIZE = 1000;
     const COLS = "id, nome, telefone1, telefone2, telefone3, plano, valor_plano, vencimento, forma_pagamento, status_venda, data_instalacao, operadora, cpf, dados_customizados, created_at";
     try {
@@ -577,7 +580,7 @@ export default function CobrancaPage() {
       if (error) {
         if (error.code === "PGRST205") faltando?.push("disparos");
         else if (String(error.message || "").toLowerCase().includes("origem")) {
-          console.warn("[Cobrança Unita] coluna disparos.origem ainda não existe");
+          console.warn("[CobranÃ§a Unita] coluna disparos.origem ainda nÃ£o existe");
         }
         return;
       }
@@ -588,10 +591,10 @@ export default function CobrancaPage() {
         total_falhas: d.total_falhas || 0,
         created_at: d.created_at, finalizado_em: d.finalizado_em,
       })));
-    } catch (e) { console.warn("[Cobrança Unita]", e); }
+    } catch (e) { console.warn("[CobranÃ§a Unita]", e); }
   }
 
-  // 🆕 mapeia o código bruto da planilha (01..05) -> status visual da fatura
+  // ðŸ†• mapeia o cÃ³digo bruto da planilha (01..05) -> status visual da fatura
   const statusVisualDoCodigo = (cod: string | null | undefined, venc: Date, hoje: Date): StatusFatura => {
     const c = String(cod || "").replace(/\D/g, "");
     if (c === "01") return "paga";
@@ -607,7 +610,7 @@ export default function CobrancaPage() {
     const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase() === "INSTALADA");
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
-    const CICLO = 10; // 10 faturas por cliente a partir do mês gross
+    const CICLO = 10; // 10 faturas por cliente a partir do mÃªs gross
     const result: Fatura[] = [];
 
     const parseDataBR = (v: any): Date | null => {
@@ -616,9 +619,9 @@ export default function CobrancaPage() {
       // ISO completa (formato do banco): 2026-01-01
       let d = new Date(s.slice(0, 10) + "T00:00:00");
       if (!isNaN(d.getTime()) && /^\d{4}-\d{2}-\d{2}/.test(s)) return d;
-      // mês abreviado PT (defensivo): jan/26, mai/26, set/25
+      // mÃªs abreviado PT (defensivo): jan/26, mai/26, set/25
       const MESES: Record<string, number> = { jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5, jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11 };
-      const m = s.toLowerCase().match(/^([a-zç]{3,})[\/\-\s.]+(\d{2,4})$/);
+      const m = s.toLowerCase().match(/^([a-zÃ§]{3,})[\/\-\s.]+(\d{2,4})$/);
       if (m && m[1].slice(0, 3) in MESES) {
         let ano = Number(m[2]); if (ano < 100) ano += 2000;
         return new Date(ano, MESES[m[1].slice(0, 3)], 1);
@@ -635,7 +638,7 @@ export default function CobrancaPage() {
         porNum.set(Number(r.numero_fatura), r);
       }
 
-      // 2) descobre o MÊS GROSS e o DIA DE VENCIMENTO do cliente (a partir da planilha)
+      // 2) descobre o MÃŠS GROSS e o DIA DE VENCIMENTO do cliente (a partir da planilha)
       let mesGrossDate: Date | null = null;
       const diasVenc: number[] = [];
       for (const r of hist) {
@@ -644,7 +647,7 @@ export default function CobrancaPage() {
         const dv = parseDataBR(r.data_vencimento);
         if (dv) diasVenc.push(dv.getDate());
       }
-      // dia de vencimento = o mais comum da planilha; fallback no cadastro do CRM; senão 10
+      // dia de vencimento = o mais comum da planilha; fallback no cadastro do CRM; senÃ£o 10
       let diaVenc = parseInt(String(p.vencimento || "").replace(/\D/g, ""), 10);
       if (diasVenc.length > 0) {
         const cont = new Map<number, number>();
@@ -653,10 +656,10 @@ export default function CobrancaPage() {
       }
       if (!diaVenc || diaVenc < 1 || diaVenc > 31) diaVenc = 10;
 
-      // se não tem mês gross nenhum (cliente sem planilha), não há ciclo a gerar
+      // se nÃ£o tem mÃªs gross nenhum (cliente sem planilha), nÃ£o hÃ¡ ciclo a gerar
       if (!mesGrossDate) continue;
 
-      // 3) gera o CICLO de 10 faturas: fatura N vence (mês gross + N meses) no dia de venc.
+      // 3) gera o CICLO de 10 faturas: fatura N vence (mÃªs gross + N meses) no dia de venc.
       for (let n = 1; n <= CICLO; n++) {
         const r = porNum.get(n);
         // data de vencimento da fatura N
@@ -665,7 +668,7 @@ export default function CobrancaPage() {
         const diasAtraso = Math.round((hoje.getTime() - dv.getTime()) / 86400000);
 
         if (r) {
-          // FATURA REAL da planilha — usa os dados crus
+          // FATURA REAL da planilha â€” usa os dados crus
           const sv = statusVisualDoCodigo(r.codigo_status, dv, hoje);
           result.push({
             proposta: p,
@@ -680,7 +683,7 @@ export default function CobrancaPage() {
             daPlanilha: true,
           } as Fatura);
         } else {
-          // FATURA GERADA (não veio na planilha) — a vencer ou em aberto conforme a data
+          // FATURA GERADA (nÃ£o veio na planilha) â€” a vencer ou em aberto conforme a data
           const sv: StatusFatura = diasAtraso > 0 ? "atrasada" : "pendente";
           result.push({
             proposta: p,
@@ -700,7 +703,7 @@ export default function CobrancaPage() {
     return aplicarStatusEAtrasos(result, statusMap);
   }, [propostas, statusMap, histPlanilha]);
 
-  // 🆕 VENCIMENTOS DISPONÍVEIS na base — alimenta o menu suspenso de filtro.
+  // ðŸ†• VENCIMENTOS DISPONÃVEIS na base â€” alimenta o menu suspenso de filtro.
   //    Detecta os DIAS de vencimento (1..31) e os MESES (YYYY-MM) que realmente existem,
   //    com a contagem de faturas de cada um.
   const vencimentosDisponiveis = useMemo(() => {
@@ -721,7 +724,7 @@ export default function CobrancaPage() {
     return { listaDias, listaMeses };
   }, [todasFaturas]);
 
-  // 🆕 Lista de clientes: agrupa faturas por cliente com resumo completo.
+  // ðŸ†• Lista de clientes: agrupa faturas por cliente com resumo completo.
   const clientes = useMemo<any[]>(() => {
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const MS = 86400000;
@@ -738,7 +741,7 @@ export default function CobrancaPage() {
         const dias = Math.round((f.data_vencimento.getTime() - hoje.getTime()) / MS);
         if (f.status_visual === "atrasada") { c.atrasadas++; c.emAberto++; c.atrasoMax = Math.max(c.atrasoMax, f.dias_atraso); }
         else { c.aVencer++; }
-        // próximo vencimento em aberto (o mais cedo a vencer, dias >= 0)
+        // prÃ³ximo vencimento em aberto (o mais cedo a vencer, dias >= 0)
         if (dias >= 0 && (c.proxDias == null || dias < c.proxDias)) { c.proxDias = dias; c.proxVenc = f.data_vencimento; }
       }
       if (f.suspensao_fraude === true) c.temFraude = true;
@@ -754,29 +757,34 @@ export default function CobrancaPage() {
   }, [todasFaturas]);
   const qtdInad = useMemo(() => clientes.filter(c => c.situacao === "inadimplente").length, [clientes]);
   const qtdEmDia = useMemo(() => clientes.length - qtdInad, [clientes, qtdInad]);
+  const passaFiltroInstalacao = (c: any): boolean => {
+    const data = String(c.proposta.data_instalacao || "").slice(0, 10);
+    if (mesInst && !data.startsWith(mesInst)) return false;
+    if (dataInstInicio && (!data || data < dataInstInicio)) return false;
+    if (dataInstFim && (!data || data > dataInstFim)) return false;
+    return true;
+  };
   const clientesFiltrados = useMemo(() => {
     let arr = clientes;
     if (segmento === "inadimplentes") arr = arr.filter(c => c.situacao === "inadimplente");
     else if (segmento === "em_dia") arr = arr.filter(c => c.situacao === "em_dia");
-    // 🆕 clientes que INSTALARAM no mês escolhido
-    if (mesInst) arr = arr.filter(c => String(c.proposta.data_instalacao || "").startsWith(mesInst));
+    arr = arr.filter(passaFiltroInstalacao);
     if (buscaCliente) {
       arr = arr.filter(c => buscaMatch(c.proposta, buscaCliente));
     }
     return arr;
-  }, [clientes, segmento, buscaCliente, mesInst]);
+  }, [clientes, segmento, buscaCliente, mesInst, dataInstInicio, dataInstFim]);
 
-  // 🆕 CLIENTES para a TABELA PRINCIPAL (uma linha por cliente). Aplica os filtros
-  //    de cima: status, dropdown de vencimento, busca da barra e mês de instalação.
+  // ðŸ†• CLIENTES para a TABELA PRINCIPAL (uma linha por cliente). Aplica os filtros
+  //    de cima: status, dropdown de vencimento, busca da barra e mÃªs de instalaÃ§Ã£o.
   const clientesTabela = useMemo(() => {
     let arr = clientes;
     // segmento (inadimplente/em dia/todos) compartilhado com a barra de status
     if (filtroStatus === "atrasadas") arr = arr.filter(c => c.atrasadas > 0);
     else if (filtroStatus === "pagas") arr = arr.filter(c => c.pagas > 0);
     else if (filtroStatus === "pendentes") arr = arr.filter(c => c.aVencer > 0);
-    // mês de instalação
-    if (mesInst) arr = arr.filter(c => String(c.proposta.data_instalacao || "").startsWith(mesInst));
-    // dropdown de vencimento (dia ou mês) — cliente entra se TEM alguma fatura nesse vencimento
+    arr = arr.filter(passaFiltroInstalacao);
+    // dropdown de vencimento (dia ou mÃªs) â€” cliente entra se TEM alguma fatura nesse vencimento
     if (filtroVencSel.startsWith("dia:")) {
       const dia = Number(filtroVencSel.slice(4));
       arr = arr.filter(c => c.faturas.some((f: Fatura) => f.data_vencimento.getDate() === dia));
@@ -784,7 +792,7 @@ export default function CobrancaPage() {
       const mk = filtroVencSel.slice(4);
       arr = arr.filter(c => c.faturas.some((f: Fatura) => `${f.data_vencimento.getFullYear()}-${String(f.data_vencimento.getMonth() + 1).padStart(2, "0")}` === mk));
     }
-    // janela de vencimento (próx 7 dias / hoje / vencidos / este mês)
+    // janela de vencimento (prÃ³x 7 dias / hoje / vencidos / este mÃªs)
     if (filtroVenc !== "todos" && !filtroBusca) {
       const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
       arr = arr.filter(c => c.faturas.some((f: Fatura) => {
@@ -808,18 +816,166 @@ export default function CobrancaPage() {
     if (colChurn === "sim")  arr = arr.filter(c => c.temChurn === true);
     if (colChurn === "nao")  arr = arr.filter(c => !c.temChurn);
     return arr;
-  }, [clientes, filtroStatus, mesInst, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust, colFraude, colChurn]);
+  }, [clientes, filtroStatus, mesInst, dataInstInicio, dataInstFim, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust, colFraude, colChurn]);
 
-  // 🆕 PAGINAÇÃO POR CLIENTE: 10 clientes por página. Volta pra pág. 1 ao mudar filtro.
+  // ðŸ†• PAGINAÃ‡ÃƒO POR CLIENTE: 10 clientes por pÃ¡gina. Volta pra pÃ¡g. 1 ao mudar filtro.
   const totalPaginas = Math.max(1, Math.ceil(clientesTabela.length / TAM_PAGINA));
-  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn]);
+  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, dataInstInicio, dataInstFim, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn]);
   const paginaSegura = Math.min(pagina, totalPaginas);
   const clientesPagina = useMemo(
     () => clientesTabela.slice((paginaSegura - 1) * TAM_PAGINA, paginaSegura * TAM_PAGINA),
     [clientesTabela, paginaSegura]
   );
 
-  // 🆕 MODAL de faturas do cliente: guarda a proposta_id do cliente aberto (null = fechado).
+  const mesInstalacaoLabel = (data: any): string => {
+    const s = String(data || "").slice(0, 10);
+    if (!s) return "SEM DATA";
+    const d = new Date(s + "T00:00:00");
+    if (isNaN(d.getTime())) return "SEM DATA";
+    return d.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
+  };
+
+  const dataInstalacaoBR = (data: any): string => {
+    const s = String(data || "").slice(0, 10);
+    if (!s) return "";
+    const d = new Date(s + "T00:00:00");
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString("pt-BR");
+  };
+
+  const simNao = (v: any): string => v === true ? "Sim" : v === false ? "Nao" : "";
+
+  const exportarExcel = () => {
+    if (clientesTabela.length === 0) {
+      setFeedback({ tipo: "aviso", titulo: "Nada para exportar", mensagem: "Nenhum cliente encontrado com os filtros atuais." });
+      return;
+    }
+    setExportandoExcel(true);
+    try {
+      const clientesRows = clientesTabela.map(c => ({
+        "Nome": c.proposta.nome || "",
+        "CPF": c.proposta.cpf || "",
+        "Telefone": c.proposta.telefone1 || "",
+        "Plano": c.proposta.plano || "",
+        "Status venda": c.proposta.status_venda || "",
+        "Data instalacao": dataInstalacaoBR(c.proposta.data_instalacao),
+        "Mes instalacao": mesInstalacaoLabel(c.proposta.data_instalacao),
+        "OS": c.proposta.dados_customizados?.os || "",
+        "Custcode": c.proposta.dados_customizados?.custcode || "",
+        "Situacao": c.situacao === "inadimplente" ? "Inadimplente" : "Em dia",
+        "Qtd faturas": c.faturas.length,
+        "Pagas": c.pagas,
+        "Em aberto": c.emAberto,
+        "A vencer": c.aVencer,
+        "Total em aberto": c.totalAberto,
+        "Maior atraso": c.atrasoMax,
+        "Fraude": c.temFraude ? "Sim" : "Nao",
+        "Churn": c.temChurn ? "Sim" : "Nao",
+      }));
+
+      const faturasRows = clientesTabela.flatMap(c => {
+        const fs = [...c.faturas].sort((a: Fatura, b: Fatura) =>
+          (a.numero_fatura ?? 999) - (b.numero_fatura ?? 999) || a.data_vencimento.getTime() - b.data_vencimento.getTime()
+        );
+        return fs.map((f: Fatura) => ({
+          "Nome": c.proposta.nome || "",
+          "CPF": c.proposta.cpf || "",
+          "Telefone": c.proposta.telefone1 || "",
+          "Plano": c.proposta.plano || "",
+          "Status venda": c.proposta.status_venda || "",
+          "Data instalacao": dataInstalacaoBR(c.proposta.data_instalacao),
+          "Mes instalacao": mesInstalacaoLabel(c.proposta.data_instalacao),
+          "OS": c.proposta.dados_customizados?.os || "",
+          "Custcode": c.proposta.dados_customizados?.custcode || "",
+          "Numero fatura": f.numero_fatura ?? "",
+          "Referencia": f.numero_referencia,
+          "Mes gross": f.mes_gross ? formatData(String(f.mes_gross).slice(0, 10)) : "",
+          "Mes vencimento": `${String(f.data_vencimento.getMonth() + 1).padStart(2, "0")}/${f.data_vencimento.getFullYear()}`,
+          "Data vencimento": formatData(f.data_vencimento),
+          "Data pagamento": f.data_pagamento ? formatData(f.data_pagamento) : "",
+          "Valor": f.valor,
+          "Status sistema": STATUS_META[f.status_visual]?.label || f.status_visual,
+          "Codigo status FPD": f.codigo_status || "",
+          "Status planilha FPD": f.status_planilha || "",
+          "Detalhamento": f.detalhamento || "",
+          "Banco": f.nome_banco || "",
+          "Opcao pagamento": f.opcao_pagamento || "",
+          "Fraude": simNao(f.suspensao_fraude),
+          "Churn": simNao(f.churn),
+          "Insucesso DACC": simNao(f.insucesso_dacc),
+          "Dias atraso": f.dias_atraso,
+          "Origem": f.daPlanilha ? "Planilha FPD" : "Gerada pelo sistema",
+        }));
+      });
+
+      const tabMap = new Map<string, any>();
+      for (const c of clientesTabela) {
+        const mes = mesInstalacaoLabel(c.proposta.data_instalacao);
+        const row = tabMap.get(mes) || {
+          "Mes instalacao": mes,
+          "Clientes": 0,
+          "Faturas": 0,
+          "Pagas": 0,
+          "Em aberto": 0,
+          "A vencer": 0,
+          "Valor em aberto": 0,
+          "Fraude": 0,
+          "Churn": 0,
+        };
+        row["Clientes"] += 1;
+        row["Faturas"] += c.faturas.length;
+        row["Pagas"] += c.pagas;
+        row["Em aberto"] += c.emAberto;
+        row["A vencer"] += c.aVencer;
+        row["Valor em aberto"] += c.totalAberto;
+        if (c.temFraude) row["Fraude"] += 1;
+        if (c.temChurn) row["Churn"] += 1;
+        tabMap.set(mes, row);
+      }
+      const tabRows = Array.from(tabMap.values()).sort((a, b) => String(a["Mes instalacao"]).localeCompare(String(b["Mes instalacao"])));
+
+      const filtrosRows = [{
+        "Exportado em": new Date().toLocaleString("pt-BR"),
+        "Status": filtroStatus,
+        "Vencimento": filtroVencSel || filtroVenc || "todos",
+        "Busca": filtroBusca || "",
+        "Mes instalacao": mesInst || "Geral",
+        "Data instalacao inicio": dataInstInicio || "Geral",
+        "Data instalacao fim": dataInstFim || "Geral",
+        "Filtro nome": colNome || "",
+        "Filtro OS": colOs || "",
+        "Filtro custcode": colCust || "",
+        "Filtro fraude": colFraude || "",
+        "Filtro churn": colChurn || "",
+      }];
+
+      const wb = XLSX.utils.book_new();
+      const wsClientes = XLSX.utils.json_to_sheet(clientesRows);
+      wsClientes["!cols"] = [
+        { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 24 }, { wch: 16 }, { wch: 14 }, { wch: 14 },
+        { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+        { wch: 16 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
+      ];
+      const wsFaturas = XLSX.utils.json_to_sheet(faturasRows);
+      wsFaturas["!cols"] = Array.from({ length: 29 }, (_, i) => ({ wch: i < 9 ? 18 : 16 }));
+      const wsTab = XLSX.utils.json_to_sheet(tabRows);
+      wsTab["!cols"] = Array.from({ length: 9 }, () => ({ wch: 16 }));
+      const wsFiltros = XLSX.utils.json_to_sheet(filtrosRows);
+      wsFiltros["!cols"] = Array.from({ length: 12 }, () => ({ wch: 22 }));
+
+      XLSX.utils.book_append_sheet(wb, wsClientes, "Clientes filtrados");
+      XLSX.utils.book_append_sheet(wb, wsFaturas, "Faturas completas");
+      XLSX.utils.book_append_sheet(wb, wsTab, "Tabulacao mensal");
+      XLSX.utils.book_append_sheet(wb, wsFiltros, "Filtros usados");
+
+      const sufixo = dataInstInicio || dataInstFim ? `${dataInstInicio || "inicio"}_${dataInstFim || "fim"}` : (mesInst || "geral");
+      XLSX.writeFile(wb, `negociacoes_cobranca_${sufixo}.xlsx`);
+    } catch (e: any) {
+      setFeedback({ tipo: "erro", titulo: "Erro ao exportar", mensagem: e?.message || "Nao foi possivel gerar o Excel." });
+    }
+    setExportandoExcel(false);
+  };
+
+  // ðŸ†• MODAL de faturas do cliente: guarda a proposta_id do cliente aberto (null = fechado).
   const [modalCliente, setModalCliente] = useState<number | null>(null);
 
   const kpis = useMemo(() => {
@@ -827,24 +983,24 @@ export default function CobrancaPage() {
     hoje.setHours(0, 0, 0, 0);
     const MS = 86400000;
     let pagas = 0, aPagar = 0, vence7d = 0, atrasadas = 0;
-    // faturas em aberto que vencem ATÉ tal dia (pra montar o "pague até dia X")
+    // faturas em aberto que vencem ATÃ‰ tal dia (pra montar o "pague atÃ© dia X")
     const venceEmAberto: { dias: number; data: Date }[] = [];
     for (const f of todasFaturas) {
       const meta = STATUS_META[f.status_visual];
       if (meta?.recebido) { pagas++; continue; }
-      // não paga:
+      // nÃ£o paga:
       aPagar++;
       const dias = Math.round((f.data_vencimento.getTime() - hoje.getTime()) / MS); // >0 = ainda vai vencer
       if (f.status_visual === "atrasada") atrasadas++;
       if (dias >= 0 && dias <= 7) vence7d++;
       if (dias >= 0) venceEmAberto.push({ dias, data: f.data_vencimento });
     }
-    // próxima data de corte: a fatura em aberto mais próxima de vencer
+    // prÃ³xima data de corte: a fatura em aberto mais prÃ³xima de vencer
     venceEmAberto.sort((a, b) => a.dias - b.dias);
     const prox = venceEmAberto[0] || null;
     const proxData = prox ? prox.data : null;
     const proxDias = prox ? prox.dias : null;
-    // quantas faturas vencem exatamente nessa próxima data de corte (viram inadimplentes se não pagar)
+    // quantas faturas vencem exatamente nessa prÃ³xima data de corte (viram inadimplentes se nÃ£o pagar)
     let viramInad = 0;
     if (proxData) {
       for (const v of venceEmAberto) if (v.data.getTime() === proxData.getTime()) viramInad++;
@@ -869,7 +1025,7 @@ export default function CobrancaPage() {
     });
   };
 
-  // 🆕 seleção de CLIENTES na tabela principal
+  // ðŸ†• seleÃ§Ã£o de CLIENTES na tabela principal
   const toggleSelCliente = (id: number) => {
     setClientesSel(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
@@ -921,17 +1077,17 @@ export default function CobrancaPage() {
 
     const error = await salvarStatusFatura(payload);
     if (error) {
-      setFeedback({ tipo: "erro", titulo: "Não foi possível salvar", mensagem: error.message });
+      setFeedback({ tipo: "erro", titulo: "NÃ£o foi possÃ­vel salvar", mensagem: error.message });
       return;
     }
     setShowStatus(null);
     await fetchStatusFaturas();
   };
 
-  // 💾 Salva o status da fatura SEM upsert/onConflict (a tabela não tem constraint
-  //    única em proposta_id+numero_referencia, e ainda há duplicatas da importação).
-  //    Estratégia: UPDATE por (proposta_id, numero_referencia); se não existir, INSERT.
-  //    Atualiza TODAS as linhas dessa referência (cobre duplicatas) pra ficar consistente.
+  // ðŸ’¾ Salva o status da fatura SEM upsert/onConflict (a tabela nÃ£o tem constraint
+  //    Ãºnica em proposta_id+numero_referencia, e ainda hÃ¡ duplicatas da importaÃ§Ã£o).
+  //    EstratÃ©gia: UPDATE por (proposta_id, numero_referencia); se nÃ£o existir, INSERT.
+  //    Atualiza TODAS as linhas dessa referÃªncia (cobre duplicatas) pra ficar consistente.
   const salvarStatusFatura = async (payload: any): Promise<{ message: string } | null> => {
     try {
       // tenta atualizar as linhas existentes dessa fatura
@@ -969,8 +1125,8 @@ export default function CobrancaPage() {
   const clienteCancelou = (f: Fatura) => {
     setFeedback({
       tipo: "aviso",
-      titulo: "Cliente cancelou o serviço?",
-      mensagem: `Isso vai mudar o status da proposta de ${f.proposta.nome || "—"} para CANCELADA. As faturas dele param de aparecer na cobrança. Faturas já pagas ficam no histórico.`,
+      titulo: "Cliente cancelou o serviÃ§o?",
+      mensagem: `Isso vai mudar o status da proposta de ${f.proposta.nome || "â€”"} para CANCELADA. As faturas dele param de aparecer na cobranÃ§a. Faturas jÃ¡ pagas ficam no histÃ³rico.`,
       onConfirmar: async () => {
         setFeedback(null);
         const { error } = await supabase
@@ -982,14 +1138,14 @@ export default function CobrancaPage() {
           return;
         }
         await fetchPropostas();
-        setFeedback({ tipo: "sucesso", titulo: "Cliente cancelado", mensagem: `${f.proposta.nome || "—"} foi marcado como CANCELADA no CRM.` });
+        setFeedback({ tipo: "sucesso", titulo: "Cliente cancelado", mensagem: `${f.proposta.nome || "â€”"} foi marcado como CANCELADA no CRM.` });
       },
     });
   };
 
   const abrirEnvioCrm = () => {
     if (selecionadasFat.size === 0) {
-      setFeedback({ tipo: "aviso", titulo: "Nenhuma fatura selecionada", mensagem: "Marque ao menos uma fatura pra disparar a cobrança." });
+      setFeedback({ tipo: "aviso", titulo: "Nenhuma fatura selecionada", mensagem: "Marque ao menos uma fatura pra disparar a cobranÃ§a." });
       return;
     }
     const contatos = todasFaturas
@@ -1012,18 +1168,18 @@ export default function CobrancaPage() {
       })
       .filter(c => c.telefone.length >= 10);
     if (contatos.length === 0) {
-      setFeedback({ tipo: "aviso", titulo: "Nenhum telefone válido", mensagem: "Os clientes selecionados não têm telefone com 10+ dígitos." });
+      setFeedback({ tipo: "aviso", titulo: "Nenhum telefone vÃ¡lido", mensagem: "Os clientes selecionados nÃ£o tÃªm telefone com 10+ dÃ­gitos." });
       return;
     }
     setEnvioFonte("crm");
-    setEnvioModoTrocavel(false);   // veio de faturas específicas → modo fixo "fatura"
+    setEnvioModoTrocavel(false);   // veio de faturas especÃ­ficas â†’ modo fixo "fatura"
     setEnvioModo("fatura");
     setEnvioContatos(contatos);
-    setEnvioNomeCampanha(`Cobrança CRM ${new Date().toLocaleDateString("pt-BR")} (${contatos.length} faturas)`);
+    setEnvioNomeCampanha(`CobranÃ§a CRM ${new Date().toLocaleDateString("pt-BR")} (${contatos.length} faturas)`);
     setShowEnvio(true);
   };
 
-  // 🆕 monta os contatos de uma lista de CLIENTES, conforme o modo escolhido.
+  // ðŸ†• monta os contatos de uma lista de CLIENTES, conforme o modo escolhido.
   //    modo "cliente" = 1 mensagem por cliente (resumo das faturas em aberto)
   //    modo "fatura"  = 1 mensagem por fatura em aberto
   const montarContatosClientes = (lista: any[], modo: "cliente" | "fatura") => {
@@ -1032,7 +1188,7 @@ export default function CobrancaPage() {
       const p = c.proposta;
       const tel = normalizarTelefone(p.telefone1) || normalizarTelefone(p.telefone2) || normalizarTelefone(p.telefone3);
       if (tel.length < 10) continue;
-      // faturas em aberto do cliente (não pagas)
+      // faturas em aberto do cliente (nÃ£o pagas)
       const abertas = (c.faturas as Fatura[]).filter(f => !STATUS_META[f.status_visual]?.recebido);
       const base = abertas.length > 0 ? abertas : (c.faturas as Fatura[]);
       if (modo === "fatura") {
@@ -1050,7 +1206,7 @@ export default function CobrancaPage() {
           });
         }
       } else {
-        // 1 mensagem por cliente: resumo. Usa a fatura em aberto mais antiga como referência.
+        // 1 mensagem por cliente: resumo. Usa a fatura em aberto mais antiga como referÃªncia.
         const ref = [...base].sort((a, b) => a.data_vencimento.getTime() - b.data_vencimento.getTime())[0];
         const totalAberto = abertas.reduce((s, f) => s + f.valor, 0);
         contatos.push({
@@ -1071,15 +1227,15 @@ export default function CobrancaPage() {
     return contatos;
   };
 
-  // 🆕 abre o disparo a partir de uma lista de CLIENTES (tabela ou modal). Modo trocável.
+  // ðŸ†• abre o disparo a partir de uma lista de CLIENTES (tabela ou modal). Modo trocÃ¡vel.
   const abrirEnvioClientes = (lista: any[], modoInicial: "cliente" | "fatura" = "cliente") => {
     if (lista.length === 0) {
-      setFeedback({ tipo: "aviso", titulo: "Nenhum cliente selecionado", mensagem: "Marque ao menos um cliente pra disparar a cobrança." });
+      setFeedback({ tipo: "aviso", titulo: "Nenhum cliente selecionado", mensagem: "Marque ao menos um cliente pra disparar a cobranÃ§a." });
       return;
     }
     const contatos = montarContatosClientes(lista, modoInicial);
     if (contatos.length === 0) {
-      setFeedback({ tipo: "aviso", titulo: "Nenhum telefone válido", mensagem: "Os clientes selecionados não têm telefone com 10+ dígitos, ou não têm fatura em aberto." });
+      setFeedback({ tipo: "aviso", titulo: "Nenhum telefone vÃ¡lido", mensagem: "Os clientes selecionados nÃ£o tÃªm telefone com 10+ dÃ­gitos, ou nÃ£o tÃªm fatura em aberto." });
       return;
     }
     setEnvioFonte("crm");
@@ -1087,7 +1243,7 @@ export default function CobrancaPage() {
     setEnvioModoTrocavel(true);
     setEnvioModo(modoInicial);
     setEnvioContatos(contatos);
-    setEnvioNomeCampanha(`Cobrança CRM ${new Date().toLocaleDateString("pt-BR")} (${lista.length} cliente${lista.length > 1 ? "s" : ""})`);
+    setEnvioNomeCampanha(`CobranÃ§a CRM ${new Date().toLocaleDateString("pt-BR")} (${lista.length} cliente${lista.length > 1 ? "s" : ""})`);
     setShowEnvio(true);
   };
 
@@ -1103,7 +1259,7 @@ export default function CobrancaPage() {
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, raw: false, defval: "" });
         if (!rows || rows.length === 0) {
-          setFeedback({ tipo: "aviso", titulo: "Planilha vazia", mensagem: "Não consegui ler nenhuma linha do arquivo." });
+          setFeedback({ tipo: "aviso", titulo: "Planilha vazia", mensagem: "NÃ£o consegui ler nenhuma linha do arquivo." });
           return;
         }
         setPlanilhaLinhas(rows);
@@ -1111,12 +1267,12 @@ export default function CobrancaPage() {
         const cabec = (rows[0] || []).map((c: any) => String(c || "").toLowerCase().trim());
         const novoMap: Record<string, number> = {};
         const padroes = {
-          telefone: ["telefone", "celular", "fone", "whatsapp", "numero", "número", "tel", "phone"],
+          telefone: ["telefone", "celular", "fone", "whatsapp", "numero", "nÃºmero", "tel", "phone"],
           nome:     ["nome", "cliente", "name", "contato"],
-          valor:    ["valor", "preço", "preco", "value", "fatura", "boleto", "amount", "total"],
+          valor:    ["valor", "preÃ§o", "preco", "value", "fatura", "boleto", "amount", "total"],
           vencimento: ["vencimento", "vence", "due", "data", "dia"],
-          plano:    ["plano", "produto", "servico", "serviço", "pacote"],
-          codigo:   ["codigo", "código", "id", "ref", "referencia", "referência"],
+          plano:    ["plano", "produto", "servico", "serviÃ§o", "pacote"],
+          codigo:   ["codigo", "cÃ³digo", "id", "ref", "referencia", "referÃªncia"],
         };
         for (const [campo, palavras] of Object.entries(padroes)) {
           const idx = cabec.findIndex(c => palavras.some(p => c.includes(p)));
@@ -1124,7 +1280,7 @@ export default function CobrancaPage() {
         }
         setMapeamento(novoMap);
       } catch (err: any) {
-        setFeedback({ tipo: "erro", titulo: "Não consegui ler o arquivo", mensagem: err?.message || "Verifique se o arquivo é .csv, .xlsx ou .xls válido." });
+        setFeedback({ tipo: "erro", titulo: "NÃ£o consegui ler o arquivo", mensagem: err?.message || "Verifique se o arquivo Ã© .csv, .xlsx ou .xls vÃ¡lido." });
       }
     };
     reader.readAsArrayBuffer(f);
@@ -1177,7 +1333,7 @@ export default function CobrancaPage() {
       ? linhasValidas.filter((_, i) => selecionadosPlanilha.has(i))
       : linhasValidas;
     if (idsParaEnvio.length === 0) {
-      setFeedback({ tipo: "aviso", titulo: "Nenhuma linha válida", mensagem: "Faça o mapeamento de pelo menos a coluna Telefone, ou selecione linhas com telefone válido." });
+      setFeedback({ tipo: "aviso", titulo: "Nenhuma linha vÃ¡lida", mensagem: "FaÃ§a o mapeamento de pelo menos a coluna Telefone, ou selecione linhas com telefone vÃ¡lido." });
       return;
     }
     const contatos = idsParaEnvio.map(l => ({
@@ -1192,21 +1348,21 @@ export default function CobrancaPage() {
     }));
     setEnvioFonte("planilha");
     setEnvioContatos(contatos);
-    setEnvioNomeCampanha(`Cobrança planilha ${planilhaNomeArquivo || ""} (${contatos.length} contatos)`);
+    setEnvioNomeCampanha(`CobranÃ§a planilha ${planilhaNomeArquivo || ""} (${contatos.length} contatos)`);
     setShowEnvio(true);
   };
 
   const dispararCobranca = async () => {
     if (!envioCanalId) {
-      setFeedback({ tipo: "aviso", titulo: "Selecione um canal", mensagem: "Escolha qual WhatsApp vai disparar a cobrança." });
+      setFeedback({ tipo: "aviso", titulo: "Selecione um canal", mensagem: "Escolha qual WhatsApp vai disparar a cobranÃ§a." });
       return;
     }
     if (envioTipo === "webjs" && !envioMensagem.trim()) {
-      setFeedback({ tipo: "aviso", titulo: "Mensagem vazia", mensagem: "Escreva a mensagem de cobrança." });
+      setFeedback({ tipo: "aviso", titulo: "Mensagem vazia", mensagem: "Escreva a mensagem de cobranÃ§a." });
       return;
     }
     if (envioTipo === "waba" && !envioTemplateId) {
-      setFeedback({ tipo: "aviso", titulo: "Template não selecionado", mensagem: "Escolha um template WABA aprovado." });
+      setFeedback({ tipo: "aviso", titulo: "Template nÃ£o selecionado", mensagem: "Escolha um template WABA aprovado." });
       return;
     }
 
@@ -1236,21 +1392,21 @@ export default function CobrancaPage() {
         setSelecionadosPlanilha(new Set());
         setFeedback({
           tipo: "sucesso",
-          titulo: "Cobrança disparada!",
-          mensagem: `Campanha "${envioNomeCampanha}" criada com ${envioContatos.length} contatos. Os envios começam agora, respeitando o delay configurado.`,
+          titulo: "CobranÃ§a disparada!",
+          mensagem: `Campanha "${envioNomeCampanha}" criada com ${envioContatos.length} contatos. Os envios comeÃ§am agora, respeitando o delay configurado.`,
           detalhes: [`Disparo ID: ${data.disparoId}`, `Acompanhe na aba Campanhas.`],
         });
         await fetchCampanhas();
         setAba("campanhas");
       } else {
-        setFeedback({ tipo: "erro", titulo: "Não foi possível disparar", mensagem: data.error || "Erro desconhecido do backend." });
+        setFeedback({ tipo: "erro", titulo: "NÃ£o foi possÃ­vel disparar", mensagem: data.error || "Erro desconhecido do backend." });
       }
     } catch (e: any) {
       setFeedback({
         tipo: "erro",
         titulo: "Erro de rede ao disparar",
-        mensagem: e?.message || "Não consegui conectar com o servidor de WhatsApp.",
-        detalhes: ["Verifique se o backend de WhatsApp está rodando."],
+        mensagem: e?.message || "NÃ£o consegui conectar com o servidor de WhatsApp.",
+        detalhes: ["Verifique se o backend de WhatsApp estÃ¡ rodando."],
       });
     }
     setEnvioEnviando(false);
@@ -1261,11 +1417,11 @@ export default function CobrancaPage() {
     return substituirVars(envioMensagem, envioContatos[0].vars);
   }, [envioMensagem, envioContatos]);
 
-  // Loading permissão
+  // Loading permissÃ£o
   if (permitido === null) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#6b7280", fontSize: 13 }}>⏳ Verificando permissões...</div>
+        <div style={{ color: "#6b7280", fontSize: 13 }}>â³ Verificando permissÃµes...</div>
       </div>
     );
   }
@@ -1274,14 +1430,14 @@ export default function CobrancaPage() {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh", padding: 32 }}>
         <div style={{ ...cardStyle, padding: 48, textAlign: "center", maxWidth: 480 }}>
-          <div style={{ width: 80, height: 80, borderRadius: 20, background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 16px", boxShadow: "0 12px 24px rgba(220,38,38,0.25)" }}>🔒</div>
-          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Sem acesso à Cobrança</h1>
+          <div style={{ width: 80, height: 80, borderRadius: 20, background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40, margin: "0 auto 16px", boxShadow: "0 12px 24px rgba(220,38,38,0.25)" }}>ðŸ”’</div>
+          <h1 style={{ color: "#1f2937", fontSize: 18, fontWeight: 700, margin: "0 0 8px" }}>Sem acesso Ã  CobranÃ§a</h1>
           <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 8px" }}>
-            Teu grupo de permissão <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> não tem acesso ao módulo de Cobrança.
+            Teu grupo de permissÃ£o <b style={{ color: "#374151" }}>{perm.grupoNome || "(sem grupo)"}</b> nÃ£o tem acesso ao mÃ³dulo de CobranÃ§a.
           </p>
-          <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 22px" }}>Peça ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>cobranca.acessar</code> no teu grupo.</p>
+          <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 22px" }}>PeÃ§a ao admin pra ativar <code style={{ background: "#f3f4f6", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace" }}>cobranca.acessar</code> no teu grupo.</p>
           <button onClick={() => router.back()}
-            style={{ background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", color: "white", border: "none", borderRadius: 12, padding: "11px 24px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>← Voltar</button>
+            style={{ background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)", color: "white", border: "none", borderRadius: 12, padding: "11px 24px", fontSize: 13, fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>â† Voltar</button>
         </div>
       </div>
     );
@@ -1292,17 +1448,30 @@ export default function CobrancaPage() {
       {/* HEADER */}
       <div style={{ ...cardStyle, padding: isMobile ? 16 : 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #4f46e5 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>💰</div>
+          <div style={{ width: 48, height: 48, borderRadius: 12, background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #4f46e5 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, boxShadow: "0 4px 12px rgba(37,99,235,0.3)" }}>ðŸ’°</div>
           <div>
-            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 17 : 20, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>Cobrança — Negociações</h1>
+            <h1 style={{ color: "#1f2937", fontSize: isMobile ? 17 : 20, fontWeight: 800, margin: 0, letterSpacing: -0.3 }}>CobranÃ§a â€” NegociaÃ§Ãµes</h1>
             <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>
-              UnitaSystem · <b style={{ color: "#2563eb" }}>Grupo Unita</b> · Cobre direto do CRM ou suba uma planilha
+              UnitaSystem Â· <b style={{ color: "#2563eb" }}>Grupo Unita</b> Â· Cobre direto do CRM ou suba uma planilha
             </p>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={() => router.push("/crm/cobranca/dashboard")} style={{ background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>📊 Dashboard</button>
-          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={{ background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>📤 Atualizar planilha</button>
+          <button onClick={exportarExcel} disabled={exportandoExcel || clientesTabela.length === 0}
+            style={{
+              background: exportandoExcel || clientesTabela.length === 0 ? "#f3f4f6" : "#f0fdf4",
+              color: exportandoExcel || clientesTabela.length === 0 ? "#9ca3af" : "#16a34a",
+              border: `1px solid ${exportandoExcel || clientesTabela.length === 0 ? "#e5e7eb" : "#bbf7d0"}`,
+              borderRadius: 10,
+              padding: "9px 14px",
+              fontSize: 12.5,
+              cursor: exportandoExcel || clientesTabela.length === 0 ? "not-allowed" : "pointer",
+              fontWeight: 800,
+            }}>
+            {exportandoExcel ? "Exportando..." : "Exportar Excel"}
+          </button>
+          <button onClick={() => router.push("/crm/cobranca/dashboard")} style={{ background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>ðŸ“Š Dashboard</button>
+          <button onClick={() => router.push("/crm/cobranca/atualizacao")} style={{ background: "#fff", color: "#374151", border: "1px solid #e5e7eb", borderRadius: 10, padding: "9px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 600 }}>ðŸ“¤ Atualizar planilha</button>
         </div>
       </div>
 
@@ -1314,9 +1483,9 @@ export default function CobrancaPage() {
           borderRadius: 12, padding: "12px 16px",
           display: "flex", gap: 12, alignItems: "flex-start",
         }}>
-          <span style={{ fontSize: 22 }}>⚠️</span>
+          <span style={{ fontSize: 22 }}>âš ï¸</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: "#92400e", fontSize: 13, margin: 0, fontWeight: 700 }}>Algumas tabelas não foram encontradas no Supabase</p>
+            <p style={{ color: "#92400e", fontSize: 13, margin: 0, fontWeight: 700 }}>Algumas tabelas nÃ£o foram encontradas no Supabase</p>
             <p style={{ color: "#78350f", fontSize: 12, margin: "4px 0 0", lineHeight: 1.5 }}>
               {tabelasFaltando.map(t => <code key={t} style={{ background: "#fef3c7", padding: "1px 6px", borderRadius: 4, fontFamily: "monospace", fontSize: 11.5, marginRight: 4 }}>{t}</code>)}
               <br/>Rode o SQL de setup correspondente pra liberar essa funcionalidade. {tabelasFaltando.includes("faturas_status") && <b>(faturas_status guarda quais faturas foram pagas)</b>}
@@ -1327,18 +1496,18 @@ export default function CobrancaPage() {
 
       {/* KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14 }}>
-        <KPI cor="#16a34a" bg="#f0fdf4" icone="✅" label="Faturas pagas"      valor={formatNum(kpis.pagas)}     sub={`${kpis.pctPago}% do total`} isMobile={isMobile} />
-        <KPI cor="#d97706" bg="#fffbeb" icone="⏳" label="Faturas a pagar"    valor={formatNum(kpis.aPagar)}    sub={`${formatNum(kpis.atrasadas)} já vencida(s)`} isMobile={isMobile} />
-        <KPI cor="#2563eb" bg="#eff6ff" icone="📅" label="Vencem em 7 dias"   valor={formatNum(kpis.vence7d)}   sub="faturas a vencer" isMobile={isMobile} />
-        <KPI cor="#dc2626" bg="#fef2f2" icone="🚨" label={kpis.proxData ? `Pague até ${kpis.proxData.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}` : "Próximo corte"} valor={formatNum(kpis.viramInad)} sub={kpis.proxDias != null ? (kpis.proxDias === 0 ? "viram inadimplentes HOJE" : `viram inadimplentes em ${kpis.proxDias}d`) : "nenhuma a vencer"} isMobile={isMobile} />
+        <KPI cor="#16a34a" bg="#f0fdf4" icone="âœ…" label="Faturas pagas"      valor={formatNum(kpis.pagas)}     sub={`${kpis.pctPago}% do total`} isMobile={isMobile} />
+        <KPI cor="#d97706" bg="#fffbeb" icone="â³" label="Faturas a pagar"    valor={formatNum(kpis.aPagar)}    sub={`${formatNum(kpis.atrasadas)} jÃ¡ vencida(s)`} isMobile={isMobile} />
+        <KPI cor="#2563eb" bg="#eff6ff" icone="ðŸ“…" label="Vencem em 7 dias"   valor={formatNum(kpis.vence7d)}   sub="faturas a vencer" isMobile={isMobile} />
+        <KPI cor="#dc2626" bg="#fef2f2" icone="ðŸš¨" label={kpis.proxData ? `Pague atÃ© ${kpis.proxData.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}` : "PrÃ³ximo corte"} valor={formatNum(kpis.viramInad)} sub={kpis.proxDias != null ? (kpis.proxDias === 0 ? "viram inadimplentes HOJE" : `viram inadimplentes em ${kpis.proxDias}d`) : "nenhuma a vencer"} isMobile={isMobile} />
       </div>
 
       {/* TABS */}
       <div style={{ ...cardStyle, padding: 6, display: "flex", gap: 4, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         {([
-          { key: "do_crm",    label: "📅 Do CRM",   color: "#dc2626" },
-          { key: "campanhas", label: "📊 Campanhas", color: "#2563eb" },
-          { key: "atendimentos", label: "💬 Atendimentos", color: "#16a34a" },
+          { key: "do_crm",    label: "ðŸ“… Do CRM",   color: "#dc2626" },
+          { key: "campanhas", label: "ðŸ“Š Campanhas", color: "#2563eb" },
+          { key: "atendimentos", label: "ðŸ’¬ Atendimentos", color: "#16a34a" },
         ] as { key: AbaKey; label: string; color: string }[]).map(t => {
           const at = aba === t.key;
           return (
@@ -1354,24 +1523,24 @@ export default function CobrancaPage() {
         <div style={{ ...cardStyle, padding: 48, textAlign: "center", color: "#6b7280" }}>Carregando...</div>
       ) : (
         <>
-          {/* ════════════ ABA: ATENDIMENTOS (retornos do disparo) ════════════ */}
+          {/* â•â•â•â•â•â•â•â•â•â•â•â• ABA: ATENDIMENTOS (retornos do disparo) â•â•â•â•â•â•â•â•â•â•â•â• */}
           {aba === "atendimentos" && (
             <>
             <div style={{ ...cardStyle, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
                 <div>
-                  <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Leads que responderam a cobrança</h2>
-                  <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Clientes da cobrança com conversa movimentada após o 1º disparo · {respostasCob.length} encontrado(s)</p>
+                  <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>ðŸ’¬ Leads que responderam a cobranÃ§a</h2>
+                  <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Clientes da cobranÃ§a com conversa movimentada apÃ³s o 1Âº disparo Â· {respostasCob.length} encontrado(s)</p>
                 </div>
                 <button onClick={fetchRespostasCobranca} disabled={carregandoResp}
                   style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  {carregandoResp ? "⏳ Buscando..." : "🔄 Atualizar"}
+                  {carregandoResp ? "â³ Buscando..." : "ðŸ”„ Atualizar"}
                 </button>
               </div>
               {carregandoResp ? (
-                <p style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: 24 }}>⏳ Cruzando disparos com os atendimentos...</p>
+                <p style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: 24 }}>â³ Cruzando disparos com os atendimentos...</p>
               ) : respostasCob.length === 0 ? (
-                <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno ainda — dispare uma cobrança e os clientes que responderem aparecem aqui.</p>
+                <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno ainda â€” dispare uma cobranÃ§a e os clientes que responderem aparecem aqui.</p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {respostasCob.map(({ a, cli }: any) => (
@@ -1380,7 +1549,7 @@ export default function CobrancaPage() {
                         style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", cursor: "pointer", flexWrap: "wrap" }}>
                         <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                           <p style={{ margin: 0, color: "#1f2937", fontSize: 13.5, fontWeight: 800 }}>{cli.nome || a.nome || a.numero}</p>
-                          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💬 {a.mensagem || "(sem prévia)"}</p>
+                          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ðŸ’¬ {a.mensagem || "(sem prÃ©via)"}</p>
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <p style={{ margin: 0, color: "#16a34a", fontSize: 12.5, fontWeight: 800 }}>R$ {Number(cli.valor_plano || 0).toFixed(2).replace(".", ",")}</p>
@@ -1388,14 +1557,14 @@ export default function CobrancaPage() {
                         </div>
                         <div style={{ textAlign: "right", minWidth: 110 }}>
                           <p style={{ margin: 0, color: "#374151", fontSize: 11, fontWeight: 700 }}>{a.updated_at ? new Date(a.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-                          <p style={{ margin: "2px 0 0", color: a.status === "resolvido" ? "#16a34a" : "#d97706", fontSize: 10.5, fontWeight: 700 }}>{a.status || ""}{a.atendente ? ` · ${String(a.atendente).split("@")[0]}` : ""}</p>
+                          <p style={{ margin: "2px 0 0", color: a.status === "resolvido" ? "#16a34a" : "#d97706", fontSize: 10.5, fontWeight: 700 }}>{a.status || ""}{a.atendente ? ` Â· ${String(a.atendente).split("@")[0]}` : ""}</p>
                         </div>
-                        <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>{convAberta === a.numero ? "▾" : "▸"}</span>
+                        <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>{convAberta === a.numero ? "â–¾" : "â–¸"}</span>
                       </div>
                       {convAberta === a.numero && (
                         <div style={{ borderTop: "1px solid #f3f4f6", background: "#f8fafc", padding: 12 }}>
                           {msgsConv.length === 0 ? (
-                            <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, textAlign: "center" }}>⏳ Carregando conversa...</p>
+                            <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, textAlign: "center" }}>â³ Carregando conversa...</p>
                           ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
                               {msgsConv.map((m: any, i: number) => {
@@ -1403,14 +1572,14 @@ export default function CobrancaPage() {
                                 return (
                                   <div key={m.id || i} style={{ alignSelf: doCliente ? "flex-start" : "flex-end", maxWidth: "78%", background: doCliente ? "#ffffff" : "#dcfce7", border: "1px solid " + (doCliente ? "#e5e7eb" : "#bbf7d0"), borderRadius: 10, padding: "7px 11px" }}>
                                     <p style={{ margin: 0, color: "#1f2937", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.mensagem}</p>
-                                    <p style={{ margin: "3px 0 0", color: "#9ca3af", fontSize: 9.5, textAlign: "right" }}>{doCliente ? "cliente" : m.de} · {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
+                                    <p style={{ margin: "3px 0 0", color: "#9ca3af", fontSize: 9.5, textAlign: "right" }}>{doCliente ? "cliente" : m.de} Â· {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
                                   </div>
                                 );
                               })}
                             </div>
                           )}
                           <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-                            <a href="/chatbot" style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "#fff", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>↩️ Responder no Atendimento</a>
+                            <a href="/chatbot" style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "#fff", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>â†©ï¸ Responder no Atendimento</a>
                           </div>
                         </div>
                       )}
@@ -1420,11 +1589,11 @@ export default function CobrancaPage() {
               )}
             </div>
 
-            {/* ░░ CHAT COMPLETO — só conversas dos canais de cobrança ░░ */}
+            {/* â–‘â–‘ CHAT COMPLETO â€” sÃ³ conversas dos canais de cobranÃ§a â–‘â–‘ */}
             <div style={{ ...cardStyle, padding: 0, marginTop: 14, overflow: "hidden" }}>
               <div style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f7" }}>
-                <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Atendimentos dos canais de cobrança</h2>
-                <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Todas as conversas dos canais marcados com o módulo Cobrança.</p>
+                <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>ðŸ’¬ Atendimentos dos canais de cobranÃ§a</h2>
+                <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Todas as conversas dos canais marcados com o mÃ³dulo CobranÃ§a.</p>
               </div>
               <div style={{ height: 560, maxHeight: "75vh", position: "relative", overflow: "hidden", borderRadius: 0 }}>
                 <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
@@ -1435,53 +1604,53 @@ export default function CobrancaPage() {
             </>
           )}
 
-          {/* ════════════ ABA: DO CRM ════════════ */}
-          {/* ════════════ ABA: DO CRM ════════════ */}
+          {/* â•â•â•â•â•â•â•â•â•â•â•â• ABA: DO CRM â•â•â•â•â•â•â•â•â•â•â•â• */}
+          {/* â•â•â•â•â•â•â•â•â•â•â•â• ABA: DO CRM â•â•â•â•â•â•â•â•â•â•â•â• */}
           {aba === "do_crm" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* ░░ BARRA DE FILTROS — largura total ░░ */}
+              {/* â–‘â–‘ BARRA DE FILTROS â€” largura total â–‘â–‘ */}
               <div style={{ ...cardStyle, padding: isMobile ? 12 : 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                {/* botão que abre/fecha o menu lateral de clientes */}
+                {/* botÃ£o que abre/fecha o menu lateral de clientes */}
                 <button onClick={() => setShowSidebar(s => !s)}
                   style={{ background: showSidebar ? "#2563eb" : "#eff6ff", color: showSidebar ? "#fff" : "#2563eb", border: `1px solid ${showSidebar ? "#2563eb" : "#bfdbfe"}`, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontWeight: 800, whiteSpace: "nowrap" }}>
-                  {showSidebar ? "✕ Fechar clientes" : "👥 Clientes"}
+                  {showSidebar ? "âœ• Fechar clientes" : "ðŸ‘¥ Clientes"}
                 </button>
 
-                {/* 🆕 MENU SUSPENSO de vencimentos detectados */}
+                {/* ðŸ†• MENU SUSPENSO de vencimentos detectados */}
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>📅 Vencimento:</span>
+                  <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>ðŸ“… Vencimento:</span>
                   <select value={filtroVencSel} onChange={e => { setFiltroVencSel(e.target.value); setSelecionadasFat(new Set()); setClienteSel(null); }}
                     style={{ ...inputStyle, width: "auto", padding: "8px 10px", cursor: "pointer", fontWeight: 600, minWidth: 180 }}>
                     <option value="">Todos os vencimentos</option>
                     {vencimentosDisponiveis.listaDias.length > 0 && (
-                      <optgroup label="Por dia do mês">
+                      <optgroup label="Por dia do mÃªs">
                         {vencimentosDisponiveis.listaDias.map(o => (
-                          <option key={o.value} value={o.value}>{o.label} — {formatNum(o.n)} fatura(s)</option>
+                          <option key={o.value} value={o.value}>{o.label} â€” {formatNum(o.n)} fatura(s)</option>
                         ))}
                       </optgroup>
                     )}
                     {vencimentosDisponiveis.listaMeses.length > 0 && (
-                      <optgroup label="Por mês de vencimento">
+                      <optgroup label="Por mÃªs de vencimento">
                         {vencimentosDisponiveis.listaMeses.map(o => (
-                          <option key={o.value} value={o.value}>{o.label} — {formatNum(o.n)} fatura(s)</option>
+                          <option key={o.value} value={o.value}>{o.label} â€” {formatNum(o.n)} fatura(s)</option>
                         ))}
                       </optgroup>
                     )}
                   </select>
                   {filtroVencSel && (
-                    <button onClick={() => setFiltroVencSel("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar</button>
+                    <button onClick={() => setFiltroVencSel("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>âœ• Limpar</button>
                   )}
                 </div>
 
-                {/* atalhos rápidos de janela de vencimento */}
+                {/* atalhos rÃ¡pidos de janela de vencimento */}
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {([
-                    { k: "todos",       l: "🌐 Todos",          cor: "#6b7280" },
-                    { k: "vencendo_7d", l: "🟡 Próx. 7 dias",   cor: "#f59e0b" },
-                    { k: "hoje",        l: "⏰ Hoje",            cor: "#ea580c" },
-                    { k: "vencidos",    l: "🔴 Vencidos",        cor: "#dc2626" },
-                    { k: "este_mes",    l: "📆 Este mês",        cor: "#2563eb" },
+                    { k: "todos",       l: "ðŸŒ Todos",          cor: "#6b7280" },
+                    { k: "vencendo_7d", l: "ðŸŸ¡ PrÃ³x. 7 dias",   cor: "#f59e0b" },
+                    { k: "hoje",        l: "â° Hoje",            cor: "#ea580c" },
+                    { k: "vencidos",    l: "ðŸ”´ Vencidos",        cor: "#dc2626" },
+                    { k: "este_mes",    l: "ðŸ“† Este mÃªs",        cor: "#2563eb" },
                   ] as { k: FiltroVenc; l: string; cor: string }[]).map(f => {
                     const at = filtroVenc === f.k;
                     return (
@@ -1493,19 +1662,19 @@ export default function CobrancaPage() {
                   })}
                 </div>
 
-                <input value={filtroBusca} onChange={e => { const v = e.target.value; setFiltroBusca(v); if (v) { setFiltroVenc("todos"); setClienteSel(null); } }} placeholder="🔍 Nome, CPF, OS, telefone, plano..."
+                <input value={filtroBusca} onChange={e => { const v = e.target.value; setFiltroBusca(v); if (v) { setFiltroVenc("todos"); setClienteSel(null); } }} placeholder="ðŸ” Nome, CPF, OS, telefone, plano..."
                   style={{ ...inputStyle, flex: 1, minWidth: 200, padding: "8px 12px" }} />
               </div>
 
-              {/* ░░ STATUS + MÊS DE INSTALAÇÃO ░░ */}
+              {/* â–‘â–‘ STATUS + MÃŠS DE INSTALAÃ‡ÃƒO â–‘â–‘ */}
               <div style={{ ...cardStyle, padding: isMobile ? 10 : 12, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginRight: 4 }}>Status:</span>
                 {([
-                  { k: "todas",     l: "🌐 Todas",          cor: "#374151" },
-                  { k: "pagas",     l: "✅ Pagas",           cor: "#16a34a" },
-                  { k: "atrasadas", l: "🔴 Em aberto",      cor: "#dc2626" },
-                  { k: "pendentes", l: "⏳ Em vencer",      cor: "#d97706" },
-                  { k: "negociacao",l: "📞 Em negociação",  cor: "#7c3aed" },
+                  { k: "todas",     l: "ðŸŒ Todas",          cor: "#374151" },
+                  { k: "pagas",     l: "âœ… Pagas",           cor: "#16a34a" },
+                  { k: "atrasadas", l: "ðŸ”´ Em aberto",      cor: "#dc2626" },
+                  { k: "pendentes", l: "â³ Em vencer",      cor: "#d97706" },
+                  { k: "negociacao",l: "ðŸ“ž Em negociaÃ§Ã£o",  cor: "#7c3aed" },
                 ] as { k: string; l: string; cor: string }[]).map(f => {
                   const at = filtroStatus === f.k;
                   return (
@@ -1516,47 +1685,76 @@ export default function CobrancaPage() {
                   );
                 })}
                 <span style={{ width: 1, height: 22, background: "#e5e7eb", margin: "0 4px" }} />
-                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🛠️ Instalaram em:</span>
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>ðŸ› ï¸ Instalaram em:</span>
                 <input type="month" value={mesInst} onChange={e => { setMesInst(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                <span style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>ou período:</span>
+                <input type="date" value={dataInstInicio} max={dataInstFim || undefined}
+                  onChange={e => { setDataInstInicio(e.target.value); setSelecionadasFat(new Set()); }}
+                  title="Data inicial de instalação"
+                  style={{ ...inputStyle, padding: "6px 10px", width: "auto", borderColor: dataInstInicio ? "#bfdbfe" : "#e5e7eb", background: dataInstInicio ? "#eff6ff" : "#ffffff" }} />
+                <span style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700 }}>até</span>
+                <input type="date" value={dataInstFim} min={dataInstInicio || undefined}
+                  onChange={e => { setDataInstFim(e.target.value); setSelecionadasFat(new Set()); }}
+                  title="Data final de instalação"
+                  style={{ ...inputStyle, padding: "6px 10px", width: "auto", borderColor: dataInstFim ? "#bfdbfe" : "#e5e7eb", background: dataInstFim ? "#eff6ff" : "#ffffff" }} />
                 {mesInst && (
-                  <button onClick={() => setMesInst("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar mês</button>
+                  <button onClick={() => setMesInst("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>âœ• Limpar mÃªs</button>
                 )}
+                {(dataInstInicio || dataInstFim) && (
+                  <button onClick={() => { setDataInstInicio(""); setDataInstFim(""); }} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>âœ• Limpar período</button>
+                )}
+                <button onClick={exportarExcel} disabled={exportandoExcel || clientesTabela.length === 0}
+                  style={{
+                    marginLeft: "auto",
+                    background: exportandoExcel || clientesTabela.length === 0 ? "#f3f4f6" : "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)",
+                    color: exportandoExcel || clientesTabela.length === 0 ? "#9ca3af" : "#ffffff",
+                    border: "none",
+                    borderRadius: 10,
+                    padding: "8px 14px",
+                    fontSize: 12.5,
+                    cursor: exportandoExcel || clientesTabela.length === 0 ? "not-allowed" : "pointer",
+                    fontWeight: 800,
+                    boxShadow: exportandoExcel || clientesTabela.length === 0 ? "none" : "0 4px 12px rgba(22,163,74,0.28)",
+                    whiteSpace: "nowrap",
+                  }}>
+                  {exportandoExcel ? "Exportando..." : "Exportar filtrados"}
+                </button>
               </div>
 
-              {/* ░░ TABELA PRINCIPAL — UMA LINHA POR CLIENTE (clique abre as faturas) ░░ */}
+              {/* â–‘â–‘ TABELA PRINCIPAL â€” UMA LINHA POR CLIENTE (clique abre as faturas) â–‘â–‘ */}
               <div style={{ ...cardStyle, overflow: "hidden" }}>
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                   <div style={{ color: "#6b7280", fontSize: 12, fontWeight: 600 }}>
                     {clientesTabela.length > 0 ? (
-                      <>Mostrando {(paginaSegura - 1) * TAM_PAGINA + 1}–{Math.min(paginaSegura * TAM_PAGINA, clientesTabela.length)} de {formatNum(clientesTabela.length)} cliente(s){clientesSel.size > 0 ? ` · ${clientesSel.size} selecionado(s)` : ""}</>
+                      <>Mostrando {(paginaSegura - 1) * TAM_PAGINA + 1}â€“{Math.min(paginaSegura * TAM_PAGINA, clientesTabela.length)} de {formatNum(clientesTabela.length)} cliente(s){clientesSel.size > 0 ? ` Â· ${clientesSel.size} selecionado(s)` : ""}</>
                     ) : (
                       <>0 cliente(s)</>
                     )}
                   </div>
                   {podeDisparar && clientesSel.size > 0 ? (
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <button onClick={() => setClientesSel(new Set())} style={{ ...btnSecundario, padding: "7px 12px" }}>✕ Limpar seleção</button>
+                      <button onClick={() => setClientesSel(new Set())} style={{ ...btnSecundario, padding: "7px 12px" }}>âœ• Limpar seleÃ§Ã£o</button>
                       <button onClick={() => abrirEnvioClientes(clientes.filter(c => clientesSel.has(c.proposta.id)), "cliente")}
                         style={{ ...btnPrimario, padding: "8px 16px" }}>
-                        📤 Cobrar {clientesSel.size} cliente(s)
+                        ðŸ“¤ Cobrar {clientesSel.size} cliente(s)
                       </button>
                     </div>
                   ) : (
-                    <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 600 }}>👆 Clique no cliente pra ver as faturas{podeDisparar ? " · marque pra cobrar em lote" : ""}</div>
+                    <div style={{ color: "#9ca3af", fontSize: 11.5, fontWeight: 600 }}>ðŸ‘† Clique no cliente pra ver as faturas{podeDisparar ? " Â· marque pra cobrar em lote" : ""}</div>
                   )}
                 </div>
 
                 {clientesTabela.length === 0 ? (
                   <div style={{ padding: 40, textAlign: "center" }}>
-                    <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
+                    <div style={{ fontSize: 40, marginBottom: 8 }}>ðŸ“‹</div>
                     <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhum cliente nesse filtro</p>
                     <p style={{ color: "#9ca3af", fontSize: 12, margin: "0 0 14px" }}>
-                      As faturas vêm da planilha de status (uma linha por fatura). Suba a planilha em <b>Atualizar planilha</b> pra preencher os dados.<br/>
-                      Confira também os filtros ativos acima — eles se somam.
+                      As faturas vÃªm da planilha de status (uma linha por fatura). Suba a planilha em <b>Atualizar planilha</b> pra preencher os dados.<br/>
+                      Confira tambÃ©m os filtros ativos acima â€” eles se somam.
                     </p>
-                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); }}
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); }}
                       style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
-                      ✕ Limpar todos os filtros
+                      âœ• Limpar todos os filtros
                     </button>
                   </div>
                 ) : (
@@ -1566,12 +1764,12 @@ export default function CobrancaPage() {
                         <tr style={{ background: "#f9fafb" }}>
                           {podeDisparar && (
                             <th style={{ width: 36, padding: "11px 12px", borderBottom: "1px solid #e5e7eb", textAlign: "center" }}>
-                              <input type="checkbox" title="Selecionar página"
+                              <input type="checkbox" title="Selecionar pÃ¡gina"
                                 checked={clientesPagina.length > 0 && clientesPagina.every(c => clientesSel.has(c.proposta.id))}
                                 onChange={selecionarTodosClientesPagina} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
                             </th>
                           )}
-                          {["Cliente", "Fraude", "Churn", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
+                          {["Cliente", "Fraude", "Churn", "OS", "Custcode", "SituaÃ§Ã£o", "Faturas", "Total em aberto", "PrÃ³ximo vencimento", ""].map(h => (
                             <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
@@ -1593,7 +1791,7 @@ export default function CobrancaPage() {
                                 style={{ width: "100%", minWidth: 70, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${c.v ? "#bfdbfe" : "#e5e7eb"}`, background: c.v ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400, cursor: "pointer" }}>
                                 <option value="">Todos</option>
                                 <option value="sim">Sim</option>
-                                <option value="nao">Não</option>
+                                <option value="nao">NÃ£o</option>
                               </select>
                             </th>
                           ))}
@@ -1609,7 +1807,7 @@ export default function CobrancaPage() {
                           <th colSpan={4} style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 14px" }}>
                             {(colNome || colOs || colCust || colFraude || colChurn) && (
                               <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); }}
-                                title="Limpar filtros de coluna" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕ Limpar</button>
+                                title="Limpar filtros de coluna" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>âœ• Limpar</button>
                             )}
                           </th>
                         </tr>
@@ -1629,53 +1827,53 @@ export default function CobrancaPage() {
                                 </td>
                               )}
                               <td style={{ padding: "12px 14px", maxWidth: 240, borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}` }}>
-                                <div style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</div>
-                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{c.proposta.telefone1 || "—"} · {c.proposta.plano || "—"}</div>
+                                <div style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "â€”"}</div>
+                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{c.proposta.telefone1 || "â€”"} Â· {c.proposta.plano || "â€”"}</div>
                               </td>
                               {/* coluna Fraude */}
                               <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
                                 {c.temFraude
                                   ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>FRAUDE</span>
-                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>â€”</span>}
                               </td>
                               {/* coluna Churn */}
                               <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
                                 {c.temChurn
                                   ? <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>
-                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>â€”</span>}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 {c.proposta.dados_customizados?.os
                                   ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#7c3aed", fontWeight: 700 }}>{c.proposta.dados_customizados.os}</span>
-                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                                  : <span style={{ color: "#d1d5db", fontSize: 12 }}>â€”</span>}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
                                   {c.proposta.dados_customizados?.custcode
                                     ? <span style={{ fontFamily: "monospace", fontSize: 11.5, color: "#2563eb", fontWeight: 700 }}>{c.proposta.dados_customizados.custcode}</span>
-                                    : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
-                                  <button onClick={e => { e.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>✏️</button>
+                                    : <span style={{ color: "#d1d5db", fontSize: 12 }}>â€”</span>}
+                                  <button onClick={e => { e.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 11, color: "#9ca3af", padding: "0 2px" }}>âœï¸</button>
                                 </span>
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 {inad ? (
-                                  <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>🔴 Inadimplente</span>
+                                  <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>ðŸ”´ Inadimplente</span>
                                 ) : (
-                                  <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>✅ Em dia</span>
+                                  <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 8, padding: "3px 9px", fontSize: 11, fontWeight: 700 }}>âœ… Em dia</span>
                                 )}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                   <span title="Total de faturas" style={{ color: "#374151", fontSize: 13, fontWeight: 700 }}>{c.faturas.length}</span>
                                   <span style={{ display: "flex", gap: 5, fontSize: 11, fontWeight: 700 }}>
-                                    <span title="Pagas" style={{ color: c.pagas > 0 ? "#16a34a" : "#d1d5db" }}>✅{c.pagas}</span>
-                                    <span title="Em aberto (vencidas)" style={{ color: c.emAberto > 0 ? "#dc2626" : "#d1d5db" }}>🔴{c.emAberto}</span>
-                                    <span title="A vencer" style={{ color: c.aVencer > 0 ? "#d97706" : "#d1d5db" }}>⏳{c.aVencer}</span>
+                                    <span title="Pagas" style={{ color: c.pagas > 0 ? "#16a34a" : "#d1d5db" }}>âœ…{c.pagas}</span>
+                                    <span title="Em aberto (vencidas)" style={{ color: c.emAberto > 0 ? "#dc2626" : "#d1d5db" }}>ðŸ”´{c.emAberto}</span>
+                                    <span title="A vencer" style={{ color: c.aVencer > 0 ? "#d97706" : "#d1d5db" }}>â³{c.aVencer}</span>
                                   </span>
                                 </div>
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap", color: c.totalAberto > 0 ? "#dc2626" : "#9ca3af", fontSize: 13, fontWeight: 800 }}>
-                                {c.totalAberto > 0 ? formatBRL(c.totalAberto) : "—"}
+                                {c.totalAberto > 0 ? formatBRL(c.totalAberto) : "â€”"}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 {c.proxVenc ? (
@@ -1686,13 +1884,13 @@ export default function CobrancaPage() {
                                     </div>
                                   </div>
                                 ) : c.atrasadas > 0 ? (
-                                  <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>🔴 {c.atrasoMax}d em atraso</span>
+                                  <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>ðŸ”´ {c.atrasoMax}d em atraso</span>
                                 ) : (
                                   <span style={{ color: "#16a34a", fontSize: 11, fontWeight: 600 }}>tudo pago</span>
                                 )}
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap", textAlign: "right" }}>
-                                <span style={{ color: "#2563eb", fontSize: 12, fontWeight: 700 }}>Ver faturas →</span>
+                                <span style={{ color: "#2563eb", fontSize: 12, fontWeight: 700 }}>Ver faturas â†’</span>
                               </td>
                             </tr>
                           );
@@ -1702,18 +1900,18 @@ export default function CobrancaPage() {
                   </div>
                 )}
 
-                {/* 🆕 RODAPÉ DE PAGINAÇÃO (10 clientes por página) */}
+                {/* ðŸ†• RODAPÃ‰ DE PAGINAÃ‡ÃƒO (10 clientes por pÃ¡gina) */}
                 {clientesTabela.length > TAM_PAGINA && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
                     <button onClick={() => setPagina(1)} disabled={paginaSegura === 1}
-                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>« Primeira</button>
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>Â« Primeira</button>
                     <button onClick={() => setPagina(p => Math.max(1, p - 1))} disabled={paginaSegura === 1}
-                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>← Anterior</button>
-                    <span style={{ color: "#374151", fontSize: 13, fontWeight: 700, padding: "0 8px" }}>Página {paginaSegura} de {formatNum(totalPaginas)}</span>
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === 1 ? 0.4 : 1, cursor: paginaSegura === 1 ? "not-allowed" : "pointer" }}>â† Anterior</button>
+                    <span style={{ color: "#374151", fontSize: 13, fontWeight: 700, padding: "0 8px" }}>PÃ¡gina {paginaSegura} de {formatNum(totalPaginas)}</span>
                     <button onClick={() => setPagina(p => Math.min(totalPaginas, p + 1))} disabled={paginaSegura === totalPaginas}
-                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>Próxima →</button>
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>PrÃ³xima â†’</button>
                     <button onClick={() => setPagina(totalPaginas)} disabled={paginaSegura === totalPaginas}
-                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>Última »</button>
+                      style={{ ...btnSecundario, padding: "7px 12px", opacity: paginaSegura === totalPaginas ? 0.4 : 1, cursor: paginaSegura === totalPaginas ? "not-allowed" : "pointer" }}>Ãšltima Â»</button>
                   </div>
                 )}
               </div>
@@ -1721,8 +1919,8 @@ export default function CobrancaPage() {
                 <div onClick={() => setShowSidebar(false)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.4)", zIndex: 200, display: "flex", justifyContent: "flex-start" }}>
                   <div onClick={e => e.stopPropagation()} style={{ width: isMobile ? "88%" : 380, maxWidth: "92vw", height: "100%", background: "#fff", boxShadow: "4px 0 24px rgba(0,0,0,0.18)", display: "flex", flexDirection: "column" }}>
                     <div style={{ padding: "14px 16px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, fontWeight: 800, color: "#1f2937" }}>👥 Clientes</span>
-                      <button onClick={() => setShowSidebar(false)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>✕</button>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: "#1f2937" }}>ðŸ‘¥ Clientes</span>
+                      <button onClick={() => setShowSidebar(false)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>âœ•</button>
                     </div>
                     <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #f1f5f9" }}>
                       {([
@@ -1740,7 +1938,7 @@ export default function CobrancaPage() {
                       })}
                     </div>
                     <div style={{ padding: 10, borderBottom: "1px solid #f1f5f9" }}>
-                      <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="🔍 Nome, CPF ou OS..." style={{ ...inputStyle, padding: "8px 12px" }} />
+                      <input value={buscaCliente} onChange={e => setBuscaCliente(e.target.value)} placeholder="ðŸ” Nome, CPF ou OS..." style={{ ...inputStyle, padding: "8px 12px" }} />
                     </div>
                     <div style={{ overflowY: "auto", flex: 1, minHeight: 140 }}>
                       {clientesFiltrados.length === 0 ? (
@@ -1753,21 +1951,21 @@ export default function CobrancaPage() {
                             <span style={{ width: 9, height: 9, borderRadius: 999, background: inad ? "#dc2626" : "#16a34a", flexShrink: 0 }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
-                                <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</span>
-                                <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", flexShrink: 0 }}>✏️</span>
+                                <span style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "â€”"}</span>
+                                <span onClick={ev => { ev.stopPropagation(); abrirEdicaoCliente(c.proposta); }} title="Editar OS / custcode" style={{ fontSize: 11, cursor: "pointer", color: "#9ca3af", flexShrink: 0 }}>âœï¸</span>
                               </div>
                               <div style={{ fontFamily: "monospace", fontSize: 10.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 <span style={{ color: c.proposta.dados_customizados?.os ? "#7c3aed" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.os || "sem OS"}</span>
-                                <span style={{ color: "#d1d5db" }}> · </span>
+                                <span style={{ color: "#d1d5db" }}> Â· </span>
                                 <span style={{ color: c.proposta.dados_customizados?.custcode ? "#2563eb" : "#d1d5db", fontWeight: 700 }}>{c.proposta.dados_customizados?.custcode || "sem custcode"}</span>
                               </div>
-                              <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "—"}</div>
+                              <div style={{ color: "#9ca3af", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.plano || "â€”"}</div>
                             </div>
                             <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                               {inad ? (
                                 <>
                                   <div style={{ color: "#dc2626", fontSize: 13, fontWeight: 800 }}>{formatBRL(c.totalAberto)}</div>
-                                  <div style={{ color: "#9ca3af", fontSize: 10 }}>{c.atrasadas} mês · {c.atrasoMax}d</div>
+                                  <div style={{ color: "#9ca3af", fontSize: 10 }}>{c.atrasadas} mÃªs Â· {c.atrasoMax}d</div>
                                 </>
                               ) : (
                                 <div style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>em dia</div>
@@ -1784,19 +1982,19 @@ export default function CobrancaPage() {
           )}
 
 
-          {/* ════════════ ABA: CAMPANHAS ════════════ */}
+          {/* â•â•â•â•â•â•â•â•â•â•â•â• ABA: CAMPANHAS â•â•â•â•â•â•â•â•â•â•â•â• */}
           {aba === "campanhas" && (
             <div style={{ ...cardStyle, overflow: "hidden" }}>
               <div style={{ padding: "14px 18px", borderBottom: "1px solid #e5e7eb" }}>
-                <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>Campanhas de cobrança</h3>
-                <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>Histórico das cobranças disparadas. Atualiza em tempo real conforme o backend processa.</p>
+                <h3 style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: 0 }}>Campanhas de cobranÃ§a</h3>
+                <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>HistÃ³rico das cobranÃ§as disparadas. Atualiza em tempo real conforme o backend processa.</p>
               </div>
               {campanhas.length === 0 ? (
                 <div style={{ padding: 48, textAlign: "center" }}>
-                  <div style={{ fontSize: 40, marginBottom: 8 }}>📊</div>
+                  <div style={{ fontSize: 40, marginBottom: 8 }}>ðŸ“Š</div>
                   <p style={{ color: "#1f2937", fontSize: 14, fontWeight: 700, margin: "0 0 6px" }}>Nenhuma campanha ainda</p>
                   <p style={{ color: "#9ca3af", fontSize: 12, margin: 0 }}>
-                    Dispare uma cobrança na aba Do CRM ou Planilha que ela aparece aqui.
+                    Dispare uma cobranÃ§a na aba Do CRM ou Planilha que ela aparece aqui.
                   </p>
                 </div>
               ) : (
@@ -1813,7 +2011,7 @@ export default function CobrancaPage() {
                       {campanhas.map((c, i) => (
                         <tr key={c.id} style={{ borderTop: "1px solid #f3f4f6", background: i % 2 === 0 ? "#ffffff" : "#fafbfc" }}>
                           <td style={{ padding: "12px", color: "#1f2937", fontSize: 13, fontWeight: 700 }}>{c.nome}</td>
-                          <td style={{ padding: "12px", color: "#6b7280", fontSize: 12 }}>{c.modo === "planilha" ? "📤 Planilha" : "📅 CRM"}</td>
+                          <td style={{ padding: "12px", color: "#6b7280", fontSize: 12 }}>{c.modo === "planilha" ? "ðŸ“¤ Planilha" : "ðŸ“… CRM"}</td>
                           <td style={{ padding: "12px" }}>
                             <span style={{ background: c.status === "concluida" ? "#f0fdf4" : c.status === "rodando" ? "#fffbeb" : "#fef2f2", color: c.status === "concluida" ? "#16a34a" : c.status === "rodando" ? "#f59e0b" : "#dc2626", border: "1px solid", borderRadius: 8, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>
                               {c.status}
@@ -1840,26 +2038,26 @@ export default function CobrancaPage() {
           <div onClick={e => e.stopPropagation()} style={{ background: "#ffffff", borderRadius: 16, maxWidth: 720, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
             <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", background: "linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>📤 Disparar cobrança</h3>
-                <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{envioContatos.length} contato(s) · fonte: {envioFonte === "crm" ? "📅 CRM" : "📤 Planilha"}</p>
+                <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>ðŸ“¤ Disparar cobranÃ§a</h3>
+                <p style={{ color: "#6b7280", fontSize: 12, margin: "2px 0 0" }}>{envioContatos.length} contato(s) Â· fonte: {envioFonte === "crm" ? "ðŸ“… CRM" : "ðŸ“¤ Planilha"}</p>
               </div>
-              <button onClick={() => setShowEnvio(false)} disabled={envioEnviando} style={{ background: "#f3f4f6", color: "#6b7280", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕</button>
+              <button onClick={() => setShowEnvio(false)} disabled={envioEnviando} style={{ background: "#f3f4f6", color: "#6b7280", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>âœ•</button>
             </div>
 
             <div style={{ padding: 22, overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
                 <label style={labelStyle}>Nome da campanha</label>
-                <input value={envioNomeCampanha} onChange={e => setEnvioNomeCampanha(e.target.value)} style={inputStyle} placeholder="Ex: Cobrança Janeiro" />
+                <input value={envioNomeCampanha} onChange={e => setEnvioNomeCampanha(e.target.value)} style={inputStyle} placeholder="Ex: CobranÃ§a Janeiro" />
               </div>
 
-              {/* 🆕 MODO DE DISPARO — escolha na hora (só quando veio de seleção de clientes) */}
+              {/* ðŸ†• MODO DE DISPARO â€” escolha na hora (sÃ³ quando veio de seleÃ§Ã£o de clientes) */}
               {envioModoTrocavel && (
                 <div>
                   <label style={labelStyle}>Como disparar</label>
                   <div style={{ display: "flex", gap: 8 }}>
                     {([
-                      { v: "cliente", l: "👤 1 mensagem por cliente", sub: "resumo das faturas em aberto" },
-                      { v: "fatura",  l: "📄 1 mensagem por fatura", sub: "uma msg para cada fatura em aberto" },
+                      { v: "cliente", l: "ðŸ‘¤ 1 mensagem por cliente", sub: "resumo das faturas em aberto" },
+                      { v: "fatura",  l: "ðŸ“„ 1 mensagem por fatura", sub: "uma msg para cada fatura em aberto" },
                     ] as { v: "cliente" | "fatura"; l: string; sub: string }[]).map(o => (
                       <button key={o.v} onClick={() => { setEnvioModo(o.v); setEnvioContatos(montarContatosClientes(envioOrigemClientes, o.v)); }}
                         style={{ flex: 1, padding: "10px 12px", borderRadius: 10, textAlign: "left", border: envioModo === o.v ? "2px solid #2563eb" : "1px solid #e5e7eb", background: envioModo === o.v ? "#eff6ff" : "#ffffff", color: envioModo === o.v ? "#2563eb" : "#6b7280", cursor: "pointer" }}>
@@ -1869,7 +2067,7 @@ export default function CobrancaPage() {
                     ))}
                   </div>
                   <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0" }}>
-                    💡 No modo por cliente use <code>{"{{qtd_faturas}}"}</code> e <code>{"{{total_aberto}}"}</code> na mensagem.
+                    ðŸ’¡ No modo por cliente use <code>{"{{qtd_faturas}}"}</code> e <code>{"{{total_aberto}}"}</code> na mensagem.
                   </p>
                 </div>
               )}
@@ -1878,8 +2076,8 @@ export default function CobrancaPage() {
                 <label style={labelStyle}>Tipo de envio</label>
                 <div style={{ display: "flex", gap: 8 }}>
                   {([
-                    { v: "webjs", l: "📱 WhatsApp comum (texto livre)" },
-                    { v: "waba",  l: "📨 WABA (template aprovado)" },
+                    { v: "webjs", l: "ðŸ“± WhatsApp comum (texto livre)" },
+                    { v: "waba",  l: "ðŸ“¨ WABA (template aprovado)" },
                   ] as { v: "webjs" | "waba"; l: string }[]).map(o => (
                     <button key={o.v} onClick={() => setEnvioTipo(o.v)}
                       style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: envioTipo === o.v ? "2px solid #2563eb" : "1px solid #e5e7eb", background: envioTipo === o.v ? "#eff6ff" : "#ffffff", color: envioTipo === o.v ? "#2563eb" : "#6b7280", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -1898,7 +2096,7 @@ export default function CobrancaPage() {
                   ))}
                 </select>
                 {canais.length === 0 && (
-                  <p style={{ color: "#f59e0b", fontSize: 11, margin: "4px 0 0" }}>⚠️ Nenhum canal cadastrado. Configure em Chatbot → Conexões.</p>
+                  <p style={{ color: "#f59e0b", fontSize: 11, margin: "4px 0 0" }}>âš ï¸ Nenhum canal cadastrado. Configure em Chatbot â†’ ConexÃµes.</p>
                 )}
               </div>
 
@@ -1910,7 +2108,7 @@ export default function CobrancaPage() {
                   </div>
                   {envioContatos.length > 0 && (
                     <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 12 }}>
-                      <p style={{ color: "#14532d", fontSize: 11, fontWeight: 700, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>👁️ Preview (1º contato: {envioContatos[0].nome})</p>
+                      <p style={{ color: "#14532d", fontSize: 11, fontWeight: 700, margin: "0 0 6px", textTransform: "uppercase", letterSpacing: 0.4 }}>ðŸ‘ï¸ Preview (1Âº contato: {envioContatos[0].nome})</p>
                       <p style={{ color: "#374151", fontSize: 13, margin: 0, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{previewMensagem}</p>
                     </div>
                   )}
@@ -1927,7 +2125,7 @@ export default function CobrancaPage() {
                     ))}
                   </select>
                   {templates.length === 0 && (
-                    <p style={{ color: "#f59e0b", fontSize: 11, margin: "4px 0 0" }}>⚠️ Nenhum template aprovado. Crie em Chatbot → Templates.</p>
+                    <p style={{ color: "#f59e0b", fontSize: 11, margin: "4px 0 0" }}>âš ï¸ Nenhum template aprovado. Crie em Chatbot â†’ Templates.</p>
                   )}
                 </div>
               )}
@@ -1935,19 +2133,19 @@ export default function CobrancaPage() {
               <div>
                 <label style={labelStyle}>Delay entre envios (segundos)</label>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <input type="number" min={1} max={300} value={envioDelayMin} onChange={e => setEnvioDelayMin(parseInt(e.target.value) || 30)} style={inputStyle} placeholder="Mínimo" />
-                  <input type="number" min={1} max={300} value={envioDelayMax} onChange={e => setEnvioDelayMax(parseInt(e.target.value) || 60)} style={inputStyle} placeholder="Máximo" />
+                  <input type="number" min={1} max={300} value={envioDelayMin} onChange={e => setEnvioDelayMin(parseInt(e.target.value) || 30)} style={inputStyle} placeholder="MÃ­nimo" />
+                  <input type="number" min={1} max={300} value={envioDelayMax} onChange={e => setEnvioDelayMax(parseInt(e.target.value) || 60)} style={inputStyle} placeholder="MÃ¡ximo" />
                 </div>
-                <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>💡 Recomendo 30-60s pra WebJS evitar ban. WABA pode ser mais rápido (1-3s).</p>
+                <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>ðŸ’¡ Recomendo 30-60s pra WebJS evitar ban. WABA pode ser mais rÃ¡pido (1-3s).</p>
               </div>
             </div>
 
             <div style={{ padding: "14px 22px", borderTop: "1px solid #e5e7eb", background: "#fafbfc", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "#6b7280", fontSize: 12 }}>Vão ser enviadas {envioContatos.length} mensagens.</span>
+              <span style={{ color: "#6b7280", fontSize: 12 }}>VÃ£o ser enviadas {envioContatos.length} mensagens.</span>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setShowEnvio(false)} disabled={envioEnviando} style={btnSecundario}>Cancelar</button>
                 <button onClick={dispararCobranca} disabled={envioEnviando} style={{ ...btnPrimario, opacity: envioEnviando ? 0.7 : 1, cursor: envioEnviando ? "wait" : "pointer" }}>
-                  {envioEnviando ? "⏳ Enviando..." : "🚀 Disparar agora"}
+                  {envioEnviando ? "â³ Enviando..." : "ðŸš€ Disparar agora"}
                 </button>
               </div>
             </div>
@@ -1969,7 +2167,7 @@ export default function CobrancaPage() {
               <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", background: `linear-gradient(135deg, ${meta.bg} 0%, #ffffff 100%)` }}>
                 <h3 style={{ color: meta.color, fontSize: 16, fontWeight: 800, margin: 0 }}>{meta.icone} Mudar status da fatura</h3>
                 <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>
-                  {f.proposta.nome} · {formatMesExtenso(f.numero_referencia)} · {formatBRL(f.valor)} · venceu {formatData(f.data_vencimento)}
+                  {f.proposta.nome} Â· {formatMesExtenso(f.numero_referencia)} Â· {formatBRL(f.valor)} Â· venceu {formatData(f.data_vencimento)}
                 </p>
               </div>
               <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", flex: 1 }}>
@@ -2019,12 +2217,12 @@ export default function CobrancaPage() {
                       <div>
                         <label style={labelStyle}>Forma de pagamento</label>
                         <select value={statusForma} onChange={e => setStatusForma(e.target.value)} style={inputStyle}>
-                          <option value="">—</option>
+                          <option value="">â€”</option>
                           <option value="PIX">PIX</option>
                           <option value="Boleto">Boleto</option>
-                          <option value="Cartão de Crédito">Cartão de Crédito</option>
-                          <option value="Cartão de Débito">Cartão de Débito</option>
-                          <option value="Transferência">Transferência</option>
+                          <option value="CartÃ£o de CrÃ©dito">CartÃ£o de CrÃ©dito</option>
+                          <option value="CartÃ£o de DÃ©bito">CartÃ£o de DÃ©bito</option>
+                          <option value="TransferÃªncia">TransferÃªncia</option>
                           <option value="Dinheiro">Dinheiro</option>
                         </select>
                       </div>
@@ -2035,18 +2233,18 @@ export default function CobrancaPage() {
                   <div>
                     <label style={labelStyle}>Data prometida pelo cliente *</label>
                     <input type="date" value={statusPromessa} onChange={e => setStatusPromessa(e.target.value)} style={inputStyle} />
-                    <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>💡 Se passar dessa data sem pagar, a fatura volta a aparecer como atrasada.</p>
+                    <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>ðŸ’¡ Se passar dessa data sem pagar, a fatura volta a aparecer como atrasada.</p>
                   </div>
                 )}
                 <div>
-                  <label style={labelStyle}>Observações (opcional)</label>
+                  <label style={labelStyle}>ObservaÃ§Ãµes (opcional)</label>
                   <textarea value={statusObs} onChange={e => setStatusObs(e.target.value)} rows={2} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
                     placeholder={
                       novoStatus === "negociacao"  ? "Ex: pediu pra renegociar valor pra R$ 80" :
                       novoStatus === "acordo"      ? "Ex: parcelado em 3x" :
-                      novoStatus === "paga_parcial" ? "Ex: pagou metade, restante pra próxima semana" :
+                      novoStatus === "paga_parcial" ? "Ex: pagou metade, restante pra prÃ³xima semana" :
                       novoStatus === "nao_pagara"  ? "Ex: cliente disse que vai cancelar" :
-                      novoStatus === "cancelada"   ? "Ex: cortesia / erro de cobrança" :
+                      novoStatus === "cancelada"   ? "Ex: cortesia / erro de cobranÃ§a" :
                       novoStatus === "juridico"    ? "Ex: enviado pro dr. Fulano" :
                       "Notas internas sobre essa fatura"
                     } />
@@ -2067,10 +2265,10 @@ export default function CobrancaPage() {
       {/* MODAL DE FEEDBACK */}
       {feedback && (() => {
         const cores = {
-          erro:    { bg: "#fef2f2", border: "#fecaca", iconBg: "#fee2e2", icon: "#dc2626", titulo: "#991b1b", botao: "#dc2626", emoji: "⚠️" },
-          aviso:   { bg: "#fffbeb", border: "#fde68a", iconBg: "#fef3c7", icon: "#d97706", titulo: "#92400e", botao: "#d97706", emoji: "🛡️" },
-          sucesso: { bg: "#f0fdf4", border: "#bbf7d0", iconBg: "#dcfce7", icon: "#16a34a", titulo: "#14532d", botao: "#16a34a", emoji: "✅" },
-          info:    { bg: "#eff6ff", border: "#bfdbfe", iconBg: "#dbeafe", icon: "#2563eb", titulo: "#1e3a8a", botao: "#2563eb", emoji: "ℹ️" },
+          erro:    { bg: "#fef2f2", border: "#fecaca", iconBg: "#fee2e2", icon: "#dc2626", titulo: "#991b1b", botao: "#dc2626", emoji: "âš ï¸" },
+          aviso:   { bg: "#fffbeb", border: "#fde68a", iconBg: "#fef3c7", icon: "#d97706", titulo: "#92400e", botao: "#d97706", emoji: "ðŸ›¡ï¸" },
+          sucesso: { bg: "#f0fdf4", border: "#bbf7d0", iconBg: "#dcfce7", icon: "#16a34a", titulo: "#14532d", botao: "#16a34a", emoji: "âœ…" },
+          info:    { bg: "#eff6ff", border: "#bfdbfe", iconBg: "#dbeafe", icon: "#2563eb", titulo: "#1e3a8a", botao: "#2563eb", emoji: "â„¹ï¸" },
         }[feedback.tipo];
         const ehConfirm = !!feedback.onConfirmar;
         return (
@@ -2107,7 +2305,7 @@ export default function CobrancaPage() {
         );
       })()}
 
-      {/* 🆕 MODAL — FATURAS DO CLIENTE (abre ao clicar numa linha da tabela) */}
+      {/* ðŸ†• MODAL â€” FATURAS DO CLIENTE (abre ao clicar numa linha da tabela) */}
       {modalCliente != null && (() => {
         const c = clientes.find(x => x.proposta.id === modalCliente);
         if (!c) return null;
@@ -2115,16 +2313,16 @@ export default function CobrancaPage() {
         const corCod = (cod: string | null | undefined): { bg: string; cor: string; txt: string } => {
           const k = String(cod || "").replace(/\D/g, "").padStart(2, "0");
           if (k === "01") return { bg: "#f0fdf4", cor: "#16a34a", txt: "Pagou no prazo" };
-          if (k === "02") return { bg: "#ecfdf5", cor: "#059669", txt: "Pagou até 30d" };
-          if (k === "03") return { bg: "#fffbeb", cor: "#d97706", txt: "Pagou até 60d" };
-          if (k === "04") return { bg: "#fef2f2", cor: "#dc2626", txt: "Pagou após 60d" };
-          if (k === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "Não pagou" };
-          return { bg: "#f3f4f6", cor: "#6b7280", txt: "—" };
+          if (k === "02") return { bg: "#ecfdf5", cor: "#059669", txt: "Pagou atÃ© 30d" };
+          if (k === "03") return { bg: "#fffbeb", cor: "#d97706", txt: "Pagou atÃ© 60d" };
+          if (k === "04") return { bg: "#fef2f2", cor: "#dc2626", txt: "Pagou apÃ³s 60d" };
+          if (k === "05") return { bg: "#fef2f2", cor: "#b91c1c", txt: "NÃ£o pagou" };
+          return { bg: "#f3f4f6", cor: "#6b7280", txt: "â€”" };
         };
         const mesAnoBR = (d: Date | string | null | undefined) => {
-          if (!d) return "—";
+          if (!d) return "â€”";
           const dt = typeof d === "string" ? new Date(d.slice(0, 10) + "T00:00:00") : d;
-          if (!dt || isNaN(dt.getTime())) return "—";
+          if (!dt || isNaN(dt.getTime())) return "â€”";
           return dt.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
         };
         const precoce = faturasCli.some((f: Fatura) => f.codigo_status === "03" || f.codigo_status === "04");
@@ -2132,31 +2330,31 @@ export default function CobrancaPage() {
         return (
           <div onClick={() => setModalCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: isMobile ? 8 : 24 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 1100, maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 24px 60px rgba(0,0,0,0.3)" }}>
-              {/* cabeçalho do modal */}
+              {/* cabeÃ§alho do modal */}
               <div style={{ padding: isMobile ? "14px 16px" : "18px 22px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <h3 style={{ color: "#1f2937", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0 }}>{c.proposta.nome || "—"}</h3>
+                    <h3 style={{ color: "#1f2937", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0 }}>{c.proposta.nome || "â€”"}</h3>
                     {c.temFraude && <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>FRAUDE</span>}
                     {c.temChurn && <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>}
-                    {precoce && <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>⚠️ INADIMPLÊNCIA PRECOCE</span>}
+                    {precoce && <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>âš ï¸ INADIMPLÃŠNCIA PRECOCE</span>}
                   </div>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12 }}>
-                    <span style={{ color: "#6b7280" }}>OS: <b style={{ fontFamily: "monospace", color: "#7c3aed" }}>{c.proposta.dados_customizados?.os || "—"}</b></span>
-                    <span style={{ color: "#6b7280" }}>Custcode: <b style={{ fontFamily: "monospace", color: "#2563eb" }}>{c.proposta.dados_customizados?.custcode || "—"}</b></span>
-                    <span style={{ color: "#6b7280" }}>Plano: <b style={{ color: "#374151" }}>{c.proposta.plano || "—"}</b></span>
-                    <span style={{ color: "#6b7280" }}>Tel: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone1 || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>OS: <b style={{ fontFamily: "monospace", color: "#7c3aed" }}>{c.proposta.dados_customizados?.os || "â€”"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Custcode: <b style={{ fontFamily: "monospace", color: "#2563eb" }}>{c.proposta.dados_customizados?.custcode || "â€”"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Plano: <b style={{ color: "#374151" }}>{c.proposta.plano || "â€”"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Tel: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone1 || "â€”"}</b></span>
                   </div>
                 </div>
-                <button onClick={() => setModalCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af" }}>✕</button>
+                <button onClick={() => setModalCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af" }}>âœ•</button>
               </div>
 
-              {/* resumo rápido */}
+              {/* resumo rÃ¡pido */}
               <div style={{ padding: "10px 22px", borderBottom: "1px solid #f1f5f9", display: "flex", gap: 18, flexWrap: "wrap", fontSize: 12.5 }}>
-                <span style={{ color: "#374151" }}>📄 <b>{c.faturas.length}</b> fatura(s)</span>
-                <span style={{ color: "#16a34a" }}>✅ <b>{c.pagas}</b> paga(s)</span>
-                <span style={{ color: "#dc2626" }}>🔴 <b>{c.emAberto}</b> em aberto</span>
-                <span style={{ color: "#d97706" }}>⏳ <b>{c.aVencer}</b> a vencer</span>
+                <span style={{ color: "#374151" }}>ðŸ“„ <b>{c.faturas.length}</b> fatura(s)</span>
+                <span style={{ color: "#16a34a" }}>âœ… <b>{c.pagas}</b> paga(s)</span>
+                <span style={{ color: "#dc2626" }}>ðŸ”´ <b>{c.emAberto}</b> em aberto</span>
+                <span style={{ color: "#d97706" }}>â³ <b>{c.aVencer}</b> a vencer</span>
                 {c.totalAberto > 0 && <span style={{ color: "#dc2626", marginLeft: "auto", fontWeight: 800 }}>Total em aberto: {formatBRL(c.totalAberto)}</span>}
               </div>
 
@@ -2166,7 +2364,7 @@ export default function CobrancaPage() {
                   <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                     <tr style={{ background: "#f9fafb" }}>
                       {podeDisparar && <th style={{ width: 36, padding: "10px 12px", borderBottom: "1px solid #e5e7eb" }}></th>}
-                      {["Nº fat.", "Status pagamento", "Detalhamento", "Mês gross", "Mês venc.", "Data venc.", "Data pgto.", "Banco / Opção", "Fraude", "Churn", "Ações"].map(h => (
+                      {["NÂº fat.", "Status pagamento", "Detalhamento", "MÃªs gross", "MÃªs venc.", "Data venc.", "Data pgto.", "Banco / OpÃ§Ã£o", "Fraude", "Churn", "AÃ§Ãµes"].map(h => (
                         <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 10.5, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -2187,36 +2385,36 @@ export default function CobrancaPage() {
                           <td style={{ padding: "10px 12px", textAlign: "center" }}>
                             {f.numero_fatura != null
                               ? <span style={{ background: "#eff6ff", color: "#2563eb", fontWeight: 800, fontSize: 12, padding: "2px 9px", borderRadius: 999 }}>{f.numero_fatura}</span>
-                              : <span style={{ color: "#d1d5db" }}>—</span>}
+                              : <span style={{ color: "#d1d5db" }}>â€”</span>}
                           </td>
                           <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
-                            <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{f.codigo_status || "—"} · {cc.txt}</span>
+                            <span style={{ background: cc.bg, color: cc.cor, fontWeight: 700, fontSize: 11, padding: "2px 9px", borderRadius: 999 }}>{f.codigo_status || "â€”"} Â· {cc.txt}</span>
                             <div style={{ marginTop: 3 }}>
                               <span style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}`, borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>{st.label}</span>
                             </div>
                           </td>
-                          <td style={{ padding: "10px 12px", color: f.detalhamento ? "#374151" : "#d1d5db", maxWidth: 230, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11.5 }} title={f.detalhamento || undefined}>{f.detalhamento || "—"}</td>
+                          <td style={{ padding: "10px 12px", color: f.detalhamento ? "#374151" : "#d1d5db", maxWidth: 230, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11.5 }} title={f.detalhamento || undefined}>{f.detalhamento || "â€”"}</td>
                           <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: f.mes_gross ? "#6b7280" : "#d1d5db" }}>{mesAnoBR(f.mes_gross)}</td>
                           <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: "#6b7280" }}>{mesAnoBR(f.data_vencimento)}</td>
                           <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: "#1f2937", fontWeight: 600 }}>
                             {formatData(f.data_vencimento)}
-                            {f.status_visual === "atrasada" && <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>🔴 {f.dias_atraso}d atraso</div>}
+                            {f.status_visual === "atrasada" && <div style={{ color: "#dc2626", fontSize: 10, fontWeight: 700 }}>ðŸ”´ {f.dias_atraso}d atraso</div>}
                           </td>
-                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: f.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: f.data_pagamento ? 700 : 400 }}>{f.data_pagamento ? formatData(f.data_pagamento) : "—"}</td>
+                          <td style={{ padding: "10px 12px", whiteSpace: "nowrap", color: f.data_pagamento ? "#16a34a" : "#d1d5db", fontWeight: f.data_pagamento ? 700 : 400 }}>{f.data_pagamento ? formatData(f.data_pagamento) : "â€”"}</td>
                           <td style={{ padding: "10px 12px", whiteSpace: "nowrap", fontSize: 11 }}>
                             {f.nome_banco && <div style={{ color: "#374151" }}>{f.nome_banco}</div>}
                             {f.opcao_pagamento && <span style={{ background: "#f5f3ff", color: "#7c3aed", fontWeight: 700, fontSize: 10, padding: "1px 7px", borderRadius: 999 }}>{f.opcao_pagamento}</span>}
-                            {!f.nome_banco && !f.opcao_pagamento && <span style={{ color: "#d1d5db" }}>—</span>}
+                            {!f.nome_banco && !f.opcao_pagamento && <span style={{ color: "#d1d5db" }}>â€”</span>}
                           </td>
                           <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            {f.suspensao_fraude == null ? <span style={{ color: "#d1d5db" }}>—</span>
+                            {f.suspensao_fraude == null ? <span style={{ color: "#d1d5db" }}>â€”</span>
                               : f.suspensao_fraude ? <span style={{ background: "#fef2f2", color: "#b91c1c", fontWeight: 800, fontSize: 10, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
-                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>nÃ£o</span>}
                           </td>
                           <td style={{ padding: "10px 12px", textAlign: "center" }}>
-                            {f.churn == null ? <span style={{ color: "#d1d5db" }}>—</span>
+                            {f.churn == null ? <span style={{ color: "#d1d5db" }}>â€”</span>
                               : f.churn ? <span style={{ background: "#fff7ed", color: "#c2410c", fontWeight: 800, fontSize: 10, padding: "2px 8px", borderRadius: 999 }}>SIM</span>
-                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>não</span>}
+                              : <span style={{ color: "#9ca3af", fontSize: 11 }}>nÃ£o</span>}
                           </td>
                           <td style={{ padding: "10px 12px" }}>
                             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -2224,13 +2422,13 @@ export default function CobrancaPage() {
                                 <>
                                   {STATUS_META[f.status]?.pendencia !== false || f.status === "pendente" ? (
                                     <button onClick={() => abrirStatus(f, "paga")} title="Marcar como paga"
-                                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✓ Paga</button>
+                                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>âœ“ Paga</button>
                                   ) : (
                                     <button onClick={() => marcarAPagar(f)} title="Reverter status"
-                                      style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>↩ A pagar</button>
+                                      style={{ background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>â†© A pagar</button>
                                   )}
                                   <button onClick={() => abrirStatus(f, "promessa")} title="Mais status"
-                                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>⚙</button>
+                                    style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 6, padding: "4px 8px", fontSize: 10.5, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>âš™</button>
                                 </>
                               ) : (
                                 <span style={{ color: "#9ca3af", fontSize: 10, fontStyle: "italic" }}>leitura</span>
@@ -2244,21 +2442,21 @@ export default function CobrancaPage() {
                 </table>
               </div>
 
-              {/* rodapé do modal */}
+              {/* rodapÃ© do modal */}
               <div style={{ padding: "12px 22px", borderTop: "1px solid #e5e7eb", background: "#fafbfc", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "space-between" }}>
-                <button onClick={() => { abrirEdicaoCliente(c.proposta); }} style={{ ...btnSecundario, padding: "8px 14px" }}>✏️ Editar cliente</button>
+                <button onClick={() => { abrirEdicaoCliente(c.proposta); }} style={{ ...btnSecundario, padding: "8px 14px" }}>âœï¸ Editar cliente</button>
                 {podeDisparar && (
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <button onClick={() => abrirEnvioClientes([c], "cliente")}
                       style={{ ...btnSecundario, padding: "8px 14px", borderColor: "#bfdbfe", color: "#2563eb" }}>
-                      📨 Cobrar cliente
+                      ðŸ“¨ Cobrar cliente
                     </button>
                     <button onClick={selecionarTodasDoModal} style={{ ...btnSecundario, padding: "8px 14px" }}>
-                      {faturasCli.every((f: Fatura) => selecionadasFat.has(chaveSelecao(f))) ? "✗ Desmarcar todas" : "✓ Selecionar todas"}
+                      {faturasCli.every((f: Fatura) => selecionadasFat.has(chaveSelecao(f))) ? "âœ— Desmarcar todas" : "âœ“ Selecionar todas"}
                     </button>
                     <button onClick={abrirEnvioCrm} disabled={selecionadasFat.size === 0}
                       style={{ ...btnPrimario, padding: "8px 16px", opacity: selecionadasFat.size === 0 ? 0.5 : 1, cursor: selecionadasFat.size === 0 ? "not-allowed" : "pointer" }}>
-                      📤 Cobrar {selecionadasFat.size} fatura(s)
+                      ðŸ“¤ Cobrar {selecionadasFat.size} fatura(s)
                     </button>
                   </div>
                 )}
@@ -2268,65 +2466,65 @@ export default function CobrancaPage() {
         );
       })()}
 
-      {/* ✏️ ADIÇÃO: MODAL — edição completa do cliente */}
+      {/* âœï¸ ADIÃ‡ÃƒO: MODAL â€” ediÃ§Ã£o completa do cliente */}
       {editCliente && (
         <div onClick={() => setEditCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16, overflowY: "auto" }}>
           <div onClick={ev => ev.stopPropagation()} style={{ ...cardStyle, width: "100%", maxWidth: 620, padding: 24, maxHeight: "92vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-              <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>✏️ Editar cliente</h3>
-              <button onClick={() => setEditCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>✕</button>
+              <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>âœï¸ Editar cliente</h3>
+              <button onClick={() => setEditCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 18, color: "#9ca3af" }}>âœ•</button>
             </div>
-            <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 16px" }}>Alterações salvam direto na venda do CRM.</p>
+            <p style={{ color: "#6b7280", fontSize: 12, margin: "0 0 16px" }}>AlteraÃ§Ãµes salvam direto na venda do CRM.</p>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
               <div style={{ gridColumn: isMobile ? "auto" : "1 / -1" }}>
-                <label style={labelStyle}>👤 Nome do cliente</label>
+                <label style={labelStyle}>ðŸ‘¤ Nome do cliente</label>
                 <input value={editForm.nome || ""} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>🪪 CPF</label>
+                <label style={labelStyle}>ðŸªª CPF</label>
                 <input value={editForm.cpf || ""} onChange={e => setEditForm(f => ({ ...f, cpf: e.target.value }))} style={{ ...inputStyle, fontFamily: "monospace" }} />
               </div>
               <div>
-                <label style={labelStyle}>📱 Telefone</label>
+                <label style={labelStyle}>ðŸ“± Telefone</label>
                 <input value={editForm.telefone1 || ""} onChange={e => setEditForm(f => ({ ...f, telefone1: e.target.value }))} style={{ ...inputStyle, fontFamily: "monospace" }} />
               </div>
               <div>
-                <label style={labelStyle}>📦 Plano</label>
+                <label style={labelStyle}>ðŸ“¦ Plano</label>
                 <input value={editForm.plano || ""} onChange={e => setEditForm(f => ({ ...f, plano: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>📡 Operadora</label>
+                <label style={labelStyle}>ðŸ“¡ Operadora</label>
                 <input value={editForm.operadora || ""} onChange={e => setEditForm(f => ({ ...f, operadora: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>💰 Valor do plano (R$)</label>
+                <label style={labelStyle}>ðŸ’° Valor do plano (R$)</label>
                 <input value={editForm.valor_plano || ""} onChange={e => setEditForm(f => ({ ...f, valor_plano: e.target.value }))} placeholder="ex: 119.99" style={{ ...inputStyle, fontFamily: "monospace" }} />
               </div>
               <div>
-                <label style={labelStyle}>📅 Vencimento (dia)</label>
+                <label style={labelStyle}>ðŸ“… Vencimento (dia)</label>
                 <input value={editForm.vencimento || ""} onChange={e => setEditForm(f => ({ ...f, vencimento: e.target.value }))} placeholder="ex: 10" style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>💳 Forma de pagamento</label>
+                <label style={labelStyle}>ðŸ’³ Forma de pagamento</label>
                 <input value={editForm.forma_pagamento || ""} onChange={e => setEditForm(f => ({ ...f, forma_pagamento: e.target.value }))} placeholder="BOLETO / DACC..." style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>🛠️ Data de instalação</label>
+                <label style={labelStyle}>ðŸ› ï¸ Data de instalaÃ§Ã£o</label>
                 <input type="date" value={editForm.data_instalacao || ""} onChange={e => setEditForm(f => ({ ...f, data_instalacao: e.target.value }))} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>🔖 Ordem de serviço (OS)</label>
+                <label style={labelStyle}>ðŸ”– Ordem de serviÃ§o (OS)</label>
                 <input value={editForm.os || ""} onChange={e => setEditForm(f => ({ ...f, os: e.target.value }))} placeholder="ex: 1-1688493179641" style={{ ...inputStyle, fontFamily: "monospace", borderColor: "#ddd6fe" }} />
               </div>
               <div>
-                <label style={labelStyle}>🏷️ Custcode</label>
+                <label style={labelStyle}>ðŸ·ï¸ Custcode</label>
                 <input value={editForm.custcode || ""} onChange={e => setEditForm(f => ({ ...f, custcode: e.target.value }))} placeholder="ex: 1.347330633" style={{ ...inputStyle, fontFamily: "monospace", borderColor: "#bfdbfe" }} />
               </div>
             </div>
-            <p style={{ color: "#9ca3af", fontSize: 11, margin: "14px 0 0", lineHeight: 1.5 }}>💡 A <b>OS</b> é como a planilha de pagamento acha esse cliente. O <b>custcode</b> preenche sozinho quando você sobe a planilha na Atualização — aqui é só pra ajuste manual.</p>
+            <p style={{ color: "#9ca3af", fontSize: 11, margin: "14px 0 0", lineHeight: 1.5 }}>ðŸ’¡ A <b>OS</b> Ã© como a planilha de pagamento acha esse cliente. O <b>custcode</b> preenche sozinho quando vocÃª sobe a planilha na AtualizaÃ§Ã£o â€” aqui Ã© sÃ³ pra ajuste manual.</p>
             <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
               <button onClick={() => setEditCliente(null)} style={btnSecundario}>Cancelar</button>
-              <button onClick={salvarEdicaoCliente} disabled={salvandoEdit} style={{ ...btnPrimario, opacity: salvandoEdit ? 0.6 : 1 }}>{salvandoEdit ? "⏳ Salvando..." : "💾 Salvar alterações"}</button>
+              <button onClick={salvarEdicaoCliente} disabled={salvandoEdit} style={{ ...btnPrimario, opacity: salvandoEdit ? 0.6 : 1 }}>{salvandoEdit ? "â³ Salvando..." : "ðŸ’¾ Salvar alteraÃ§Ãµes"}</button>
             </div>
           </div>
         </div>
