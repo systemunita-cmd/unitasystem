@@ -263,6 +263,18 @@ export function usePermissao() {
             ligaSeAlgum("rh", "rh");
             ligaSeAlgum("cobranca", "cobranca");
 
+            // Compatibilidade com menus antigos:
+            // - Acesso ao Chatbot permite visualizar a área de conexões.
+            // - Criar/editar conexões continua dependendo de `conexoes`.
+            if (boolMap.chatbot_acessar === true) final.conexoes = true;
+
+            // Se qualquer permissão administrativa de usuário estiver marcada,
+            // mantém o booleano legado ativo para telas antigas.
+            if (boolMap.usuarios_gerenciar === true) {
+              final.usuarios_gerenciar = true;
+              final.filas = true;
+            }
+
             setPerfil("Atendente");      // 🔑 força perfil baixo
             setIsDono(false);             // 🔑 desativa checks de "isDono"
             setIsSuperAdmin(false);       // 🔑 desativa checks de "isSuperAdmin"

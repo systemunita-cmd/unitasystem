@@ -53,13 +53,16 @@ export type RetornoUseTemPermissao = {
   usuarioIdInterno: number | null;
   equipeId: number | null;
   filaId: number | null;
+  equipesAcesso: number[];
+  filasAcesso: number[];
+  canaisAcesso: number[];
   grupoId: number | null;
   grupoNome: string | null;
   mapa: MapaPermissoes;
-  tem: (slug: PermissaoSlug) => boolean;
-  escopo: (slug: PermissaoSlug) => ValorEscopo;
-  temAcesso: (slug: PermissaoSlug) => boolean;
-  filtroEscopo: (slug: PermissaoSlug) => FiltroEscopo;
+  tem: (slug: PermissaoSlug | string) => boolean;
+  escopo: (slug: PermissaoSlug | string) => ValorEscopo;
+  temAcesso: (slug: PermissaoSlug | string) => boolean;
+  filtroEscopo: (slug: PermissaoSlug | string) => FiltroEscopo;
   recarregar: () => Promise<void>;
 };
 
@@ -94,8 +97,10 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   if (b.conexoes) { on("conexoes.ver"); on("conexoes.crud"); }
   if (b.filas) on("cfg_filas.gerenciar", "all");
   if (b.usuarios_gerenciar) {
-    on("cfg_usuarios.ver", "all"); on("cfg_usuarios.crud", "all");
-    on("cfg_equipes.ver", "all"); on("cfg_equipes.crud", "all");
+    on("cfg_usuarios.ver", "all"); on("cfg_usuarios.criar", "all"); on("cfg_usuarios.editar", "all");
+    on("cfg_usuarios.excluir", "all"); on("cfg_usuarios.mudar_grupo"); on("cfg_usuarios.crud", "all");
+    on("cfg_equipes.ver", "all"); on("cfg_equipes.criar", "all"); on("cfg_equipes.editar", "all");
+    on("cfg_equipes.excluir", "all"); on("cfg_equipes.crud", "all");
   }
   if (b.grupos_permissao) { on("cfg_grupos.ver"); on("cfg_grupos.crud"); }
   if (b.configuracoes_workspace) on("cfg_geral.acessar");
@@ -105,7 +110,11 @@ function sintetizarSlugsDoBooleano(b: Record<string, boolean>): MapaPermissoes {
   // 🧩 MÓDULOS (checkbox de "Acessar o X" libera o módulo inteiro)
   if (b.crm_acessar) on("mod_crm.acessar", "all");
   if (b.telefonia_acessar) on("mod_telefonia.acessar", "all");
-  if (b.chatbot_acessar) on("mod_chatbot.acessar", "all");
+  if (b.chatbot_acessar) {
+    on("mod_chatbot.acessar", "all");
+    on("conexoes.ver");
+    on("atendimentos.acessar", b.chat_todos ? "all" : b.chat_proprio ? "own" : "team");
+  }
   // 💰 COBRANÇA — geral libera tudo; individuais liberam cada card.
   //    Cards: dashboard, negociacoes, planilha.
   const COBRANCA_ITENS = ["dashboard", "negociacoes", "planilha"];
@@ -211,6 +220,18 @@ function normalizarNome(nome: string): string {
     .toLowerCase();
 }
 
+function normalizarIds(valor: any): number[] {
+  if (!Array.isArray(valor)) return [];
+  const ids = valor
+    .map((v) => Number(v))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  return Array.from(new Set(ids));
+}
+
+function unirIds(...listas: any[]): number[] {
+  return Array.from(new Set(listas.flatMap((lista) => normalizarIds(lista))));
+}
+
 export function useTemPermissao(): RetornoUseTemPermissao {
   const [carregando, setCarregando] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -218,6 +239,9 @@ export function useTemPermissao(): RetornoUseTemPermissao {
   const [usuarioIdInterno, setUsuarioIdInterno] = useState<number | null>(null);
   const [equipeId, setEquipeId] = useState<number | null>(null);
   const [filaId, setFilaId] = useState<number | null>(null);
+  const [equipesAcesso, setEquipesAcesso] = useState<number[]>([]);
+  const [filasAcesso, setFilasAcesso] = useState<number[]>([]);
+  const [canaisAcesso, setCanaisAcesso] = useState<number[]>([]);
   const [grupoId, setGrupoId] = useState<number | null>(null);
   const [grupoNome, setGrupoNome] = useState<string | null>(null);
   const [adminGeral, setAdminGeral] = useState(false);
@@ -234,7 +258,8 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setUserId(null); setUserEmail(null); setUsuarioIdInterno(null);
-        setEquipeId(null); setFilaId(null); setGrupoId(null); setGrupoNome(null);
+        setEquipeId(null); setFilaId(null); setEquipesAcesso([]); setFilasAcesso([]); setCanaisAcesso([]);
+        setGrupoId(null); setGrupoNome(null);
         setAdminGeral(false); setMapa({}); setBoolMap({});
         setCarregando(false);
         return;
@@ -247,7 +272,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       let usu: any = null;
       const { data: porAuthId } = await supabase
         .from("usuarios")
-        .select("id, equipe_id, fila_id, grupo_id, ativo")
+        .select("id, equipe_id, fila_id, grupo_id, equipes_acesso, filas_acesso, canais_acesso, ativo")
         .eq("auth_user_id", user.id)
         .maybeSingle();
       usu = porAuthId;
@@ -256,7 +281,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       if (!usu && user.email) {
         const { data: porEmail } = await supabase
           .from("usuarios")
-          .select("id, equipe_id, fila_id, grupo_id, ativo")
+          .select("id, equipe_id, fila_id, grupo_id, equipes_acesso, filas_acesso, canais_acesso, ativo")
           .ilike("email", user.email)
           .maybeSingle();
         usu = porEmail;
@@ -264,7 +289,8 @@ export function useTemPermissao(): RetornoUseTemPermissao {
 
       if (!usu) {
         // Usuário ainda não cadastrado na tabela `usuarios` (super-admin bypassa por código)
-        setUsuarioIdInterno(null); setEquipeId(null); setFilaId(null); setGrupoId(null);
+        setUsuarioIdInterno(null); setEquipeId(null); setFilaId(null); setEquipesAcesso([]); setFilasAcesso([]); setCanaisAcesso([]);
+        setGrupoId(null);
         setGrupoNome(null); setAdminGeral(false); setMapa({}); setBoolMap({});
         setCarregando(false);
         return;
@@ -277,6 +303,9 @@ export function useTemPermissao(): RetornoUseTemPermissao {
 
       // Sem grupo atribuído → mapa vazio (super-admin bypassa por código)
       if (!usu.grupo_id) {
+        setEquipesAcesso(unirIds(usu.equipes_acesso, usu.equipe_id ? [usu.equipe_id] : []));
+        setFilasAcesso(unirIds(usu.filas_acesso, usu.fila_id ? [usu.fila_id] : []));
+        setCanaisAcesso(normalizarIds(usu.canais_acesso));
         setGrupoNome(null); setAdminGeral(false); setMapa({}); setBoolMap({});
         setCarregando(false);
         return;
@@ -285,7 +314,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       // 2️⃣ Busca o grupo (nome + MAPA BOOLEANO da tela de Configurações)
       //    e as linhas explícitas de slug (sistema novo), em paralelo
       const [resGrupo, resPerm] = await Promise.all([
-        supabase.from("grupos_permissao").select("nome, permissoes").eq("id", usu.grupo_id).maybeSingle(),
+        supabase.from("grupos_permissao").select("nome, permissoes, canais_acesso").eq("id", usu.grupo_id).maybeSingle(),
         supabase.from("grupo_permissoes").select("permissao_slug, valor").eq("grupo_id", usu.grupo_id),
       ]);
 
@@ -300,6 +329,9 @@ export function useTemPermissao(): RetornoUseTemPermissao {
       // 3️⃣ Monta o mapa: tradução do booleano + linhas explícitas POR CIMA
       const booleano = (resGrupo.data?.permissoes || {}) as Record<string, boolean>;
       setBoolMap(booleano);
+      setEquipesAcesso(unirIds(usu.equipes_acesso, usu.equipe_id ? [usu.equipe_id] : []));
+      setFilasAcesso(unirIds(usu.filas_acesso, usu.fila_id ? [usu.fila_id] : []));
+      setCanaisAcesso(unirIds(usu.canais_acesso, resGrupo.data?.canais_acesso));
 
       const sintetizado = sintetizarSlugsDoBooleano(booleano);
       const novoMapa: MapaPermissoes = { ...sintetizado };
@@ -346,7 +378,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
   const tem = useCallback(
     (slug: PermissaoSlug) => {
       if (superAdmin) return true;
-      if (temPermissaoToggle(mapa, slug, userEmail)) return true;
+      if (temPermissaoToggle(mapa, slug as PermissaoSlug, userEmail)) return true;
       return escopoPorPrefixo(slug as string, boolMap) !== null;
     },
     [mapa, boolMap, userEmail, superAdmin]
@@ -355,7 +387,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
   const escopo = useCallback(
     (slug: PermissaoSlug): ValorEscopo => {
       if (superAdmin) return "all" as ValorEscopo;
-      const v = escopoPermissao(mapa, slug, userEmail);
+      const v = escopoPermissao(mapa, slug as PermissaoSlug, userEmail);
       if (v && v !== ("none" as ValorEscopo)) return v;
       return escopoPorPrefixo(slug as string, boolMap) ?? v;
     },
@@ -365,7 +397,7 @@ export function useTemPermissao(): RetornoUseTemPermissao {
   const temAcesso = useCallback(
     (slug: PermissaoSlug) => {
       if (superAdmin) return true;
-      if (temAcessoEscopo(mapa, slug, userEmail)) return true;
+      if (temAcessoEscopo(mapa, slug as PermissaoSlug, userEmail)) return true;
       return escopoPorPrefixo(slug as string, boolMap) !== null;
     },
     [mapa, boolMap, userEmail, superAdmin]
@@ -389,6 +421,9 @@ export function useTemPermissao(): RetornoUseTemPermissao {
     usuarioIdInterno,
     equipeId,
     filaId,
+    equipesAcesso,
+    filasAcesso,
+    canaisAcesso,
     grupoId,
     grupoNome,
     mapa,
