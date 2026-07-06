@@ -2068,14 +2068,34 @@ export default function Vendas() {
           <option value="todos">Status: Todos</option>
           {statusOpcoesFiltro.map(s => <option key={s} value={s}>{statusMeta(s).emoji} {s}</option>)}
         </select>
-        <select value={filtroSuporte} onChange={e => setFiltroSuporte(e.target.value as any)}
-          style={{ ...inputStyle, maxWidth: 220, borderColor: filtroSuporte !== "todos" ? "#fbbf24" : "#e5e7eb", background: filtroSuporte !== "todos" ? "#fffbeb" : "#ffffff", fontWeight: filtroSuporte !== "todos" ? 700 : 400 }}>
-          <option value="todos">Suporte: Todos</option>
-          <option value="ativo">Suporte ativo</option>
-          <option value="pendente">Suporte pendente</option>
-          <option value="finalizado">Suporte finalizado</option>
-          <option value="sem">Sem suporte</option>
-        </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          {([
+            { k: "todos", l: "Suporte: Todos", cor: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" },
+            { k: "ativo", l: "Ativo", cor: SUPORTE_STATUS_META.ativo.cor, bg: SUPORTE_STATUS_META.ativo.bg, border: SUPORTE_STATUS_META.ativo.border },
+            { k: "pendente", l: "Pendente", cor: SUPORTE_STATUS_META.pendente.cor, bg: SUPORTE_STATUS_META.pendente.bg, border: SUPORTE_STATUS_META.pendente.border },
+            { k: "finalizado", l: "Finalizado", cor: SUPORTE_STATUS_META.finalizado.cor, bg: SUPORTE_STATUS_META.finalizado.bg, border: SUPORTE_STATUS_META.finalizado.border },
+            { k: "sem", l: "Sem suporte", cor: SUPORTE_STATUS_META.sem.cor, bg: SUPORTE_STATUS_META.sem.bg, border: SUPORTE_STATUS_META.sem.border },
+          ] as { k: "todos" | "ativo" | "pendente" | "finalizado" | "sem"; l: string; cor: string; bg: string; border: string }[]).map(o => {
+            const at = filtroSuporte === o.k;
+            return (
+              <button key={o.k} onClick={() => setFiltroSuporte(o.k)}
+                style={{
+                  background: at ? o.cor : o.bg,
+                  color: at ? "#ffffff" : o.cor,
+                  border: `1px solid ${at ? o.cor : o.border}`,
+                  borderRadius: 20,
+                  padding: "7px 13px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  boxShadow: at ? `0 4px 10px ${o.cor}30` : "none",
+                }}>
+                {o.l}
+              </button>
+            );
+          })}
+        </div>
         {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           {([
@@ -2179,15 +2199,26 @@ export default function Vendas() {
                         </div>
                       )
                       : c.especial === "suporte"
-                        ? (
-                          <select value={filtrosColuna["__suporte"] ?? ""} onChange={e => setarFiltroColuna("__suporte", e.target.value)} style={filtroInputStyle}>
-                            <option value="">Todos</option>
-                            <option value="ativo">Ativo</option>
-                            <option value="pendente">Pendente</option>
-                            <option value="finalizado">Finalizado</option>
-                            <option value="sem">Sem suporte</option>
-                          </select>
-                        )
+                        ? (() => {
+                          const valSup = filtrosColuna["__suporte"] ?? "";
+                          const metaSup = valSup ? SUPORTE_STATUS_META[valSup] : { cor: "#2563eb", bg: "#eff6ff", border: "#bfdbfe" };
+                          return (
+                            <select value={valSup} onChange={e => setarFiltroColuna("__suporte", e.target.value)}
+                              style={{
+                                ...filtroInputStyle,
+                                background: metaSup.bg,
+                                color: metaSup.cor,
+                                borderColor: metaSup.border,
+                                fontWeight: 800,
+                              }}>
+                              <option value="">Todos</option>
+                              <option value="ativo">Ativo</option>
+                              <option value="pendente">Pendente</option>
+                              <option value="finalizado">Finalizado</option>
+                              <option value="sem">Sem suporte</option>
+                            </select>
+                          );
+                        })()
                       : renderFiltroColuna(c)}
                   </th>
                 ))}
