@@ -30,7 +30,8 @@ function ChatbotInner() {
   const perm = useTemPermissao();
   const novoVerChat        = perm.temAcesso("atendimentos.acessar");
   const novoVerDashboard   = perm.tem("dashboard.ver");
-  const novoVerConexoes    = perm.tem("conexoes.ver");
+  const temCanaisLiberados = Array.isArray((perm as any).canaisAcesso) && (perm as any).canaisAcesso.length > 0;
+  const novoVerConexoes    = perm.tem("conexoes.ver") || temCanaisLiberados;
   const novoVerTemplates   = perm.tem("templates.ver");
   const novoVerDisparos    = perm.temAcesso("disparos.acessar") || perm.tem("disparos.webjs") || perm.tem("disparos.waba");
   const novoVerFluxos      = perm.tem("fluxos.acessar");

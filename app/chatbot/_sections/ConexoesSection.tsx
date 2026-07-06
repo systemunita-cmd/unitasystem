@@ -57,7 +57,10 @@ type Equipe = { id: number; nome: string; ativo?: boolean };
 export function ConexoesSection() {
   // 🛡️ Sistema novo de permissões
   const perm = useTemPermissao();
-  const podeAcessar = perm.superAdmin || perm.tem("conexoes.ver" as any);
+  const canaisPermitidos = Array.isArray((perm as any).canaisAcesso)
+    ? ((perm as any).canaisAcesso as number[]).map(Number).filter(Boolean)
+    : [];
+  const podeAcessar = perm.superAdmin || perm.tem("conexoes.ver" as any) || canaisPermitidos.length > 0;
 
   // 🔒 Trava por equipe (Diretor/escopo team)
   const ehAdminGeralCon = perm.superAdmin || perm.grupoNome === "Administração Geral";
@@ -494,13 +497,20 @@ export function ConexoesSection() {
 
   const filasFiltradas = filasBanco.filter(f => !form.equipeId || String(f.equipe_id || "") === form.equipeId);
 
-  // 🔒 Lista de canais visíveis: restrito vê só os da equipe dele (+ sem equipe)
-  const conexoesVisiveis = travadoEquipe
-    ? conexoes.filter(c => {
-        const eqId = filasBanco.find(f => f.nome === c.fila)?.equipe_id;
-        return !eqId || String(eqId) === equipeForcadaCon;
-      })
-    : conexoes;
+  // 🔒 Lista de canais visíveis:
+  // 1) Admin vê tudo.
+  // 2) Se o grupo/usuário marcou canais específicos, esses canais entram direto.
+  // 3) Se não marcou canal específico, usuário restrito cai na regra da equipe.
+  const conexoesVisiveis = perm.superAdmin || ehAdminGeralCon
+    ? conexoes
+    : canaisPermitidos.length > 0
+      ? conexoes.filter(c => canaisPermitidos.includes(Number(c.id)))
+      : travadoEquipe
+        ? conexoes.filter(c => {
+            const eqId = filasBanco.find(f => f.nome === c.fila)?.equipe_id;
+            return !eqId || String(eqId) === equipeForcadaCon;
+          })
+        : conexoes;
 
   const fecharModalNovoCanal = () => { setShowModalNovoCanal(false); setForm(novoForm()); setWabaTeste(null); setEditandoId(null); setApiKeyTocada(false); setTokenTocado(false); setResultadoMeta(null); setPagesDisponiveis([]); setPagesSelecionadas(new Set()); };
 
