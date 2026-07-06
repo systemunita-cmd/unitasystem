@@ -35,6 +35,17 @@ type Proposta = {
   created_at: string;
 };
 
+type ChamadoSuporte = {
+  id: number;
+  proposta_id: number;
+  observacoes?: string | null;
+  solucao?: string | null;
+  pendencia?: string | null;
+  status?: string | null;
+  criado_por?: string | null;
+  created_at?: string | null;
+};
+
 // 🔍 Busca de cliente: nome, telefone, plano, CPF (com ou sem pontos) e OS do CRM
 const buscaMatch = (p: Proposta, termo: string): boolean => {
   const t = termo.toLowerCase();
@@ -44,6 +55,8 @@ const buscaMatch = (p: Proposta, termo: string): boolean => {
   const custcode = String(p.dados_customizados?.custcode || "").toLowerCase();
   return (p.nome || "").toLowerCase().includes(t)
     || (p.telefone1 || "").includes(termo)
+    || (p.telefone2 || "").includes(termo)
+    || (p.telefone3 || "").includes(termo)
     || (p.plano || "").toLowerCase().includes(t)
     || String(p.cpf || "").toLowerCase().includes(t)
     || (dig.length > 0 && cpfDig.includes(dig))
@@ -179,6 +192,57 @@ const normalizarTelefone = (t: string | null | undefined): string => {
   return String(t).replace(/\D/g, "");
 };
 
+const normalizarTxt = (v: any): string =>
+  String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+
+const valorAtivoLike = (v: any): boolean => {
+  if (v === true) return true;
+  if (v === false || v === null || v === undefined) return false;
+  if (typeof v === "number") return v > 0;
+  const s = normalizarTxt(v);
+  if (!s) return false;
+  if (["NAO", "N", "NO", "FALSE", "FALSO", "0", "SEM", "SEM DESCONTO", "INATIVO"].includes(s)) return false;
+  if (["SIM", "S", "YES", "TRUE", "VERDADEIRO", "1", "ATIVO", "COM DESCONTO"].includes(s)) return true;
+  const numero = Number(s.replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", "."));
+  if (!Number.isNaN(numero) && numero > 0) return true;
+  return /DESCONTO|BONIFICACAO|PROMO|PROMOCIONAL/.test(s);
+};
+
+const SUPORTE_CRM_META: Record<"ativo" | "pendente" | "finalizado" | "sem", { label: string; color: string; bg: string; border: string }> = {
+  ativo: { label: "Suporte ativo", color: "#d97706", bg: "#fffbeb", border: "#fbbf24" },
+  pendente: { label: "Suporte pendente", color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd" },
+  finalizado: { label: "Suporte finalizado", color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
+  sem: { label: "Sem suporte", color: "#64748b", bg: "#f8fafc", border: "#cbd5e1" },
+};
+
+const classificarSuporteCrm = (status?: string | null): keyof typeof SUPORTE_CRM_META => {
+  const s = normalizarTxt(status);
+  if (!s) return "sem";
+  if (/RESOLVID|FINALIZ|FECHAD|CONCLUID/.test(s)) return "finalizado";
+  if (/PENDENT|AGUARD|ABERT/.test(s)) return "pendente";
+  return "ativo";
+};
+
+const descontoDaProposta = (p: Proposta) => {
+  const dc = p.dados_customizados || {};
+  const candidatos = [
+    (p as any).desconto,
+    (p as any).desconto_ativo,
+    (p as any).tem_desconto,
+    (p as any).possui_desconto,
+    dc.desconto,
+    dc.desconto_ativo,
+    dc.tem_desconto,
+    dc.possui_desconto,
+    dc.desconto_aplicado,
+    dc.com_desconto,
+    dc.valor_desconto,
+  ];
+  const bruto = candidatos.find(v => v !== null && v !== undefined && String(v).trim() !== "");
+  const ativo = candidatos.some(valorAtivoLike);
+  return { ativo, bruto, label: ativo ? "Desconto ativo" : "Sem desconto" };
+};
+
 const substituirVars = (texto: string, vars: Record<string, string>): string =>
   texto.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
 
@@ -244,6 +308,7 @@ export default function CobrancaPage() {
   const [canais, setCanais] = useState<Canal[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
+  const [chamadosSuporte, setChamadosSuporte] = useState<ChamadoSuporte[]>([]);
 
   // 💬 ATENDIMENTOS DA COBRANÇA — leads que RESPONDERAM os disparos
   const [respostasCob, setRespostasCob] = useState<any[]>([]);
@@ -252,6 +317,33 @@ export default function CobrancaPage() {
   const [msgsConv, setMsgsConv] = useState<any[]>([]);
 
   const so8 = (t: any) => String(t || "").replace(/\D/g, "").slice(-8);
+  const so10 = (t: any) => String(t || "").replace(/\D/g, "").slice(-10);
+
+  const chamadosSuportePorProposta = useMemo(() => {
+    const m = new Map<number, ChamadoSuporte[]>();
+    for (const c of chamadosSuporte) {
+      if (!c.proposta_id) continue;
+      const arr = m.get(c.proposta_id) || [];
+      arr.push(c);
+      m.set(c.proposta_id, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    }
+    return m;
+  }, [chamadosSuporte]);
+
+  const suporteDaProposta = (p: Proposta) => {
+    const chamados = chamadosSuportePorProposta.get(p.id) || [];
+    const ultimo = chamados[0];
+    const dc = p.dados_customizados || {};
+    let tipo: keyof typeof SUPORTE_CRM_META = ultimo
+      ? classificarSuporteCrm(ultimo.status)
+      : classificarSuporteCrm((p as any).suporte_status ?? (p as any).status_suporte ?? (p as any).suporte ?? dc.suporte_status ?? dc.status_suporte ?? dc.suporte ?? dc.situacao_suporte);
+    if (!ultimo && tipo === "sem" && (valorAtivoLike((p as any).suporte_ativo) || valorAtivoLike(dc.suporte_ativo) || valorAtivoLike(dc.tem_suporte))) tipo = "ativo";
+    const meta = SUPORTE_CRM_META[tipo];
+    return { chamados, ultimo, tipo, meta, label: meta.label };
+  };
 
   const fetchRespostasCobranca = async () => {
     setCarregandoResp(true);
@@ -265,20 +357,54 @@ export default function CobrancaPage() {
       // 2. mapa telefone(8 últimos dígitos) -> proposta (clientes da cobrança)
       const mapaTel = new Map<string, Proposta>();
       for (const pr of propostas) {
-        if ((pr.status_venda || "").toUpperCase() !== "INSTALADA") continue;
+        if (!/INSTALAD/.test(normalizarTxt(pr.status_venda))) continue;
         for (const t of [pr.telefone1, pr.telefone2, pr.telefone3]) {
           const k = so8(t);
+          const k10 = so10(t);
           if (k.length === 8 && !mapaTel.has(k)) mapaTel.set(k, pr);
+          if (k10.length >= 10 && !mapaTel.has(k10)) mapaTel.set(k10, pr);
         }
       }
       // 3. atendimentos mexidos depois do disparo, casados com cliente da cobrança
-      const { data: ats } = await supabase.from("atendimentos").select("*")
-        .gte("updated_at", desde)
-        .order("updated_at", { ascending: false })
-        .limit(1000);
-      const lista = (ats || [])
-        .map((a: any) => ({ a, cli: mapaTel.get(so8(a.numero)) }))
-        .filter((x: any) => !!x.cli);
+      const numeroAtendimento = (a: any) =>
+        a?.numero ?? a?.telefone ?? a?.contato_numero ?? a?.cliente_telefone ?? a?.whatsapp ?? a?.remote_jid ?? a?.jid ?? "";
+      const acharCliente = (numero: any) => mapaTel.get(so10(numero)) || mapaTel.get(so8(numero));
+      const isEntrada = (m: any) => {
+        if (m?.from_me === true || m?.fromMe === true || m?.enviado_por_mim === true) return false;
+        const dir = normalizarTxt(m?.de ?? m?.direcao ?? m?.direction ?? m?.tipo ?? m?.origem ?? m?.status);
+        if (/OUT|SAIDA|ENVIAD|SENT|DISPAR/.test(dir)) return false;
+        if (/IN|ENTRAD|RECEB|CLIENTE|REPLY|RESPOST/.test(dir)) return true;
+        return m?.from_me === false || m?.fromMe === false || m?.enviado_por_mim === false;
+      };
+      const [{ data: ats }, { data: msgs }] = await Promise.all([
+        supabase.from("atendimentos").select("*")
+          .or(`updated_at.gte.${desde},created_at.gte.${desde}`)
+          .order("updated_at", { ascending: false })
+          .limit(2000),
+        supabase.from("mensagens").select("*")
+          .gte("created_at", desde)
+          .order("created_at", { ascending: false })
+          .limit(3000),
+      ]);
+      const porCliente = new Map<number, any>();
+      for (const a of (ats || [])) {
+        const cli = acharCliente(numeroAtendimento(a));
+        if (!cli) continue;
+        porCliente.set(cli.id, { a, cli, origem: "atendimento" });
+      }
+      for (const m of (msgs || [])) {
+        if (!isEntrada(m)) continue;
+        const numero = m?.numero ?? m?.telefone ?? m?.remote_jid ?? m?.jid ?? m?.from ?? m?.contato_numero;
+        const cli = acharCliente(numero);
+        if (!cli || porCliente.has(cli.id)) continue;
+        porCliente.set(cli.id, {
+          a: { ...m, numero, nome: m?.nome || m?.push_name || cli.nome, updated_at: m?.created_at, status: "respondeu" },
+          cli,
+          origem: "mensagem",
+        });
+      }
+      const lista = Array.from(porCliente.values())
+        .sort((x: any, y: any) => String(y.a?.updated_at || y.a?.created_at || "").localeCompare(String(x.a?.updated_at || x.a?.created_at || "")));
       setRespostasCob(lista);
     } catch (e) {
       console.error("[Cobrança] respostas:", e);
@@ -463,6 +589,7 @@ export default function CobrancaPage() {
     const ch = supabase.channel("cobranca_rt_unita")
       .on("postgres_changes", { event: "*", schema: "public", table: "proposta" }, () => fetchPropostas())
       .on("postgres_changes", { event: "*", schema: "public", table: "faturas_status" }, () => fetchStatusFaturas())
+      .on("postgres_changes", { event: "*", schema: "public", table: "suporte_chamados" }, () => fetchChamadosSuporte())
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -477,6 +604,7 @@ export default function CobrancaPage() {
       fetchCanais(fts),
       fetchTemplates(fts),
       fetchCampanhas(fts),
+      fetchChamadosSuporte(fts),
     ]);
     setTabelasFaltando(fts);
     setLoading(false);
@@ -525,6 +653,23 @@ export default function CobrancaPage() {
     }
     for (const arr of h.values()) arr.sort((a, b) => (a.numero_fatura || 0) - (b.numero_fatura || 0));
     setHistPlanilha(h);
+  }
+
+  async function fetchChamadosSuporte(faltando?: string[]) {
+    try {
+      const { data, error } = await supabase.from("suporte_chamados")
+        .select("id, proposta_id, observacoes, solucao, pendencia, status, criado_por, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      if (error) {
+        if ((error as any)?.code === "PGRST205") faltando?.push("suporte_chamados");
+        setChamadosSuporte([]);
+        return;
+      }
+      setChamadosSuporte((data || []) as ChamadoSuporte[]);
+    } catch {
+      setChamadosSuporte([]);
+    }
   }
 
   async function fetchPropostas(faltando?: string[]) {
@@ -758,7 +903,25 @@ export default function CobrancaPage() {
     for (const f of todasFaturas) {
       const id = f.proposta.id;
       let c = map.get(id);
-      if (!c) { c = { proposta: f.proposta, faturas: [], totalAberto: 0, atrasadas: 0, atrasoMax: 0, pagas: 0, emAberto: 0, aVencer: 0, proxVenc: null as Date | null, proxDias: null as number | null, temFraude: false, temChurn: false }; map.set(id, c); }
+      if (!c) {
+        c = {
+          proposta: f.proposta,
+          faturas: [],
+          totalAberto: 0,
+          atrasadas: 0,
+          atrasoMax: 0,
+          pagas: 0,
+          emAberto: 0,
+          aVencer: 0,
+          proxVenc: null as Date | null,
+          proxDias: null as number | null,
+          temFraude: false,
+          temChurn: false,
+          suporte: suporteDaProposta(f.proposta),
+          desconto: descontoDaProposta(f.proposta),
+        };
+        map.set(id, c);
+      }
       c.faturas.push(f);
       const meta = STATUS_META[f.status_visual];
       if (meta?.recebido) c.pagas++;
@@ -780,7 +943,7 @@ export default function CobrancaPage() {
       if (b.atrasoMax !== a.atrasoMax) return b.atrasoMax - a.atrasoMax;
       return b.totalAberto - a.totalAberto;
     });
-  }, [todasFaturas]);
+  }, [todasFaturas, chamadosSuportePorProposta]);
   const qtdInad = useMemo(() => clientes.filter(c => c.situacao === "inadimplente").length, [clientes]);
   const qtdEmDia = useMemo(() => clientes.length - qtdInad, [clientes, qtdInad]);
   const passaFiltroInstalacao = (c: any): boolean => {
@@ -917,9 +1080,14 @@ export default function CobrancaPage() {
           Object.assign(row, {
             "Nome": c.proposta.nome || "",
             "CPF": c.proposta.cpf || "",
-            "Telefone": c.proposta.telefone1 || "",
+            "Contato 1": c.proposta.telefone1 || "",
+            "Contato 2": c.proposta.telefone2 || "",
+            "Contato 3": c.proposta.telefone3 || "",
             "Plano": c.proposta.plano || "",
             "Status venda": c.proposta.status_venda || "",
+            "Suporte": (c.suporte || suporteDaProposta(c.proposta)).meta.label,
+            "Desconto ativo": (c.desconto || descontoDaProposta(c.proposta)).ativo ? "Sim" : "Nao",
+            "Desconto valor/info": (c.desconto || descontoDaProposta(c.proposta)).bruto || "",
             "Data instalacao": dataInstalacaoBR(c.proposta.data_instalacao),
             "Mes instalacao": mesInstalacaoLabel(c.proposta.data_instalacao),
             "OS": c.proposta.dados_customizados?.os || "",
@@ -957,9 +1125,14 @@ export default function CobrancaPage() {
             Object.assign(row, {
               "Nome": c.proposta.nome || "",
               "CPF": c.proposta.cpf || "",
-              "Telefone": c.proposta.telefone1 || "",
+              "Contato 1": c.proposta.telefone1 || "",
+              "Contato 2": c.proposta.telefone2 || "",
+              "Contato 3": c.proposta.telefone3 || "",
               "Plano": c.proposta.plano || "",
               "Status venda": c.proposta.status_venda || "",
+              "Suporte": (c.suporte || suporteDaProposta(c.proposta)).meta.label,
+              "Desconto ativo": (c.desconto || descontoDaProposta(c.proposta)).ativo ? "Sim" : "Nao",
+              "Desconto valor/info": (c.desconto || descontoDaProposta(c.proposta)).bruto || "",
               "Data instalacao": dataInstalacaoBR(c.proposta.data_instalacao),
               "Mes instalacao": mesInstalacaoLabel(c.proposta.data_instalacao),
               "OS": c.proposta.dados_customizados?.os || "",
@@ -1865,7 +2038,7 @@ export default function CobrancaPage() {
                                 onChange={selecionarTodosClientesPagina} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#2563eb" }} />
                             </th>
                           )}
-                          {["Cliente", "Fraude", "Churn", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
+                          {["Cliente", "Fraude", "Churn", "Suporte", "Desconto", "OS", "Custcode", "Situação", "Faturas", "Total em aberto", "Próximo vencimento", ""].map(h => (
                             <th key={h} style={{ padding: "11px 14px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                           ))}
                         </tr>
@@ -1891,6 +2064,8 @@ export default function CobrancaPage() {
                               </select>
                             </th>
                           ))}
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}></th>
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}></th>
                           {/* filtros OS e Custcode */}
                           <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
                             <input value={colOs} onChange={e => setColOs(e.target.value)} placeholder="OS"
@@ -1911,6 +2086,8 @@ export default function CobrancaPage() {
                       <tbody>
                         {clientesPagina.map((c, i) => {
                           const inad = c.situacao === "inadimplente";
+                          const sup = c.suporte || suporteDaProposta(c.proposta);
+                          const desc = c.desconto || descontoDaProposta(c.proposta);
                           return (
                             <tr key={c.proposta.id} onClick={() => setModalCliente(c.proposta.id)}
                               style={{ borderTop: "1px solid #f3f4f6", background: clientesSel.has(c.proposta.id) ? "#eff6ff" : (i % 2 === 0 ? "#ffffff" : "#fafbfc"), cursor: "pointer" }}
@@ -1925,6 +2102,7 @@ export default function CobrancaPage() {
                               <td style={{ padding: "12px 14px", maxWidth: 240, borderLeft: `3px solid ${inad ? "#dc2626" : "#16a34a"}` }}>
                                 <div style={{ color: "#1f2937", fontSize: 13.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.proposta.nome || "—"}</div>
                                 <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>{c.proposta.telefone1 || "—"} · {c.proposta.plano || "—"}</div>
+                                <div style={{ color: "#9ca3af", fontSize: 11, fontFamily: "monospace" }}>Contato 2: {c.proposta.telefone2 || "—"}</div>
                               </td>
                               {/* coluna Fraude */}
                               <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
@@ -1937,6 +2115,16 @@ export default function CobrancaPage() {
                                 {c.temChurn
                                   ? <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>
                                   : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                              </td>
+                              <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                <span style={{ background: sup.meta.bg, color: sup.meta.color, border: `1px solid ${sup.meta.border}`, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>
+                                  {sup.meta.label}
+                                </span>
+                              </td>
+                              <td style={{ padding: "12px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                <span style={{ background: desc.ativo ? "#f0fdf4" : "#f8fafc", color: desc.ativo ? "#16a34a" : "#64748b", border: `1px solid ${desc.ativo ? "#86efac" : "#cbd5e1"}`, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>
+                                  {desc.ativo ? "Desconto ativo" : "Sem desconto"}
+                                </span>
                               </td>
                               <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                                 {c.proposta.dados_customizados?.os
@@ -2600,6 +2788,8 @@ export default function CobrancaPage() {
           return dt.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric" });
         };
         const precoce = faturasCli.some((f: Fatura) => f.codigo_status === "03" || f.codigo_status === "04");
+        const sup = c.suporte || suporteDaProposta(c.proposta);
+        const desc = c.desconto || descontoDaProposta(c.proposta);
         const selecionarTodasDoModal = () => selecionarTodasFat(faturasCli);
         return (
           <div onClick={() => setModalCliente(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: isMobile ? 8 : 24 }}>
@@ -2612,12 +2802,15 @@ export default function CobrancaPage() {
                     {c.temFraude && <span style={{ background: "#fef2f2", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>FRAUDE</span>}
                     {c.temChurn && <span style={{ background: "#fff7ed", color: "#c2410c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>CHURN</span>}
                     {precoce && <span style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>⚠️ INADIMPLÊNCIA PRECOCE</span>}
+                    <span style={{ background: sup.meta.bg, border: `1px solid ${sup.meta.border}`, color: sup.meta.color, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>{sup.meta.label}</span>
+                    <span style={{ background: desc.ativo ? "#f0fdf4" : "#f8fafc", border: `1px solid ${desc.ativo ? "#86efac" : "#cbd5e1"}`, color: desc.ativo ? "#16a34a" : "#64748b", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999 }}>{desc.ativo ? "Desconto ativo" : "Sem desconto"}</span>
                   </div>
                   <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12 }}>
                     <span style={{ color: "#6b7280" }}>OS: <b style={{ fontFamily: "monospace", color: "#7c3aed" }}>{c.proposta.dados_customizados?.os || "—"}</b></span>
                     <span style={{ color: "#6b7280" }}>Custcode: <b style={{ fontFamily: "monospace", color: "#2563eb" }}>{c.proposta.dados_customizados?.custcode || "—"}</b></span>
                     <span style={{ color: "#6b7280" }}>Plano: <b style={{ color: "#374151" }}>{c.proposta.plano || "—"}</b></span>
-                    <span style={{ color: "#6b7280" }}>Tel: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone1 || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Contato 1: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone1 || "—"}</b></span>
+                    <span style={{ color: "#6b7280" }}>Contato 2: <b style={{ fontFamily: "monospace", color: "#374151" }}>{c.proposta.telefone2 || "—"}</b></span>
                   </div>
                 </div>
                 <button onClick={() => setModalCliente(null)} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 20, color: "#9ca3af" }}>✕</button>
