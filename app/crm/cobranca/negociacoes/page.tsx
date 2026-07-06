@@ -790,6 +790,49 @@ export default function CobrancaPage() {
       return isNaN(d.getTime()) ? null : d;
     };
 
+    const parseDataSegura = (v: any): Date | null => {
+      if (!v) return null;
+      const anoValido = (ano: number) => ano >= 2020 && ano <= hoje.getFullYear() + 2;
+      const mk = (ano: number, mes: number, dia = 1): Date | null => {
+        if (!anoValido(ano) || mes < 0 || mes > 11 || dia < 1 || dia > 31) return null;
+        const d = new Date(ano, mes, dia);
+        return d.getFullYear() === ano && d.getMonth() === mes && d.getDate() === dia ? d : null;
+      };
+      if (v instanceof Date && !isNaN(v.getTime())) return mk(v.getFullYear(), v.getMonth(), v.getDate());
+      const s = String(v).trim();
+
+      let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return mk(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
+      m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+      if (m) {
+        let ano = Number(m[3]);
+        if (ano < 100) ano += 2000;
+        return mk(ano, Number(m[2]) - 1, Number(m[1]));
+      }
+
+      m = s.match(/^(\d{1,2})[\/\-.](\d{4})$/);
+      if (m) return mk(Number(m[2]), Number(m[1]) - 1, 1);
+
+      const MESES_SEGURO: Record<string, number> = { jan: 0, fev: 1, mar: 2, abr: 3, mai: 4, jun: 5, jul: 6, ago: 7, set: 8, out: 9, nov: 10, dez: 11 };
+      m = s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/^([a-z]{3,})[\/\-\s.]+(\d{2,4})$/);
+      if (m && m[1].slice(0, 3) in MESES_SEGURO) {
+        let ano = Number(m[2]);
+        if (ano < 100) ano += 2000;
+        return mk(ano, MESES_SEGURO[m[1].slice(0, 3)], 1);
+      }
+
+      if (/^\d+(\.\d+)?$/.test(s)) {
+        const serial = Number(s);
+        if (serial > 30000 && serial < 60000) {
+          const base = new Date(Date.UTC(1899, 11, 30));
+          const d = new Date(base.getTime() + serial * 86400000);
+          return mk(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+        }
+      }
+      return null;
+    };
+
     for (const p of instalados) {
       const hist = histPlanilha.get(p.id) || [];
       // 1) indexa as faturas REAIS da planilha por numero_fatura
@@ -806,9 +849,9 @@ export default function CobrancaPage() {
       let mesGrossDate: Date | null = null;
       const diasVenc: number[] = [];
       for (const r of hist) {
-        const mg = parseDataBR(r.mes_gross);
+        const mg = parseDataSegura(r.mes_gross);
         if (mg && !mesGrossDate) mesGrossDate = mg;
-        const dv = parseDataBR(r.data_vencimento);
+        const dv = parseDataSegura(r.data_vencimento);
         if (dv) diasVenc.push(dv.getDate());
       }
       // dia de vencimento = o mais comum da planilha; fallback no cadastro do CRM; senão 10
@@ -823,7 +866,7 @@ export default function CobrancaPage() {
       // Cliente sem planilha também precisa aparecer na cobrança:
       // usa o mês da instalação do CRM como mês gross inicial.
       if (!mesGrossDate) {
-        const dataInst = parseDataBR(p.data_instalacao);
+        const dataInst = parseDataSegura(p.data_instalacao);
         if (dataInst) mesGrossDate = new Date(dataInst.getFullYear(), dataInst.getMonth(), 1);
       }
 
@@ -834,7 +877,7 @@ export default function CobrancaPage() {
       for (let n = 1; n <= CICLO; n++) {
         const r = porNum.get(n);
         // data de vencimento da fatura N
-        let dv: Date | null = r ? parseDataBR(r.data_vencimento) : null;
+        let dv: Date | null = r ? parseDataSegura(r.data_vencimento) : null;
         if (!dv) dv = new Date(mesGrossDate.getFullYear(), mesGrossDate.getMonth() + n, diaVenc);
         const diasAtraso = Math.round((hoje.getTime() - dv.getTime()) / 86400000);
 
@@ -843,12 +886,21 @@ export default function CobrancaPage() {
           const sv = statusVisualDoCodigo(r.codigo_status, dv, hoje);
           result.push({
             proposta: p,
-            numero_referencia: r.numero_referencia || `${dv.getFullYear()}-${String(dv.getMonth() + 1).padStart(2, "0")}`,
+            numero_referencia: (() => {
+              const ref = String(r.numero_referencia || "");
+              return /^\d{4}-\d{2}$/.test(ref) && Number(ref.slice(0, 4)) >= 2020
+                ? ref
+                : `${dv.getFullYear()}-${String(dv.getMonth() + 1).padStart(2, "0")}`;
+            })(),
             data_vencimento: dv, valor: p.valor_plano || 0, proporcional: false, dias_cobertos: 30,
             status: sv, status_visual: sv,
             data_pagamento: r.data_pagamento || null, observacoes: r.observacao || null, dias_atraso: diasAtraso,
             numero_fatura: n, codigo_status: r.codigo_status || null, status_planilha: r.status_planilha || null,
-            detalhamento: r.detalhamento || null, mes_gross: r.mes_gross || null,
+            detalhamento: r.detalhamento || null,
+            mes_gross: (() => {
+              const mgSeguro = parseDataSegura(r.mes_gross) || mesGrossDate;
+              return mgSeguro ? `${mgSeguro.getFullYear()}-${String(mgSeguro.getMonth() + 1).padStart(2, "0")}-01` : null;
+            })(),
             nome_banco: r.nome_banco || null, opcao_pagamento: r.opcao_pagamento || null,
             suspensao_fraude: r.suspensao_fraude ?? null, churn: r.churn ?? null, insucesso_dacc: r.insucesso_dacc ?? null,
             daPlanilha: true,
