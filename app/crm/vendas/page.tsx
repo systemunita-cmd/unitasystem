@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
@@ -44,6 +45,22 @@ type Proposta = {
   atualizado_por?: string | null;
 };
 type Usuario = { email: string; nome: string; equipe_id?: string | null; fila_id?: number | string | null; equipes_acesso?: number[] | null; filas_acesso?: number[] | null; };
+type ChamadoSuporte = { id: number; proposta_id: number; observacoes?: string | null; solucao?: string | null; pendencia?: string | null; status: string; criado_por?: string | null; created_at: string };
+
+const SUPORTE_STATUS_META: Record<string, { label: string; cor: string; bg: string; border: string }> = {
+  ativo: { label: "Suporte ativo", cor: "#d97706", bg: "#fffbeb", border: "#fbbf24" },
+  pendente: { label: "Suporte pendente", cor: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd" },
+  finalizado: { label: "Suporte finalizado", cor: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
+  sem: { label: "Sem suporte", cor: "#9ca3af", bg: "#f9fafb", border: "#e5e7eb" },
+};
+
+const classificarSuporte = (status?: string | null): keyof typeof SUPORTE_STATUS_META => {
+  const s = String(status || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  if (!s) return "sem";
+  if (s === "RESOLVIDO" || s === "FINALIZADO" || s === "FECHADO") return "finalizado";
+  if (s === "PENDENTE") return "pendente";
+  return "ativo";
+};
 
 // 🎨 Cor + emoji de cada status — casa pelo nome exato (sem acento) e cai em
 //    palavras-chave pra status novos criados no Editor de Proposta
@@ -189,6 +206,7 @@ export default function Vendas() {
   const [busca, setBusca] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroSuporte, setFiltroSuporte] = useState<"todos" | "ativo" | "pendente" | "finalizado" | "sem">("todos");
   // 🏷️ Opções do filtro de status = lista fixa (STATUS_OPCOES) + QUALQUER status
   //    que exista de fato nas propostas (ex: ANULADA, CTOP, RECOMPRA...). Sem isso,
   //    status reais que não estão na lista fixa não apareciam no filtro.
@@ -220,6 +238,8 @@ export default function Vendas() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filas, setFilas] = useState<{ id: any; nome: string }[]>([]);
   const [etiquetas, setEtiquetas] = useState<{ id: any; nome: string }[]>([]);
+  const [chamadosSuporte, setChamadosSuporte] = useState<ChamadoSuporte[]>([]);
+  const [suporteTabelaFalta, setSuporteTabelaFalta] = useState(false);
   // 🏷️ Equipes (PDV) carregadas direto da tabela — o `equipes` do useEquipeFiltro
   //    às vezes vem vazio/incompleto, então o nome do PDV não resolvia (mostrava 1/2/3)
   const [equipesLista, setEquipesLista] = useState<{ id: any; nome: string }[]>([]);
@@ -235,6 +255,9 @@ export default function Vendas() {
   const [logsProposta, setLogsProposta] = useState<any[]>([]);
   const [carregandoLogs, setCarregandoLogs] = useState(false);
   const [logsTabelaFalta, setLogsTabelaFalta] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportCampos, setExportCampos] = useState<string[]>([]);
+  const [exportando, setExportando] = useState(false);
 
   // Aplica um periodo rapido (define inicio/fim). "custom" libera os campos De/Ate.
   // Quando troca o PDV do topo, zera a fila escolhida (cada PDV tem suas filas)
@@ -331,13 +354,34 @@ export default function Vendas() {
   const [salvando, setSalvando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
 
+  const chamadosSuportePorProposta = useMemo(() => {
+    const m = new Map<number, ChamadoSuporte[]>();
+    for (const c of chamadosSuporte) {
+      const arr = m.get(c.proposta_id) || [];
+      arr.push(c);
+      m.set(c.proposta_id, arr);
+    }
+    for (const arr of m.values()) {
+      arr.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    }
+    return m;
+  }, [chamadosSuporte]);
+
+  const suporteDaProposta = (p: Proposta) => {
+    const chamados = chamadosSuportePorProposta.get(p.id) || [];
+    const ultimo = chamados[0];
+    const tipo = classificarSuporte(ultimo?.status);
+    const meta = SUPORTE_STATUS_META[tipo];
+    return { chamados, ultimo, tipo, meta };
+  };
+
   // 🔄 Recarrega os dados da tela sem precisar de F5
   const recarregarTudo = async () => {
     if (atualizando) return;
     setAtualizando(true);
     try {
       await fetchPropostas();
-      await Promise.all([fetchUsuarios(false), fetchListasAux(), fetchCamposUnificados(false)]);
+      await Promise.all([fetchUsuarios(false), fetchListasAux(), fetchCamposUnificados(false), fetchChamadosSuporte()]);
     } finally {
       setAtualizando(false);
     }
@@ -652,6 +696,33 @@ export default function Vendas() {
     );
   };
 
+  const renderSuporteTabela = (v: Proposta): ReactNode => {
+    const info = suporteDaProposta(v);
+    if (!info.ultimo) {
+      return (
+        <span style={{
+          background: info.meta.bg, color: info.meta.cor, border: `1px solid ${info.meta.border}`,
+          padding: "3px 9px", borderRadius: 10, fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap",
+        }}>
+          Sem suporte
+        </span>
+      );
+    }
+    return (
+      <span style={{ whiteSpace: "nowrap" }}>
+        <span style={{
+          background: info.meta.bg, color: info.meta.cor, border: `1px solid ${info.meta.border}`,
+          padding: "3px 9px", borderRadius: 10, fontSize: 10.5, fontWeight: 800, display: "inline-block",
+        }}>
+          {info.meta.label}
+        </span>
+        <span style={{ color: "#6b7280", fontSize: 10.5, fontWeight: 600, display: "block", marginTop: 2 }}>
+          {info.ultimo.status} · {info.chamados.length} chamado(s)
+        </span>
+      </span>
+    );
+  };
+
   // ═══ Filtro por coluna ═══
   const filtroInputStyle = {
     width: "100%",
@@ -775,6 +846,9 @@ export default function Vendas() {
       try { if (ts) d = isoLocal(new Date(ts)); } catch { d = ""; }
       return d === valor;
     }
+    if (slug === "__suporte") {
+      return suporteDaProposta(p).tipo === valor;
+    }
     const campo = camposUnificados.find(c => c.slug === slug);
     if (!campo) return true;
     const raw = campo.origem === "fixo" ? (p as any)[slug] : p.dados_customizados?.[slug];
@@ -860,6 +934,25 @@ export default function Vendas() {
       lista = VENDEDORES_MOCK;
     }
     setUsuarios(lista);
+  };
+
+  const fetchChamadosSuporte = async () => {
+    try {
+      const { data, error } = await supabase.from("suporte_chamados")
+        .select("id, proposta_id, observacoes, solucao, pendencia, status, criado_por, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20000);
+      if (error) {
+        setSuporteTabelaFalta((error as any)?.code === "PGRST205");
+        setChamadosSuporte([]);
+        return;
+      }
+      setSuporteTabelaFalta(false);
+      setChamadosSuporte((data || []) as ChamadoSuporte[]);
+    } catch {
+      setSuporteTabelaFalta(true);
+      setChamadosSuporte([]);
+    }
   };
 
   // Listas auxiliares pra traduzir id -> nome nas colunas (PDV/equipe, fila, etiqueta)
@@ -963,6 +1056,7 @@ export default function Vendas() {
       setModoDemo(usouMock);
       await fetchUsuarios(usouMock);
       await fetchListasAux();
+      await fetchChamadosSuporte();
       await fetchCamposUnificados(usouMock);
       setLoading(false);
     };
@@ -978,6 +1072,7 @@ export default function Vendas() {
         if (payload?.eventType === "INSERT" && payload?.new) notificarNovaProposta(payload.new);
         await fetchPropostas();
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "suporte_chamados" }, () => fetchChamadosSuporte())
       .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, () => fetchUsuarios(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "proposta_campos_customizados" }, () => fetchCamposUnificados(false))
       .on("postgres_changes", { event: "*", schema: "public", table: "proposta_campos_padrao_config" }, () => fetchCamposUnificados(false))
@@ -1409,6 +1504,7 @@ export default function Vendas() {
       return !!rv && String(rv.fila_id ?? "") === String(filaFiltro);
     })
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
+    .filter(p => filtroSuporte === "todos" || suporteDaProposta(p).tipo === filtroSuporte)
     .filter(p => {
       // 🔎 Busca geral: varre QUALQUER dado do cliente (nome, cpf, telefones,
       //    email, endereço, cidade, rg, vendedor e todos os campos customizados).
@@ -1420,6 +1516,8 @@ export default function Vendas() {
         p.telefone1, p.telefone2, p.telefone3, p.operadora, p.plano,
         nomeVendedor(p.vendedor), p.status_venda,
       ];
+      const suporte = suporteDaProposta(p);
+      campos.push(suporte.meta.label, suporte.ultimo?.status, suporte.ultimo?.observacoes, suporte.ultimo?.pendencia, suporte.ultimo?.solucao);
       // campos customizados (qualquer valor texto/número)
       if (p.dados_customizados) {
         for (const v of Object.values(p.dados_customizados)) {
@@ -1468,7 +1566,7 @@ export default function Vendas() {
     })
     ,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, filtroSuporte, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados, chamadosSuportePorProposta]
   );
 
   // 🔎 Lista FINAL = base no escopo + filtros de coluna (a linha "filtrar..." de cada coluna)
@@ -1486,12 +1584,15 @@ export default function Vendas() {
 
   // 🕘 Coluna FIXA "Última alteração" — entra SEMPRE, colada na Data da Proposta
   //    (se a Data da Proposta não estiver visível, vira a primeira coluna)
-  const COL_ULT_ALT: any = { slug: "__ultima_alteracao", label: "🕘 Última Alteração", origem: "fixo", especial: true };
+  const COL_ULT_ALT: any = { slug: "__ultima_alteracao", label: "🕘 Última Alteração", origem: "fixo", especial: "ultima" };
+  const COL_SUPORTE: any = { slug: "__suporte", label: "Suporte", origem: "fixo", especial: "suporte" };
   const colunasRender: any[] = (() => {
     const arr: any[] = [...colunasTabela];
     const idx = arr.findIndex(c => c.slug === "data_proposta");
     if (idx >= 0) arr.splice(idx + 1, 0, COL_ULT_ALT);
     else arr.unshift(COL_ULT_ALT);
+    const idxUlt = arr.findIndex(c => c.slug === "__ultima_alteracao");
+    arr.splice(idxUlt >= 0 ? idxUlt + 1 : 1, 0, COL_SUPORTE);
     return arr;
   })();
 
@@ -1553,7 +1654,7 @@ export default function Vendas() {
   }, [busca]);
 
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtroSuporte, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
@@ -1577,6 +1678,65 @@ export default function Vendas() {
     const ticketMedio = instaladas > 0 ? receita / instaladas : 0;
     return { instaladas, aguardando, canceladas, ticketMedio, receita, receitaAguardando };
   }, [propostasFiltradas]);
+
+  const colunasExportaveis = colunasRender.map(c => ({ slug: c.slug, label: String(c.label || c.slug), campo: c }));
+
+  const abrirExportacao = () => {
+    setExportCampos(colunasExportaveis.map(c => c.slug));
+    setShowExportModal(true);
+  };
+
+  const toggleCampoExport = (slug: string) => {
+    setExportCampos(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
+  };
+
+  const valorCampoExport = (p: Proposta, c: any): any => {
+    if (c.especial === "ultima") {
+      const ts = p.updated_at || p.created_at;
+      return ts ? new Date(ts).toLocaleString("pt-BR") : "";
+    }
+    if (c.especial === "suporte") {
+      const s = suporteDaProposta(p);
+      return s.ultimo ? `${s.meta.label} - ${s.ultimo.status} (${s.chamados.length} chamado(s))` : "Sem suporte";
+    }
+    const raw = c.origem === "fixo" ? (p as any)[c.slug] : p.dados_customizados?.[c.slug];
+    if (raw === null || raw === undefined) return "";
+    if (c.slug === "vendedor" || c.tipo === "vendedor" || c.tipo === "usuario") return nomeVendedor(String(raw));
+    if (c.tipo === "equipe") return nomePorId(equipesParaNome, raw);
+    if (c.tipo === "fila") return nomePorId(filas, raw);
+    if (c.tipo === "etiqueta") return nomePorId(etiquetas, raw);
+    if (c.tipo === "checkbox") return raw === true ? "Sim" : "Não";
+    if (c.tipo === "data" || c.slug === "data_proposta") {
+      try { return raw ? new Date(String(raw) + "T00:00:00").toLocaleDateString("pt-BR") : ""; } catch { return String(raw || ""); }
+    }
+    if (c.tipo === "arquivo") return Array.isArray(raw) ? raw.map((a: any) => a?.nome || a?.url || "").filter(Boolean).join(", ") : "";
+    if (typeof raw === "object") return JSON.stringify(raw);
+    return raw;
+  };
+
+  const exportarExcel = () => {
+    if (propostasFiltradas.length === 0) { alert("Nenhuma venda para exportar."); return; }
+    const selecionadas = colunasExportaveis.filter(c => exportCampos.includes(c.slug));
+    if (selecionadas.length === 0) { alert("Selecione pelo menos um campo para exportar."); return; }
+    setExportando(true);
+    try {
+      const dados = propostasFiltradas.map(p => {
+        const row: Record<string, any> = {};
+        for (const c of selecionadas) row[c.label] = valorCampoExport(p, c.campo);
+        return row;
+      });
+      const ws = XLSX.utils.json_to_sheet(dados);
+      ws["!cols"] = selecionadas.map(c => ({ wch: Math.max(14, Math.min(36, c.label.length + 8)) }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Vendas");
+      const hoje = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `vendas_unita_${hoje}.xlsx`);
+      setShowExportModal(false);
+    } catch (e: any) {
+      alert("Erro ao exportar: " + (e?.message || e));
+    }
+    setExportando(false);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -1689,6 +1849,78 @@ export default function Vendas() {
         </div>
       )}
 
+      {/* ═══ MODAL EXPORTAR EXCEL ═══ */}
+      {showExportModal && (
+        <div onClick={() => !exportando && setShowExportModal(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.5)", backdropFilter: "blur(4px)", zIndex: 2100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{
+              ...cardStyle,
+              width: "100%", maxWidth: 620, maxHeight: "88vh",
+              display: "flex", flexDirection: "column", overflow: "hidden",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.15), 0 10px 20px rgba(0,0,0,0.08)",
+            }}>
+            <div style={{ padding: "18px 24px", borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#ffffff" }}>
+              <div>
+                <h2 style={{ color: "#1f2937", fontSize: 18, fontWeight: 800, margin: 0 }}>Exportar vendas</h2>
+                <p style={{ color: "#6b7280", fontSize: 12, margin: "3px 0 0" }}>{propostasFiltradas.length.toLocaleString("pt-BR")} venda(s) filtrada(s)</p>
+              </div>
+              <button onClick={() => setShowExportModal(false)} disabled={exportando}
+                style={{ background: "#f3f4f6", border: "none", borderRadius: 8, width: 34, height: 34, cursor: exportando ? "not-allowed" : "pointer", color: "#6b7280", fontSize: 18 }}>×</button>
+            </div>
+
+            <div style={{ padding: 20, overflowY: "auto" }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                <button onClick={() => setExportCampos(colunasExportaveis.map(c => c.slug))}
+                  style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  Selecionar todos
+                </button>
+                <button onClick={() => setExportCampos([])}
+                  style={{ background: "#f9fafb", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 8, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  Limpar seleção
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
+                {colunasExportaveis.map(c => {
+                  const marcado = exportCampos.includes(c.slug);
+                  return (
+                    <label key={c.slug}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 10,
+                        border: `1px solid ${marcado ? "#bfdbfe" : "#e5e7eb"}`,
+                        background: marcado ? "#eff6ff" : "#ffffff",
+                        borderRadius: 10, padding: "9px 11px", cursor: "pointer",
+                      }}>
+                      <input type="checkbox" checked={marcado} onChange={() => toggleCampoExport(c.slug)}
+                        style={{ width: 16, height: 16, accentColor: "#2563eb", cursor: "pointer" }} />
+                      <span style={{ color: marcado ? "#1d4ed8" : "#374151", fontSize: 12.5, fontWeight: 700 }}>{c.label}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 24px", borderTop: "1px solid #e5e7eb", background: "#f9fafb", flexWrap: "wrap" }}>
+              <button onClick={() => setShowExportModal(false)} disabled={exportando}
+                style={{ background: "#ffffff", color: "#6b7280", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 18px", fontSize: 13, cursor: exportando ? "not-allowed" : "pointer", fontWeight: 700 }}>
+                Cancelar
+              </button>
+              <button onClick={exportarExcel} disabled={exportando || exportCampos.length === 0}
+                style={{
+                  background: exportando || exportCampos.length === 0 ? "#f3f4f6" : "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)",
+                  color: exportando || exportCampos.length === 0 ? "#9ca3af" : "#ffffff",
+                  border: "none", borderRadius: 10, padding: "10px 22px", fontSize: 13,
+                  cursor: exportando || exportCampos.length === 0 ? "not-allowed" : "pointer", fontWeight: 800,
+                  boxShadow: exportando || exportCampos.length === 0 ? "none" : "0 4px 12px rgba(22,163,74,0.28)",
+                }}>
+                {exportando ? "Exportando..." : "Baixar Excel"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ BANNER MODO DEMO ═══ */}
       {modoDemo && (
         <div style={{
@@ -1760,6 +1992,17 @@ export default function Vendas() {
               </div>
             );
           })()}
+          <button onClick={abrirExportacao} disabled={propostasFiltradas.length === 0}
+            style={{
+              flex: isMobile ? 1 : "0 0 auto",
+              background: propostasFiltradas.length === 0 ? "#f3f4f6" : "#ecfdf5",
+              color: propostasFiltradas.length === 0 ? "#9ca3af" : "#15803d",
+              border: `1px solid ${propostasFiltradas.length === 0 ? "#e5e7eb" : "#bbf7d0"}`,
+              borderRadius: 10, padding: "10px 18px", fontSize: 13,
+              cursor: propostasFiltradas.length === 0 ? "not-allowed" : "pointer", fontWeight: 700, whiteSpace: "nowrap",
+            }}>
+            Exportar Excel
+          </button>
 
           {podeEditarCamposCustom && (
             <button onClick={() => router.push("/crm/editor-proposta")} title="Configurar campos da proposta"
@@ -1825,6 +2068,14 @@ export default function Vendas() {
           <option value="todos">Status: Todos</option>
           {statusOpcoesFiltro.map(s => <option key={s} value={s}>{statusMeta(s).emoji} {s}</option>)}
         </select>
+        <select value={filtroSuporte} onChange={e => setFiltroSuporte(e.target.value as any)}
+          style={{ ...inputStyle, maxWidth: 220, borderColor: filtroSuporte !== "todos" ? "#fbbf24" : "#e5e7eb", background: filtroSuporte !== "todos" ? "#fffbeb" : "#ffffff", fontWeight: filtroSuporte !== "todos" ? 700 : 400 }}>
+          <option value="todos">Suporte: Todos</option>
+          <option value="ativo">Suporte ativo</option>
+          <option value="pendente">Suporte pendente</option>
+          <option value="finalizado">Suporte finalizado</option>
+          <option value="sem">Sem suporte</option>
+        </select>
         {/* 📅 Toggles de periodo rapido (padrao = Hoje) */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           {([
@@ -1861,8 +2112,8 @@ export default function Vendas() {
           <option value="7d">🕘 Modificadas nos últimos 7 dias</option>
           <option value="30d">🕘 Modificadas nos últimos 30 dias</option>
         </select>
-        {(busca || filtroStatus !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || filaFiltro || Object.keys(filtrosColuna).length > 0) && (
-          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); setFilaFiltro(""); aplicarRange("hoje"); }}
+        {(busca || filtroStatus !== "todos" || filtroSuporte !== "todos" || rangeRapido !== "hoje" || filtroModif !== "qualquer" || filaFiltro || Object.keys(filtrosColuna).length > 0) && (
+          <button onClick={() => { setBusca(""); setFiltroStatus("todos"); setFiltroSuporte("todos"); setFiltrosColuna({}); setFiltroModif("qualquer"); setFilaFiltro(""); aplicarRange("hoje"); }}
             style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 10, padding: "8px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
             ✕ Limpar filtros
           </button>
@@ -1918,7 +2169,7 @@ export default function Vendas() {
                 {colunasRender.map(c => (
                   <th key={`fil-${c.origem}-${c.slug}`}
                     style={{ padding: "6px 12px", borderBottom: "1px solid #e5e7eb" }}>
-                    {c.especial
+                    {c.especial === "ultima"
                       ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                           <input type="date" title="De (data inicial)" value={filtrosColuna["__ultima_alteracao__de"] ?? ""} max={filtrosColuna["__ultima_alteracao__ate"] || undefined}
@@ -1927,6 +2178,16 @@ export default function Vendas() {
                             onChange={e => setarFiltroColuna("__ultima_alteracao__ate", e.target.value)} style={filtroInputStyle} />
                         </div>
                       )
+                      : c.especial === "suporte"
+                        ? (
+                          <select value={filtrosColuna["__suporte"] ?? ""} onChange={e => setarFiltroColuna("__suporte", e.target.value)} style={filtroInputStyle}>
+                            <option value="">Todos</option>
+                            <option value="ativo">Ativo</option>
+                            <option value="pendente">Pendente</option>
+                            <option value="finalizado">Finalizado</option>
+                            <option value="sem">Sem suporte</option>
+                          </select>
+                        )
                       : renderFiltroColuna(c)}
                   </th>
                 ))}
@@ -1964,7 +2225,7 @@ export default function Vendas() {
                   >
                     {colunasRender.map(c => (
                       <td key={`td-${c.origem}-${c.slug}`} style={{ padding: "12px 16px" }}>
-                        {c.especial ? renderUltimaAlteracao(v) : renderCelulaTabela(c, v)}
+                        {c.especial === "ultima" ? renderUltimaAlteracao(v) : c.especial === "suporte" ? renderSuporteTabela(v) : renderCelulaTabela(c, v)}
                       </td>
                     ))}
                     <td style={{ padding: "12px 16px" }}>
