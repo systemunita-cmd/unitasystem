@@ -75,6 +75,18 @@ type Campanha = {
   created_at: string; finalizado_em?: string;
 };
 
+type DetalheErroDisparo = {
+  id: string;
+  fonte: string;
+  nome: string;
+  numero: string;
+  status: string;
+  erro: string;
+  criado_em?: string | null;
+  enviado_em?: string | null;
+  bruto: any;
+};
+
 type StatusFatura =
   | "pendente" | "paga" | "paga_atraso" | "paga_parcial" | "promessa"
   | "negociacao" | "acordo" | "nao_pagara" | "cancelada" | "juridico"
@@ -309,6 +321,10 @@ export default function CobrancaPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [campanhas, setCampanhas] = useState<Campanha[]>([]);
   const [chamadosSuporte, setChamadosSuporte] = useState<ChamadoSuporte[]>([]);
+  const [campanhaDetalhes, setCampanhaDetalhes] = useState<Campanha | null>(null);
+  const [detalhesDisparo, setDetalhesDisparo] = useState<DetalheErroDisparo[]>([]);
+  const [carregandoDetalhesDisparo, setCarregandoDetalhesDisparo] = useState(false);
+  const [erroDetalhesDisparo, setErroDetalhesDisparo] = useState("");
 
   // 💬 ATENDIMENTOS DA COBRANÇA — leads que RESPONDERAM os disparos
   const [respostasCob, setRespostasCob] = useState<any[]>([]);
@@ -756,6 +772,182 @@ export default function CobrancaPage() {
   }
 
   // 🆕 mapeia o código bruto da planilha (01..05) -> status visual da fatura
+  const textoCampoErroDisparo = (v: any): string => {
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "string") return v;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  };
+
+  const erroDoContatoDisparo = (r: any): string => {
+    const candidatos = [
+      r?.erro,
+      r?.erro_msg,
+      r?.mensagem_erro,
+      r?.erro_envio,
+      r?.detalhe_erro,
+      r?.motivo,
+      r?.reason,
+      r?.message,
+      r?.resposta?.error?.message,
+      r?.response?.error?.message,
+      r?.retorno?.error?.message,
+      r?.retorno?.erro,
+      r?.resultado?.erro,
+    ];
+    for (const c of candidatos) {
+      const txt = textoCampoErroDisparo(c).trim();
+      if (txt) return txt;
+    }
+    return "";
+  };
+
+  const statusDoContatoDisparo = (r: any): string =>
+    String(r?.status ?? r?.situacao ?? r?.estado ?? r?.resultado ?? "").trim();
+
+  const ehFalhaContatoDisparo = (r: any): boolean => {
+    const st = normalizarTxt(statusDoContatoDisparo(r));
+    if (erroDoContatoDisparo(r)) return true;
+    return /FALH|ERRO|ERROR|FAILED|INVALID|BLOQUE|REJEIT|RECUS|NAO ENVI|NAO_ENVI|CANCEL/.test(st);
+  };
+
+  const nomeDoContatoDisparo = (r: any): string =>
+    String(r?.nome ?? r?.cliente ?? r?.nome_cliente ?? r?.variaveis?.nome ?? r?.payload?.nome ?? r?.contato?.nome ?? "—");
+
+  const numeroDoContatoDisparo = (r: any): string =>
+    String(r?.numero ?? r?.telefone ?? r?.phone ?? r?.celular ?? r?.whatsapp ?? r?.variaveis?.telefone ?? r?.payload?.telefone ?? r?.contato?.telefone ?? "—");
+
+  const dataDoContatoDisparo = (r: any): string | null =>
+    r?.enviado_em ?? r?.updated_at ?? r?.created_at ?? r?.processado_em ?? null;
+
+  const normalizarDetalhesErroDisparo = (rows: any[], fonte: string): DetalheErroDisparo[] => {
+    return rows
+      .filter(ehFalhaContatoDisparo)
+      .map((r, idx) => ({
+        id: `${fonte}-${String(r?.id ?? idx)}-${idx}`,
+        fonte,
+        nome: nomeDoContatoDisparo(r),
+        numero: numeroDoContatoDisparo(r),
+        status: statusDoContatoDisparo(r) || "falha",
+        erro: erroDoContatoDisparo(r) || "Falha registrada sem mensagem detalhada.",
+        criado_em: r?.created_at ?? null,
+        enviado_em: dataDoContatoDisparo(r),
+        bruto: r,
+      }));
+  };
+
+  const extrairArraysDeCampoDisparo = (v: any): any[] => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v;
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (!s) return [];
+      try { return extrairArraysDeCampoDisparo(JSON.parse(s)); } catch { return []; }
+    }
+    if (typeof v === "object") {
+      if (Array.isArray(v.falhas)) return v.falhas;
+      if (Array.isArray(v.erros)) return v.erros;
+      if (Array.isArray(v.contatos)) return v.contatos;
+      if (Array.isArray(v.items)) return v.items;
+      return Object.values(v).filter(x => typeof x === "object");
+    }
+    return [];
+  };
+
+  const abrirDetalhesCampanha = async (campanha: Campanha) => {
+    setCampanhaDetalhes(campanha);
+    setDetalhesDisparo([]);
+    setErroDetalhesDisparo("");
+    setCarregandoDetalhesDisparo(true);
+    try {
+      const encontrados: DetalheErroDisparo[] = [];
+
+      const { data: contatos, error: erroContatos } = await supabase
+        .from("disparo_contatos")
+        .select("*")
+        .eq("disparo_id", campanha.id)
+        .order("id", { ascending: true })
+        .limit(3000);
+      if (!erroContatos && contatos?.length) {
+        encontrados.push(...normalizarDetalhesErroDisparo(contatos, "disparo_contatos"));
+      }
+
+      const tabelasAlternativas = ["disparos_contatos", "disparo_itens", "disparos_itens", "disparos_logs"];
+      for (const tabela of tabelasAlternativas) {
+        const { data, error } = await supabase
+          .from(tabela)
+          .select("*")
+          .eq("disparo_id", campanha.id)
+          .limit(3000);
+        if (!error && data?.length) {
+          encontrados.push(...normalizarDetalhesErroDisparo(data, tabela));
+        }
+      }
+
+      const { data: disparoRows } = await supabase
+        .from("disparos")
+        .select("*")
+        .eq("id", campanha.id)
+        .limit(1);
+      const disparo = disparoRows?.[0];
+      if (disparo) {
+        const camposJson = [
+          disparo.falhas, disparo.erros, disparo.logs, disparo.log,
+          disparo.detalhes, disparo.resultado, disparo.resultados, disparo.retorno,
+        ];
+        camposJson.forEach((campo, idx) => {
+          const linhas = extrairArraysDeCampoDisparo(campo);
+          if (linhas.length) encontrados.push(...normalizarDetalhesErroDisparo(linhas, `disparos.${idx}`));
+        });
+        const erroGeral = erroDoContatoDisparo(disparo);
+        if (erroGeral && encontrados.length === 0) {
+          encontrados.push({
+            id: `disparo-${campanha.id}`,
+            fonte: "disparos",
+            nome: campanha.nome || "Campanha",
+            numero: "—",
+            status: disparo.status || campanha.status || "falha",
+            erro: erroGeral,
+            criado_em: disparo.created_at || campanha.created_at,
+            enviado_em: disparo.finalizado_em || campanha.finalizado_em || null,
+            bruto: disparo,
+          });
+        }
+      }
+
+      const dedup = new Map<string, DetalheErroDisparo>();
+      for (const item of encontrados) {
+        const chave = `${normalizarTelefone(item.numero)}|${normalizarTxt(item.status)}|${item.erro}`;
+        if (!dedup.has(chave)) dedup.set(chave, item);
+      }
+      const lista = Array.from(dedup.values());
+      setDetalhesDisparo(lista);
+      if (lista.length === 0) {
+        setErroDetalhesDisparo(
+          campanha.total_falhas > 0
+            ? `A campanha marcou ${campanha.total_falhas} falha(s), mas não encontrei o texto do erro salvo em disparo_contatos ou nos logs do disparo.`
+            : "Essa campanha não tem falhas registradas."
+        );
+      }
+    } catch (e: any) {
+      setErroDetalhesDisparo(e?.message || "Não foi possível carregar os detalhes das falhas.");
+    } finally {
+      setCarregandoDetalhesDisparo(false);
+    }
+  };
+
+  const copiarDetalhesDisparo = async () => {
+    if (!detalhesDisparo.length) return;
+    const texto = detalhesDisparo.map((d, i) =>
+      `${i + 1}. ${d.nome} | ${d.numero} | ${d.status} | ${d.erro}`
+    ).join("\n");
+    try {
+      await navigator.clipboard.writeText(texto);
+      setFeedback({ tipo: "sucesso", titulo: "Erros copiados", mensagem: "A lista de falhas foi copiada para a área de transferência." });
+    } catch {
+      setFeedback({ tipo: "aviso", titulo: "Não consegui copiar", mensagem: "Selecione os textos no modal e copie manualmente." });
+    }
+  };
+
   const statusVisualDoCodigo = (cod: string | null | undefined, venc: Date, hoje: Date): StatusFatura => {
     const c = String(cod || "").replace(/\D/g, "");
     if (c === "01") return "paga";
@@ -2338,7 +2530,7 @@ export default function CobrancaPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                     <thead>
                       <tr style={{ background: "#f9fafb" }}>
-                        {["Campanha", "Modo", "Status", "Contatos", "Enviados", "Falhas", "Criada"].map(h => (
+                        {["Campanha", "Modo", "Status", "Contatos", "Enviados", "Falhas", "Detalhes", "Criada"].map(h => (
                           <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
@@ -2355,7 +2547,45 @@ export default function CobrancaPage() {
                           </td>
                           <td style={{ padding: "12px", color: "#2563eb", fontSize: 12, fontWeight: 700 }}>{c.total_contatos}</td>
                           <td style={{ padding: "12px", color: "#16a34a", fontSize: 12, fontWeight: 700 }}>{c.total_enviados}</td>
-                          <td style={{ padding: "12px", color: "#dc2626", fontSize: 12, fontWeight: 700 }}>{c.total_falhas}</td>
+                          <td style={{ padding: "12px" }}>
+                            {c.total_falhas > 0 ? (
+                              <button
+                                onClick={() => abrirDetalhesCampanha(c)}
+                                style={{
+                                  background: "#fef2f2",
+                                  color: "#dc2626",
+                                  border: "1px solid #fecaca",
+                                  borderRadius: 8,
+                                  padding: "4px 9px",
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                {c.total_falhas}
+                              </button>
+                            ) : (
+                              <span style={{ color: "#16a34a", fontSize: 12, fontWeight: 700 }}>0</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "12px" }}>
+                            <button
+                              onClick={() => abrirDetalhesCampanha(c)}
+                              style={{
+                                background: c.total_falhas > 0 ? "#fff7ed" : "#f8fafc",
+                                color: c.total_falhas > 0 ? "#ea580c" : "#64748b",
+                                border: c.total_falhas > 0 ? "1px solid #fed7aa" : "1px solid #e2e8f0",
+                                borderRadius: 8,
+                                padding: "5px 10px",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {c.total_falhas > 0 ? "Ver erros" : "Ver envio"}
+                            </button>
+                          </td>
                           <td style={{ padding: "12px", color: "#9ca3af", fontSize: 11 }}>{new Date(c.created_at).toLocaleString("pt-BR")}</td>
                         </tr>
                       ))}
@@ -2366,6 +2596,121 @@ export default function CobrancaPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* MODAL DETALHES DAS FALHAS DO DISPARO */}
+      {campanhaDetalhes && (
+        <div
+          onClick={() => !carregandoDetalhesDisparo && setCampanhaDetalhes(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.55)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1150,
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: "#ffffff",
+              borderRadius: 16,
+              maxWidth: 980,
+              width: "100%",
+              maxHeight: "88vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
+            }}
+          >
+            <div style={{ padding: "18px 22px", borderBottom: "1px solid #e5e7eb", background: "linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ minWidth: 0 }}>
+                <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 800, margin: 0 }}>
+                  Verificação do disparo
+                </h3>
+                <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0", lineHeight: 1.45 }}>
+                  {campanhaDetalhes.nome} · {campanhaDetalhes.total_contatos} contato(s) · {campanhaDetalhes.total_enviados} enviado(s) · {campanhaDetalhes.total_falhas} falha(s)
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => abrirDetalhesCampanha(campanhaDetalhes)}
+                  disabled={carregandoDetalhesDisparo}
+                  style={{ ...btnSecundario, padding: "8px 12px", fontSize: 12, opacity: carregandoDetalhesDisparo ? 0.6 : 1 }}
+                >
+                  Atualizar
+                </button>
+                <button
+                  onClick={copiarDetalhesDisparo}
+                  disabled={!detalhesDisparo.length}
+                  style={{ ...btnSecundario, padding: "8px 12px", fontSize: 12, opacity: detalhesDisparo.length ? 1 : 0.5 }}
+                >
+                  Copiar erros
+                </button>
+                <button
+                  onClick={() => setCampanhaDetalhes(null)}
+                  disabled={carregandoDetalhesDisparo}
+                  style={{ background: "#f3f4f6", color: "#6b7280", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer", fontWeight: 800 }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
+              {carregandoDetalhesDisparo ? (
+                <div style={{ padding: 42, textAlign: "center", color: "#6b7280", fontSize: 13, fontWeight: 700 }}>
+                  Buscando detalhes das falhas...
+                </div>
+              ) : detalhesDisparo.length === 0 ? (
+                <div style={{ padding: 34, textAlign: "center", border: "1px dashed #fed7aa", borderRadius: 12, background: "#fff7ed" }}>
+                  <div style={{ fontSize: 34, marginBottom: 8 }}>⚠️</div>
+                  <p style={{ color: "#9a3412", fontSize: 14, fontWeight: 800, margin: "0 0 6px" }}>Nenhum detalhe individual encontrado</p>
+                  <p style={{ color: "#9a3412", fontSize: 12, margin: 0, lineHeight: 1.5 }}>
+                    {erroDetalhesDisparo || "O disparo não retornou falhas detalhadas."}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
+                    <thead>
+                      <tr style={{ background: "#f9fafb" }}>
+                        {["Cliente", "Número", "Status", "Erro encontrado", "Data", "Fonte"].map(h => (
+                          <th key={h} style={{ padding: "10px 12px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.4, fontWeight: 800, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detalhesDisparo.map((d, i) => (
+                        <tr key={d.id} style={{ background: i % 2 === 0 ? "#ffffff" : "#fafbfc", borderTop: "1px solid #f3f4f6" }}>
+                          <td style={{ padding: "10px 12px", color: "#1f2937", fontSize: 12, fontWeight: 800, maxWidth: 220, whiteSpace: "normal" }}>{d.nome}</td>
+                          <td style={{ padding: "10px 12px", color: "#334155", fontSize: 12, fontFamily: "monospace", whiteSpace: "nowrap" }}>{d.numero}</td>
+                          <td style={{ padding: "10px 12px" }}>
+                            <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 999, padding: "3px 8px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>
+                              {d.status}
+                            </span>
+                          </td>
+                          <td style={{ padding: "10px 12px", color: "#991b1b", fontSize: 12, lineHeight: 1.45, minWidth: 260, whiteSpace: "pre-wrap" }}>{d.erro}</td>
+                          <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 11, whiteSpace: "nowrap" }}>
+                            {d.enviado_em ? new Date(d.enviado_em).toLocaleString("pt-BR") : "—"}
+                          </td>
+                          <td style={{ padding: "10px 12px", color: "#94a3b8", fontSize: 10, whiteSpace: "nowrap" }}>{d.fonte}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* MODAL DE ENVIO */}
