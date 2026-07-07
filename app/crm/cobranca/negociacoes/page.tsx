@@ -342,6 +342,15 @@ export default function CobrancaPage() {
 
   const so8 = (t: any) => String(t || "").replace(/\D/g, "").slice(-8);
   const so10 = (t: any) => String(t || "").replace(/\D/g, "").slice(-10);
+  const soDig = (t: any) => String(t || "").replace(/\D/g, "");
+  const variantesNumero = (t: any): string[] => {
+    const n = soDig(t);
+    const set = new Set<string>();
+    if (n) set.add(n);
+    if (n.startsWith("55") && n.length > 11) set.add(n.slice(2));
+    if (!n.startsWith("55") && (n.length === 10 || n.length === 11)) set.add(`55${n}`);
+    return Array.from(set);
+  };
 
   const chamadosSuportePorProposta = useMemo(() => {
     const m = new Map<number, ChamadoSuporte[]>();
@@ -374,11 +383,12 @@ export default function CobrancaPage() {
     try {
       // 1. desde quando vale: o PRIMEIRO disparo de cobrança
       const { data: disp } = await supabase.from("disparos")
-        .select("created_at").eq("origem", "cobranca")
-        .order("created_at", { ascending: true }).limit(1);
+        .select("id, created_at").eq("origem", "cobranca")
+        .order("created_at", { ascending: true }).limit(200);
       const desde = disp && disp[0] ? disp[0].created_at : null;
       if (!desde) { setRespostasCob([]); setCarregandoResp(false); return; }
-      // 2. mapa telefone(8 últimos dígitos) -> proposta (clientes da cobrança)
+
+      // 2. mapa telefone -> cliente. Primeiro CRM, depois contatos que receberam disparo.
       const mapaTel = new Map<string, Proposta>();
       for (const pr of propostas) {
         if (!/INSTALAD/.test(normalizarTxt(pr.status_venda))) continue;
@@ -389,10 +399,62 @@ export default function CobrancaPage() {
           if (k10.length >= 10 && !mapaTel.has(k10)) mapaTel.set(k10, pr);
         }
       }
-      // 3. atendimentos mexidos depois do disparo, casados com cliente da cobrança
+      const disparoIds = (disp || []).map((d: any) => d.id).filter(Boolean);
+      const mapaDisparo = new Map<string, any>();
+      if (disparoIds.length > 0) {
+        const { data: contatosDisparo } = await supabase.from("disparo_contatos")
+          .select("disparo_id, numero, vars, created_at, status")
+          .in("disparo_id", disparoIds)
+          .limit(10000);
+        for (const c of (contatosDisparo || [])) {
+          const numero = c?.numero ?? c?.vars?.telefone;
+          const fake: any = {
+            id: Number(`9${so10(numero) || Math.floor(Math.random() * 99999999)}`),
+            nome: c?.vars?.nome || c?.vars?.cliente || numero || "Cliente",
+            telefone1: numero,
+            telefone2: "",
+            telefone3: "",
+            plano: c?.vars?.plano || "",
+            valor_plano: Number(String(c?.vars?.valor || "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")) || 0,
+            status_venda: "INSTALADO",
+            data_instalacao: null,
+            operadora: "",
+            cpf: "",
+            dados_customizados: {},
+            created_at: c?.created_at || desde,
+          };
+          for (const v of variantesNumero(numero)) {
+            if (!mapaTel.has(so10(v)) && so10(v).length >= 10) mapaTel.set(so10(v), fake);
+            if (!mapaTel.has(so8(v)) && so8(v).length === 8) mapaTel.set(so8(v), fake);
+            mapaDisparo.set(so10(v) || so8(v), fake);
+          }
+        }
+      }
+
+      // 3. atendimentos/mensagens depois do disparo, casados com número que respondeu
       const numeroAtendimento = (a: any) =>
         a?.numero ?? a?.telefone ?? a?.contato_numero ?? a?.cliente_telefone ?? a?.whatsapp ?? a?.remote_jid ?? a?.jid ?? "";
-      const acharCliente = (numero: any) => mapaTel.get(so10(numero)) || mapaTel.get(so8(numero));
+      const acharCliente = (numero: any, nomeFallback?: any) => {
+        const cli = mapaTel.get(so10(numero)) || mapaTel.get(so8(numero)) || mapaDisparo.get(so10(numero)) || mapaDisparo.get(so8(numero));
+        if (cli) return cli;
+        const n = soDig(numero);
+        if (!n) return null;
+        return {
+          id: Number(`8${so10(n) || so8(n) || Math.floor(Math.random() * 99999999)}`),
+          nome: nomeFallback || n,
+          telefone1: n,
+          telefone2: "",
+          telefone3: "",
+          plano: "",
+          valor_plano: 0,
+          status_venda: "RESPOSTA COBRANCA",
+          data_instalacao: null,
+          operadora: "",
+          cpf: "",
+          dados_customizados: {},
+          created_at: desde,
+        } as Proposta;
+      };
       const isEntrada = (m: any) => {
         if (m?.from_me === true || m?.fromMe === true || m?.enviado_por_mim === true) return false;
         const dir = normalizarTxt(m?.de ?? m?.direcao ?? m?.direction ?? m?.tipo ?? m?.origem ?? m?.status);
@@ -410,16 +472,42 @@ export default function CobrancaPage() {
           .order("created_at", { ascending: false })
           .limit(3000),
       ]);
-      const porCliente = new Map<number, any>();
-      for (const a of (ats || [])) {
-        const cli = acharCliente(numeroAtendimento(a));
-        if (!cli) continue;
-        porCliente.set(cli.id, { a, cli, origem: "atendimento" });
-      }
+      const ultimaEntradaPorNumero = new Map<string, any>();
       for (const m of (msgs || [])) {
         if (!isEntrada(m)) continue;
         const numero = m?.numero ?? m?.telefone ?? m?.remote_jid ?? m?.jid ?? m?.from ?? m?.contato_numero;
-        const cli = acharCliente(numero);
+        const chave = so10(numero) || so8(numero);
+        if (!chave) continue;
+        const atual = ultimaEntradaPorNumero.get(chave);
+        if (!atual || String(m?.created_at || "").localeCompare(String(atual?.created_at || "")) > 0) {
+          ultimaEntradaPorNumero.set(chave, m);
+        }
+      }
+      const porCliente = new Map<number, any>();
+      for (const a of (ats || [])) {
+        const numero = numeroAtendimento(a);
+        const chave = so10(numero) || so8(numero);
+        const entrada = ultimaEntradaPorNumero.get(chave);
+        const ehCanalCobranca = /COBRAN/.test(normalizarTxt(a?.fila ?? a?.tag ?? a?.canal_nome ?? a?.modulo ?? a?.origem ?? ""));
+        if (!entrada && !ehCanalCobranca) continue;
+        const cli = acharCliente(numero, a?.nome ?? a?.cliente ?? entrada?.nome ?? entrada?.push_name);
+        if (!cli) continue;
+        porCliente.set(cli.id, {
+          a: {
+            ...a,
+            numero,
+            nome: a?.nome || a?.cliente || entrada?.nome || entrada?.push_name || cli.nome,
+            mensagem: entrada?.mensagem || a?.mensagem || a?.ultima_mensagem || a?.preview || "",
+            updated_at: entrada?.created_at || a?.updated_at || a?.created_at,
+            status: a?.status || "respondeu",
+          },
+          cli,
+          origem: "atendimento",
+        });
+      }
+      for (const m of ultimaEntradaPorNumero.values()) {
+        const numero = m?.numero ?? m?.telefone ?? m?.remote_jid ?? m?.jid ?? m?.from ?? m?.contato_numero;
+        const cli = acharCliente(numero, m?.nome || m?.push_name);
         if (!cli || porCliente.has(cli.id)) continue;
         porCliente.set(cli.id, {
           a: { ...m, numero, nome: m?.nome || m?.push_name || cli.nome, updated_at: m?.created_at, status: "respondeu" },
@@ -442,8 +530,9 @@ export default function CobrancaPage() {
     setConvAberta(numero);
     setMsgsConv([]);
     try {
+      const nums = variantesNumero(numero);
       const { data } = await supabase.from("mensagens").select("*")
-        .eq("numero", numero)
+        .in("numero", nums.length ? nums : [numero])
         .order("created_at", { ascending: false }).limit(60);
       setMsgsConv((data || []).reverse());
     } catch { setMsgsConv([]); }
