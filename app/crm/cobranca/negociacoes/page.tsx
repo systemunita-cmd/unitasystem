@@ -464,6 +464,7 @@ export default function CobrancaPage() {
   // 🆕 DROPDOWN de vencimento detectado da base (dia + mês reais)
   //    "" = todos | "dia:10" = todas que vencem dia 10 | "mes:2026-05" = vencem em mai/26
   const [filtroVencSel, setFiltroVencSel] = useState("");
+  const [filtroMesFatura, setFiltroMesFatura] = useState(""); // "" todos | "1".."10" = M1..M10 em débito
   // 🆕 filtro por MÊS DE INSTALAÇÃO (mês a mês) — opcional, segue existindo
   const [mesInst, setMesInst] = useState("");
   const [dataInstInicio, setDataInstInicio] = useState("");
@@ -1135,13 +1136,22 @@ export default function CobrancaPage() {
     return aplicarStatusEAtrasos(result, statusMap);
   }, [propostas, statusMap, histPlanilha]);
 
+  const faturasBaseCobranca = useMemo<Fatura[]>(() => {
+    if (!filtroMesFatura) return todasFaturas;
+    const n = Number(filtroMesFatura);
+    return todasFaturas.filter(f =>
+      Number(f.numero_fatura) === n &&
+      !STATUS_META[f.status_visual]?.recebido
+    );
+  }, [todasFaturas, filtroMesFatura]);
+
   // 🆕 VENCIMENTOS DISPONÍVEIS na base — alimenta o menu suspenso de filtro.
   //    Detecta os DIAS de vencimento (1..31) e os MESES (YYYY-MM) que realmente existem,
   //    com a contagem de faturas de cada um.
   const vencimentosDisponiveis = useMemo(() => {
     const dias = new Map<number, number>();
     const meses = new Map<string, number>();
-    for (const f of todasFaturas) {
+    for (const f of faturasBaseCobranca) {
       const d = f.data_vencimento;
       if (!d || isNaN(d.getTime())) continue;
       dias.set(d.getDate(), (dias.get(d.getDate()) || 0) + 1);
@@ -1154,14 +1164,14 @@ export default function CobrancaPage() {
     const listaMeses = Array.from(meses.entries()).sort((a, b) => a[0].localeCompare(b[0]))
       .map(([mk, n]) => { const [y, m] = mk.split("-"); return { value: `mes:${mk}`, label: `${mesesNome[Number(m) - 1]}/${y.slice(2)}`, n }; });
     return { listaDias, listaMeses };
-  }, [todasFaturas]);
+  }, [faturasBaseCobranca]);
 
   // 🆕 Lista de clientes: agrupa faturas por cliente com resumo completo.
   const clientes = useMemo<any[]>(() => {
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
     const MS = 86400000;
     const map = new Map<number, any>();
-    for (const f of todasFaturas) {
+    for (const f of faturasBaseCobranca) {
       const id = f.proposta.id;
       let c = map.get(id);
       if (!c) {
@@ -1204,7 +1214,7 @@ export default function CobrancaPage() {
       if (b.atrasoMax !== a.atrasoMax) return b.atrasoMax - a.atrasoMax;
       return b.totalAberto - a.totalAberto;
     });
-  }, [todasFaturas, chamadosSuportePorProposta]);
+  }, [faturasBaseCobranca, chamadosSuportePorProposta]);
   const qtdInad = useMemo(() => clientes.filter(c => c.situacao === "inadimplente").length, [clientes]);
   const qtdEmDia = useMemo(() => clientes.length - qtdInad, [clientes, qtdInad]);
   const passaFiltroInstalacao = (c: any): boolean => {
@@ -1273,7 +1283,7 @@ export default function CobrancaPage() {
 
   // 🆕 PAGINAÇÃO POR CLIENTE: 10 clientes por página. Volta pra pág. 1 ao mudar filtro.
   const totalPaginas = Math.max(1, Math.ceil(clientesTabela.length / TAM_PAGINA));
-  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, dataInstInicio, dataInstFim, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn, colSuporte, colDesconto]);
+  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, filtroMesFatura, dataInstInicio, dataInstFim, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn, colSuporte, colDesconto]);
   const paginaSegura = Math.min(pagina, totalPaginas);
   const clientesPagina = useMemo(
     () => clientesTabela.slice((paginaSegura - 1) * TAM_PAGINA, paginaSegura * TAM_PAGINA),
@@ -1466,6 +1476,7 @@ export default function CobrancaPage() {
         "Vencimento": filtroVencSel || filtroVenc || "todos",
         "Busca": filtroBusca || "",
         "Mes instalacao": mesInst || "Geral",
+        "Fatura em debito": filtroMesFatura ? `M${filtroMesFatura}` : "Todas",
         "Data instalacao inicio": dataInstInicio || "Geral",
         "Data instalacao fim": dataInstFim || "Geral",
         "Mes escolhido no modal": exportMesInst || "",
@@ -1493,7 +1504,7 @@ export default function CobrancaPage() {
       const wsTab = XLSX.utils.json_to_sheet(tabRows);
       wsTab["!cols"] = Array.from({ length: 9 }, () => ({ wch: 16 }));
       const wsFiltros = XLSX.utils.json_to_sheet(filtrosRows);
-      wsFiltros["!cols"] = Array.from({ length: 19 }, () => ({ wch: 24 }));
+      wsFiltros["!cols"] = Array.from({ length: 20 }, () => ({ wch: 24 }));
 
       if (exportAbas.clientes) XLSX.utils.book_append_sheet(wb, wsClientes, "Clientes");
       if (exportAbas.faturas) XLSX.utils.book_append_sheet(wb, wsFaturas, "Faturas");
@@ -2242,6 +2253,18 @@ export default function CobrancaPage() {
                 <span style={{ width: 1, height: 22, background: "#e5e7eb", margin: "0 4px" }} />
                 <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🛠️ Instalaram em:</span>
                 <input type="month" value={mesInst} onChange={e => { setMesInst(e.target.value); setSelecionadasFat(new Set()); }} style={{ ...inputStyle, padding: "6px 10px", width: "auto" }} />
+                <span style={{ width: 1, height: 22, background: "#e5e7eb", margin: "0 4px" }} />
+                <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>🧾 Fatura em débito:</span>
+                <select value={filtroMesFatura} onChange={e => { setFiltroMesFatura(e.target.value); setSelecionadasFat(new Set()); setClienteSel(null); }}
+                  style={{ ...inputStyle, padding: "6px 10px", width: "auto", minWidth: 130, borderColor: filtroMesFatura ? "#bfdbfe" : "#e5e7eb", background: filtroMesFatura ? "#eff6ff" : "#ffffff", cursor: "pointer", fontWeight: 700 }}>
+                  <option value="">Todas</option>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={String(n)}>M{n} - Fatura {n}</option>
+                  ))}
+                </select>
+                {filtroMesFatura && (
+                  <button onClick={() => setFiltroMesFatura("")} style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 20, padding: "5px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>✕ Limpar M{filtroMesFatura}</button>
+                )}
                 <span style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>ou período:</span>
                 <input type="date" value={dataInstInicio} max={dataInstFim || undefined}
                   onChange={e => { setDataInstInicio(e.target.value); setSelecionadasFat(new Set()); }}
@@ -2307,7 +2330,7 @@ export default function CobrancaPage() {
                       A cobrança vem das vendas instaladas no CRM; a planilha entra como complemento para acertar status, pagamento e FPD.<br/>
                       Confira também os filtros ativos acima — eles se somam.
                     </p>
-                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); setColSuporte(""); setColDesconto(""); }}
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setFiltroMesFatura(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); setColSuporte(""); setColDesconto(""); }}
                       style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
                       ✕ Limpar todos os filtros
                     </button>
