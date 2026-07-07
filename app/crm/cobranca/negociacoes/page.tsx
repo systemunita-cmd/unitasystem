@@ -491,6 +491,8 @@ export default function CobrancaPage() {
   const [colCust, setColCust] = useState("");
   const [colFraude, setColFraude] = useState("");  // "" todos | "sim" | "nao"
   const [colChurn, setColChurn] = useState("");    // "" todos | "sim" | "nao"
+  const [colSuporte, setColSuporte] = useState(""); // "" todos | "ativo" | "pendente" | "finalizado" | "sem"
+  const [colDesconto, setColDesconto] = useState(""); // "" todos | "ativo" | "sem"
   const [segmento, setSegmento] = useState<"inadimplentes" | "em_dia" | "todos">("inadimplentes");
   const [clienteSel, setClienteSel] = useState<number | null>(null);
   // 🆕 paginação da tabela principal (10 por página pra não pesar)
@@ -968,7 +970,7 @@ export default function CobrancaPage() {
   };
 
   const todasFaturas = useMemo<Fatura[]>(() => {
-    const instalados = propostas.filter(p => (p.status_venda || "").toUpperCase().includes("INSTALAD"));
+    const propostasInstaladas = propostas.filter(p => (p.status_venda || "").toUpperCase().includes("INSTALAD"));
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     const CICLO = 10; // 10 faturas por cliente a partir do mês gross
@@ -1032,6 +1034,13 @@ export default function CobrancaPage() {
       }
       return null;
     };
+
+    const inicioJanelaInstalacao = new Date(hoje.getFullYear(), hoje.getMonth() - 9, 1);
+    const fimJanelaInstalacao = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59, 999);
+    const instalados = propostasInstaladas.filter(p => {
+      const dataInst = parseDataSegura(p.data_instalacao);
+      return !!dataInst && dataInst >= inicioJanelaInstalacao && dataInst <= fimJanelaInstalacao;
+    });
 
     for (const p of instalados) {
       const hist = histPlanilha.get(p.id) || [];
@@ -1256,12 +1265,15 @@ export default function CobrancaPage() {
     if (colFraude === "nao") arr = arr.filter(c => !c.temFraude);
     if (colChurn === "sim")  arr = arr.filter(c => c.temChurn === true);
     if (colChurn === "nao")  arr = arr.filter(c => !c.temChurn);
+    if (colSuporte) arr = arr.filter(c => (c.suporte || suporteDaProposta(c.proposta)).tipo === colSuporte);
+    if (colDesconto === "ativo") arr = arr.filter(c => (c.desconto || descontoDaProposta(c.proposta)).ativo);
+    if (colDesconto === "sem") arr = arr.filter(c => !(c.desconto || descontoDaProposta(c.proposta)).ativo);
     return arr;
-  }, [clientes, filtroStatus, mesInst, dataInstInicio, dataInstFim, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust, colFraude, colChurn]);
+  }, [clientes, filtroStatus, mesInst, dataInstInicio, dataInstFim, filtroVencSel, filtroVenc, filtroBusca, colNome, colOs, colCust, colFraude, colChurn, colSuporte, colDesconto]);
 
   // 🆕 PAGINAÇÃO POR CLIENTE: 10 clientes por página. Volta pra pág. 1 ao mudar filtro.
   const totalPaginas = Math.max(1, Math.ceil(clientesTabela.length / TAM_PAGINA));
-  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, dataInstInicio, dataInstFim, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn]);
+  useEffect(() => { setPagina(1); }, [filtroVenc, filtroStatus, filtroBusca, mesInst, dataInstInicio, dataInstFim, filtroVencSel, colNome, colOs, colCust, colFraude, colChurn, colSuporte, colDesconto]);
   const paginaSegura = Math.min(pagina, totalPaginas);
   const clientesPagina = useMemo(
     () => clientesTabela.slice((paginaSegura - 1) * TAM_PAGINA, paginaSegura * TAM_PAGINA),
@@ -1464,6 +1476,9 @@ export default function CobrancaPage() {
         "Filtro custcode": colCust || "",
         "Filtro fraude": colFraude || "",
         "Filtro churn": colChurn || "",
+        "Filtro suporte": colSuporte || "",
+        "Filtro desconto": colDesconto || "",
+        "Regra da base": "Clientes instalados nos ultimos 10 meses, contando o mes atual",
       }];
 
       const wb = XLSX.utils.book_new();
@@ -1478,7 +1493,7 @@ export default function CobrancaPage() {
       const wsTab = XLSX.utils.json_to_sheet(tabRows);
       wsTab["!cols"] = Array.from({ length: 9 }, () => ({ wch: 16 }));
       const wsFiltros = XLSX.utils.json_to_sheet(filtrosRows);
-      wsFiltros["!cols"] = Array.from({ length: 16 }, () => ({ wch: 22 }));
+      wsFiltros["!cols"] = Array.from({ length: 19 }, () => ({ wch: 24 }));
 
       if (exportAbas.clientes) XLSX.utils.book_append_sheet(wb, wsClientes, "Clientes");
       if (exportAbas.faturas) XLSX.utils.book_append_sheet(wb, wsFaturas, "Faturas");
@@ -2292,7 +2307,7 @@ export default function CobrancaPage() {
                       A cobrança vem das vendas instaladas no CRM; a planilha entra como complemento para acertar status, pagamento e FPD.<br/>
                       Confira também os filtros ativos acima — eles se somam.
                     </p>
-                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); }}
+                    <button onClick={() => { setFiltroVenc("todos"); setFiltroStatus("todas"); setFiltroBusca(""); setMesInst(""); setDataInstInicio(""); setDataInstFim(""); setFiltroVencSel(""); setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); setColSuporte(""); setColDesconto(""); }}
                       style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 20, padding: "8px 18px", fontSize: 12.5, cursor: "pointer", fontWeight: 700 }}>
                       ✕ Limpar todos os filtros
                     </button>
@@ -2335,8 +2350,24 @@ export default function CobrancaPage() {
                               </select>
                             </th>
                           ))}
-                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}></th>
-                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}></th>
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                            <select value={colSuporte} onChange={e => setColSuporte(e.target.value)}
+                              style={{ width: "100%", minWidth: 110, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colSuporte ? "#bfdbfe" : "#e5e7eb"}`, background: colSuporte ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400, cursor: "pointer" }}>
+                              <option value="">Todos</option>
+                              <option value="ativo">Ativo</option>
+                              <option value="pendente">Pendente</option>
+                              <option value="finalizado">Finalizado</option>
+                              <option value="sem">Sem suporte</option>
+                            </select>
+                          </th>
+                          <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                            <select value={colDesconto} onChange={e => setColDesconto(e.target.value)}
+                              style={{ width: "100%", minWidth: 110, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colDesconto ? "#bfdbfe" : "#e5e7eb"}`, background: colDesconto ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400, cursor: "pointer" }}>
+                              <option value="">Todos</option>
+                              <option value="ativo">Com desconto</option>
+                              <option value="sem">Sem desconto</option>
+                            </select>
+                          </th>
                           {/* filtros OS e Custcode */}
                           <th style={{ padding: "4px 14px 8px", borderBottom: "1px solid #e5e7eb" }}>
                             <input value={colOs} onChange={e => setColOs(e.target.value)} placeholder="OS"
@@ -2347,8 +2378,8 @@ export default function CobrancaPage() {
                               style={{ width: "100%", minWidth: 80, padding: "5px 8px", fontSize: 11, borderRadius: 7, border: `1px solid ${colCust ? "#bfdbfe" : "#e5e7eb"}`, background: colCust ? "#eff6ff" : "#fff", outline: "none", fontWeight: 400 }} />
                           </th>
                           <th colSpan={4} style={{ borderBottom: "1px solid #e5e7eb", padding: "4px 14px" }}>
-                            {(colNome || colOs || colCust || colFraude || colChurn) && (
-                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); }}
+                            {(colNome || colOs || colCust || colFraude || colChurn || colSuporte || colDesconto) && (
+                              <button onClick={() => { setColNome(""); setColOs(""); setColCust(""); setColFraude(""); setColChurn(""); setColSuporte(""); setColDesconto(""); }}
                                 title="Limpar filtros de coluna" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 7, padding: "5px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap" }}>✕ Limpar</button>
                             )}
                           </th>
