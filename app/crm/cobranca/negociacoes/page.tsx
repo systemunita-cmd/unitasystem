@@ -204,6 +204,14 @@ const normalizarTelefone = (t: string | null | undefined): string => {
   return String(t).replace(/\D/g, "");
 };
 
+const normalizarTelefoneWhatsApp = (t: string | null | undefined): string => {
+  let n = normalizarTelefone(t);
+  n = n.replace(/^0+/, "");
+  if ((n.length === 10 || n.length === 11) && !n.startsWith("55")) return `55${n}`;
+  if (n.startsWith("550") && (n.length === 13 || n.length === 14)) return `55${n.slice(3)}`;
+  return n;
+};
+
 const normalizarTxt = (v: any): string =>
   String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
 
@@ -1665,7 +1673,7 @@ export default function CobrancaPage() {
       .filter(f => selecionadasFat.has(chaveSelecao(f)))
       .map(f => {
         const p = f.proposta;
-        const tel = normalizarTelefone(p.telefone1) || normalizarTelefone(p.telefone2) || normalizarTelefone(p.telefone3);
+        const tel = normalizarTelefoneWhatsApp(p.telefone1) || normalizarTelefoneWhatsApp(p.telefone2) || normalizarTelefoneWhatsApp(p.telefone3);
         return {
           nome: p.nome || "Cliente", telefone: tel,
           vars: {
@@ -1699,7 +1707,7 @@ export default function CobrancaPage() {
     const contatos: { nome: string; telefone: string; vars: Record<string, string> }[] = [];
     for (const c of lista) {
       const p = c.proposta;
-      const tel = normalizarTelefone(p.telefone1) || normalizarTelefone(p.telefone2) || normalizarTelefone(p.telefone3);
+      const tel = normalizarTelefoneWhatsApp(p.telefone1) || normalizarTelefoneWhatsApp(p.telefone2) || normalizarTelefoneWhatsApp(p.telefone3);
       if (tel.length < 10) continue;
       // faturas em aberto do cliente (não pagas)
       const abertas = (c.faturas as Fatura[]).filter(f => !STATUS_META[f.status_visual]?.recebido);
@@ -1824,7 +1832,7 @@ export default function CobrancaPage() {
   }, [planilhaDados, mapeamento]);
 
   const linhasValidas = useMemo(() => {
-    return linhasMapeadas.filter(l => normalizarTelefone(l.telefone).length >= 10);
+    return linhasMapeadas.filter(l => normalizarTelefoneWhatsApp(l.telefone).length >= 12);
   }, [linhasMapeadas]);
 
   const toggleSelPlanilha = (idx: number) => {
@@ -1851,10 +1859,10 @@ export default function CobrancaPage() {
     }
     const contatos = idsParaEnvio.map(l => ({
       nome: l.nome || "Cliente",
-      telefone: normalizarTelefone(l.telefone),
+      telefone: normalizarTelefoneWhatsApp(l.telefone),
       vars: {
         nome: l.nome || "Cliente",
-        telefone: normalizarTelefone(l.telefone),
+        telefone: normalizarTelefoneWhatsApp(l.telefone),
         plano: l.plano || "", valor: l.valor || "",
         vencimento: l.vencimento || "", codigo: l.codigo || "",
       },
@@ -1879,6 +1887,25 @@ export default function CobrancaPage() {
       return;
     }
 
+    const contatosProntos = envioContatos
+      .map(c => {
+        const numero = normalizarTelefoneWhatsApp(c.telefone);
+        return {
+          ...c,
+          telefone: numero,
+          vars: { ...c.vars, telefone: numero },
+        };
+      })
+      .filter(c => c.telefone.length >= 12);
+    if (contatosProntos.length === 0) {
+      setFeedback({
+        tipo: "aviso",
+        titulo: "Nenhum telefone pronto para WhatsApp",
+        mensagem: "Os contatos precisam ter DDD e número. Exemplo: 62991209509 vira 5562991209509.",
+      });
+      return;
+    }
+
     setEnvioEnviando(true);
     try {
       const rota = envioTipo === "waba" ? "disparos/criar-waba" : "disparos/criar";
@@ -1890,7 +1917,7 @@ export default function CobrancaPage() {
           criadoPor: userEmail,
           nome: envioNomeCampanha,
           origem: "cobranca",
-          contatos: envioContatos.map(c => ({ numero: c.telefone, vars: c.vars })),
+          contatos: contatosProntos.map(c => ({ numero: c.telefone, vars: c.vars })),
           mensagem: envioTipo === "webjs" ? envioMensagem : undefined,
           templateId: envioTipo === "waba" ? envioTemplateId : undefined,
           delayMinSeg: envioDelayMin,
@@ -1906,7 +1933,7 @@ export default function CobrancaPage() {
         setFeedback({
           tipo: "sucesso",
           titulo: "Cobrança disparada!",
-          mensagem: `Campanha "${envioNomeCampanha}" criada com ${envioContatos.length} contatos. Os envios começam agora, respeitando o delay configurado.`,
+          mensagem: `Campanha "${envioNomeCampanha}" criada com ${contatosProntos.length} contatos. Os envios começam agora, respeitando o delay configurado.`,
           detalhes: [`Disparo ID: ${data.disparoId}`, `Acompanhe na aba Campanhas.`],
         });
         await fetchCampanhas();
