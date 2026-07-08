@@ -585,7 +585,81 @@ export default function Vendas() {
   const minhasEquipesAcesso: number[] = meuPerfilVendas.equipesAcesso.length
     ? meuPerfilVendas.equipesAcesso
     : (minhaEquipe != null ? [minhaEquipe] : []);
-  const regDoVendedor = (emailVend: string) => usuariosMap.get((emailVend || "").toLowerCase());
+  const regDoVendedor = (emailVend: string) => {
+    const alvo = String(emailVend || "").trim().toLowerCase();
+    if (!alvo) return undefined;
+    const direto = usuariosMap.get(alvo);
+    if (direto) return direto;
+    return usuarios.find(u =>
+      String(u.email || "").trim().toLowerCase() === alvo ||
+      String(u.nome || "").trim().toLowerCase() === alvo
+    );
+  };
+
+  const idsEquipeDaProposta = (p: Proposta): string[] => {
+    const ids = new Set<string>();
+    const add = (v: any) => {
+      if (v !== null && v !== undefined && String(v).trim() !== "") ids.add(String(v).trim());
+    };
+    const dc = p.dados_customizados || {};
+    add(p.equipe_id_criador);
+    add(p.equipe_id);
+    add((p as any).equipe);
+    add((p as any).pdv);
+    add(dc.equipe_id);
+    add(dc.equipe);
+    add(dc.pdv);
+    add(dc.equipe_vendedor);
+    add(dc.pdv_vendedor);
+
+    const vendedor = regDoVendedor(p.vendedor);
+    add(vendedor?.equipe_id);
+    for (const id of vendedor?.equipes_acesso || []) add(id);
+    return Array.from(ids);
+  };
+
+  const idsFilaDaProposta = (p: Proposta): string[] => {
+    const ids = new Set<string>();
+    const add = (v: any) => {
+      if (v !== null && v !== undefined && String(v).trim() !== "") ids.add(String(v).trim());
+    };
+    const dc = p.dados_customizados || {};
+    add((p as any).fila_id);
+    add((p as any).fila);
+    add(dc.fila_id);
+    add(dc.fila);
+    add(dc.fila_vendedor);
+
+    const vendedor = regDoVendedor(p.vendedor);
+    add(vendedor?.fila_id);
+    for (const id of vendedor?.filas_acesso || []) add(id);
+    return Array.from(ids);
+  };
+
+  const vendaEhDoUsuarioLogado = (p: Proposta): boolean => {
+    const email = userEmail.trim().toLowerCase();
+    if (!email) return false;
+    const vendedor = String(p.vendedor || "").trim().toLowerCase();
+    const criador = String(p.criado_por || "").trim().toLowerCase();
+    if (vendedor === email || criador === email) return true;
+    const meuNome = String(meuRegistro?.nome || "").trim().toLowerCase();
+    if (meuNome && vendedor === meuNome) return true;
+    return false;
+  };
+
+  const vendaPertenceMinhaEquipe = (p: Proposta): boolean => {
+    const permitidas = minhasEquipesAcesso.length ? minhasEquipesAcesso.map((x: any) => String(x)) : [];
+    if (minhaEquipe != null && !permitidas.includes(String(minhaEquipe))) permitidas.push(String(minhaEquipe));
+    if (permitidas.length === 0) return false;
+    const idsVenda = idsEquipeDaProposta(p);
+    return idsVenda.some(id => permitidas.includes(String(id)));
+  };
+
+  const vendaPertenceMinhaFila = (p: Proposta): boolean => {
+    if (minhasFilas.length === 0) return false;
+    const idsVenda = idsFilaDaProposta(p);
+    return idsVenda.some(id => minhasFilas.includes(String(id)));
+  };
 
   // 🎨 ESTILOS
   const inputStyle = {
@@ -1561,29 +1635,16 @@ export default function Vendas() {
     //   A comparação geral entre todos fica só no Dashboard.
     .filter(p => {
       if (veTudo) return true;
-      const minha = (p.vendedor && p.vendedor.toLowerCase() === userEmail.toLowerCase())
-        || (p.criado_por && p.criado_por.toLowerCase() === userEmail.toLowerCase());
-      if (minha) return true; // todo mundo vê pelo menos as próprias
-      if (veEquipe) {
-        return minhaEquipe != null && String(p.equipe_id_criador ?? "") === String(minhaEquipe);
-      }
-      if (veFila) {
-        const rv = regDoVendedor(p.vendedor);
-        return minhasFilas.length > 0 && !!rv && minhasFilas.includes(String(rv.fila_id ?? ""));
-      }
+      if (vendaEhDoUsuarioLogado(p)) return true; // venda atribuída ao usuário aparece mesmo se foi criada por admin/backoffice
+      if (veEquipe && vendaPertenceMinhaEquipe(p)) return true;
+      if (veFila && vendaPertenceMinhaFila(p)) return true;
       return false;
     })
-    // 🔒 Seletor de PDV do topo (equipeId): filtra por equipe_id_criador pra
-    //    QUALQUER usuário que tenha um PDV selecionado/travado (não só quem vê tudo).
-    .filter(p => !equipeId || String(p.equipe_id_criador ?? "") === String(equipeId))
-    // 🎚️ Seletor de FILA (filaFiltro): quando escolhido, mostra só vendas cujo
-    //    vendedor pertence àquela fila. Vendas com vendedor não-identificável
-    //    (INDICADOR, nomes soltos) não casam numa fila específica.
-    .filter(p => {
-      if (!filaFiltro) return true;
-      const rv = regDoVendedor(p.vendedor);
-      return !!rv && String(rv.fila_id ?? "") === String(filaFiltro);
-    })
+    // 🔒 Seletor de PDV do topo: considera o PDV gravado na venda E o PDV do vendedor.
+    //    Assim venda criada por admin/backoffice para outro login aparece na equipe certa.
+    .filter(p => !equipeId || idsEquipeDaProposta(p).includes(String(equipeId)))
+    // 🎚️ Seletor de FILA: considera a fila gravada e, principalmente, a fila do vendedor atribuído.
+    .filter(p => !filaFiltro || idsFilaDaProposta(p).includes(String(filaFiltro)))
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => filtroSuporte === "todos" || suporteDaProposta(p).tipo === filtroSuporte)
     .filter(p => filtroDesconto === "todos" || descontoDaProposta(p).ativo === (filtroDesconto === "ativo"))
