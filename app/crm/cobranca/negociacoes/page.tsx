@@ -339,6 +339,8 @@ export default function CobrancaPage() {
   const [carregandoResp, setCarregandoResp] = useState(false);
   const [convAberta, setConvAberta] = useState<string | null>(null);
   const [msgsConv, setMsgsConv] = useState<any[]>([]);
+  const [buscaRespCob, setBuscaRespCob] = useState("");
+  const chatCobRef = useRef<HTMLDivElement | null>(null);
 
   const so8 = (t: any) => String(t || "").replace(/\D/g, "").slice(-8);
   const so10 = (t: any) => String(t || "").replace(/\D/g, "").slice(-10);
@@ -542,6 +544,31 @@ export default function CobrancaPage() {
     if (aba === "atendimentos") fetchRespostasCobranca();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aba, propostas.length]);
+
+  const respostasCobFiltradas = useMemo(() => {
+    const q = buscaRespCob.trim().toLowerCase();
+    if (!q) return respostasCob;
+    const dig = q.replace(/\D/g, "");
+    return respostasCob.filter(({ a, cli }: any) => {
+      const texto = [
+        cli?.nome,
+        a?.nome,
+        a?.numero,
+        cli?.cpf,
+        cli?.plano,
+        a?.mensagem,
+        a?.status,
+      ].map(v => String(v || "").toLowerCase()).join(" ");
+      const numeros = soDig(`${a?.numero || ""} ${cli?.telefone1 || ""} ${cli?.telefone2 || ""} ${cli?.telefone3 || ""}`);
+      return texto.includes(q) || (!!dig && numeros.includes(dig));
+    });
+  }, [respostasCob, buscaRespCob]);
+
+  const abrirRetornoCobranca = (numero: string) => {
+    abrirConversaCob(numero);
+    requestAnimationFrame(() => chatCobRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   const [statusMap, setStatusMap] = useState<Map<string, FaturaStatusDB>>(new Map());
 
   const [filtroVenc, setFiltroVenc] = useState<FiltroVenc>("todos");
@@ -2181,78 +2208,106 @@ export default function CobrancaPage() {
           {/* ════════════ ABA: ATENDIMENTOS (retornos do disparo) ════════════ */}
           {aba === "atendimentos" && (
             <>
-            <div style={{ ...cardStyle, padding: 18 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-                <div>
-                  <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Leads que responderam a cobrança</h2>
-                  <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Clientes da cobrança com conversa movimentada após o 1º disparo · {respostasCob.length} encontrado(s)</p>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(340px, 430px) minmax(0, 1fr)", gap: 14, alignItems: "start" }}>
+              <div style={{ ...cardStyle, padding: 0, overflow: "hidden", position: isMobile ? "relative" : "sticky", top: 12 }}>
+                <div style={{ padding: "14px 16px", borderBottom: "1px solid #eef2f7", background: "#ffffff" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                    <div>
+                      <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>Leads que responderam</h2>
+                      <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 12 }}>
+                        {respostasCob.length} retorno(s) da cobranca
+                        {buscaRespCob && <> · {respostasCobFiltradas.length} filtrado(s)</>}
+                      </p>
+                    </div>
+                    <button onClick={fetchRespostasCobranca} disabled={carregandoResp}
+                      style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 10, padding: "8px 11px", fontSize: 12, fontWeight: 800, cursor: carregandoResp ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+                      {carregandoResp ? "Buscando..." : "Atualizar"}
+                    </button>
+                  </div>
+                  <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                    <input
+                      value={buscaRespCob}
+                      onChange={e => setBuscaRespCob(e.target.value)}
+                      placeholder="Buscar retorno, nome, numero..."
+                      style={{ ...inputStyle, height: 38, fontSize: 12 }}
+                    />
+                    {buscaRespCob && (
+                      <button onClick={() => setBuscaRespCob("")}
+                        style={{ ...btnSecundario, padding: "8px 10px", fontSize: 12, borderRadius: 9 }}>
+                        Limpar
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <button onClick={fetchRespostasCobranca} disabled={carregandoResp}
-                  style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 10, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  {carregandoResp ? "⏳ Buscando..." : "🔄 Atualizar"}
-                </button>
-              </div>
-              {carregandoResp ? (
-                <p style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: 24 }}>⏳ Cruzando disparos com os atendimentos...</p>
-              ) : respostasCob.length === 0 ? (
-                <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno ainda — dispare uma cobrança e os clientes que responderem aparecem aqui.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {respostasCob.map(({ a, cli }: any) => (
-                    <div key={a.id} style={{ border: "1px solid #e5e7eb", borderLeft: "4px solid #16a34a", borderRadius: 12, background: "#ffffff" }}>
-                      <div onClick={() => abrirConversaCob(a.numero)}
-                        style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", cursor: "pointer", flexWrap: "wrap" }}>
-                        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                          <p style={{ margin: 0, color: "#1f2937", fontSize: 13.5, fontWeight: 800 }}>{cli.nome || a.nome || a.numero}</p>
-                          <p style={{ margin: "2px 0 0", color: "#6b7280", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>💬 {a.mensagem || "(sem prévia)"}</p>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <p style={{ margin: 0, color: "#16a34a", fontSize: 12.5, fontWeight: 800 }}>R$ {Number(cli.valor_plano || 0).toFixed(2).replace(".", ",")}</p>
-                          <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: 10.5 }}>{cli.plano || ""}</p>
-                        </div>
-                        <div style={{ textAlign: "right", minWidth: 110 }}>
-                          <p style={{ margin: 0, color: "#374151", fontSize: 11, fontWeight: 700 }}>{a.updated_at ? new Date(a.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-                          <p style={{ margin: "2px 0 0", color: a.status === "resolvido" ? "#16a34a" : "#d97706", fontSize: 10.5, fontWeight: 700 }}>{a.status || ""}{a.atendente ? ` · ${String(a.atendente).split("@")[0]}` : ""}</p>
-                        </div>
-                        <span style={{ color: "#9ca3af", fontSize: 14, fontWeight: 700 }}>{convAberta === a.numero ? "▾" : "▸"}</span>
-                      </div>
-                      {convAberta === a.numero && (
-                        <div style={{ borderTop: "1px solid #f3f4f6", background: "#f8fafc", padding: 12 }}>
-                          {msgsConv.length === 0 ? (
-                            <p style={{ color: "#9ca3af", fontSize: 12, margin: 0, textAlign: "center" }}>⏳ Carregando conversa...</p>
-                          ) : (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto" }}>
-                              {msgsConv.map((m: any, i: number) => {
-                                const doCliente = m.de === "cliente";
-                                return (
-                                  <div key={m.id || i} style={{ alignSelf: doCliente ? "flex-start" : "flex-end", maxWidth: "78%", background: doCliente ? "#ffffff" : "#dcfce7", border: "1px solid " + (doCliente ? "#e5e7eb" : "#bbf7d0"), borderRadius: 10, padding: "7px 11px" }}>
-                                    <p style={{ margin: 0, color: "#1f2937", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.mensagem}</p>
-                                    <p style={{ margin: "3px 0 0", color: "#9ca3af", fontSize: 9.5, textAlign: "right" }}>{doCliente ? "cliente" : m.de} · {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}</p>
-                                  </div>
-                                );
-                              })}
+
+                {carregandoResp ? (
+                  <p style={{ color: "#6b7280", fontSize: 13, textAlign: "center", padding: 24 }}>Cruzando disparos com os atendimentos...</p>
+                ) : respostasCob.length === 0 ? (
+                  <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno ainda. Quando o cliente responder, ele aparece aqui.</p>
+                ) : respostasCobFiltradas.length === 0 ? (
+                  <p style={{ color: "#9ca3af", fontSize: 13, textAlign: "center", padding: 24 }}>Nenhum retorno nesse filtro.</p>
+                ) : (
+                  <div style={{ maxHeight: isMobile ? 360 : "calc(100vh - 310px)", minHeight: 260, overflowY: "auto", padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {respostasCobFiltradas.map(({ a, cli }: any) => {
+                      const ativo = convAberta === a.numero;
+                      const tel = soDig(a.numero || cli.telefone1 || "");
+                      const quando = a.updated_at ? new Date(a.updated_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+                      return (
+                        <div key={`${a.id || a.numero}-${a.updated_at || ""}`}
+                          onClick={() => abrirRetornoCobranca(a.numero)}
+                          style={{
+                            border: `1px solid ${ativo ? "#86efac" : "#e5e7eb"}`,
+                            borderLeft: `4px solid ${ativo ? "#16a34a" : "#22c55e"}`,
+                            borderRadius: 12,
+                            background: ativo ? "#f0fdf4" : "#ffffff",
+                            padding: 12,
+                            cursor: "pointer",
+                            boxShadow: ativo ? "0 6px 16px rgba(22,163,74,0.16)" : "none",
+                          }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p style={{ margin: 0, color: "#111827", fontSize: 13, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cli.nome || a.nome || tel || "Cliente"}</p>
+                              <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 11, fontFamily: "monospace" }}>{tel || "sem numero"}</p>
                             </div>
-                          )}
-                          <div style={{ display: "flex", gap: 8, marginTop: 10, justifyContent: "flex-end" }}>
-                            <a href="/chatbot" style={{ background: "linear-gradient(135deg, #16a34a 0%, #22c55e 100%)", color: "#fff", borderRadius: 9, padding: "8px 14px", fontSize: 12, fontWeight: 800, textDecoration: "none", boxShadow: "0 4px 12px rgba(22,163,74,0.3)" }}>↩️ Responder no Atendimento</a>
+                            <span style={{ background: ativo ? "#dcfce7" : "#f8fafc", color: ativo ? "#16a34a" : "#64748b", border: `1px solid ${ativo ? "#86efac" : "#e2e8f0"}`, borderRadius: 999, padding: "3px 8px", fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>
+                              {quando || "agora"}
+                            </span>
+                          </div>
+                          <p style={{ margin: "8px 0 0", color: "#374151", fontSize: 12, lineHeight: 1.35, maxHeight: 34, overflow: "hidden" }}>
+                            {a.mensagem || "(sem previa)"}
+                          </p>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+                            <span style={{ color: "#64748b", fontSize: 10.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {cli.plano || "Plano nao informado"} {Number(cli.valor_plano || 0) > 0 ? `· ${formatBRL(Number(cli.valor_plano || 0))}` : ""}
+                            </span>
+                            <button type="button" onClick={(ev) => { ev.stopPropagation(); abrirRetornoCobranca(a.numero); }}
+                              style={{ background: "#16a34a", color: "#ffffff", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
+                              Atender
+                            </button>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ░░ CHAT COMPLETO — só conversas dos canais de cobrança ░░ */}
-            <div style={{ ...cardStyle, padding: 0, marginTop: 14, overflow: "hidden" }}>
-              <div style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f7" }}>
-                <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>💬 Atendimentos dos canais de cobrança</h2>
-                <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Todas as conversas dos canais marcados com o módulo Cobrança.</p>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div style={{ height: 560, maxHeight: "75vh", position: "relative", overflow: "hidden", borderRadius: 0 }}>
-                <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
-                  <ChatSection moduloFiltro="cobranca" />
+
+              <div ref={chatCobRef} style={{ ...cardStyle, padding: 0, overflow: "hidden", minHeight: isMobile ? 560 : "calc(100vh - 230px)" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #eef2f7", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <div>
+                    <h2 style={{ margin: 0, color: "#1f2937", fontSize: 15, fontWeight: 800 }}>Atendimento da cobranca</h2>
+                    <p style={{ margin: "3px 0 0", color: "#6b7280", fontSize: 12 }}>Lista de retornos e conversa ficam na mesma tela.</p>
+                  </div>
+                  {convAberta && (
+                    <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 999, padding: "5px 10px", fontSize: 11, fontWeight: 800 }}>
+                      Retorno selecionado: {soDig(convAberta)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ height: isMobile ? 620 : "calc(100vh - 305px)", minHeight: 520, position: "relative", overflow: "hidden", borderRadius: 0 }}>
+                  <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
+                    <ChatSection moduloFiltro="cobranca" />
+                  </div>
                 </div>
               </div>
             </div>
