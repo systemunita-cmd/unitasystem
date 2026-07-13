@@ -233,7 +233,7 @@ function AudioPlayer({ src, isOwn }: { src: string; isOwn: boolean }) {
   );
 }
 
-export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { modoCobranca?: boolean; moduloFiltro?: string | null } = {}) {
+export function ChatSection({ modoCobranca = false, moduloFiltro = null, numeroAbrir = null }: { modoCobranca?: boolean; moduloFiltro?: string | null; numeroAbrir?: string | null } = {}) {
   // useWorkspace removido (single-tenant Unita)
   // Substituído por auth direto do Supabase pra preservar `user.email` em fluxos
   const workspace = null as any;
@@ -2344,6 +2344,30 @@ export function ChatSection({ modoCobranca = false, moduloFiltro = null }: { mod
     } catch (e) { console.warn("Falha ao marcar visualizado_em (não bloqueia uso):", e); }
   };
 
+  // Permite que telas que incorporam o chat abram uma conversa pelo numero.
+  // Compara os ultimos 8 digitos para tolerar DDI, DDD, nono digito e formatacao.
+  const ultimoNumeroAbertoExternamenteRef = useRef<string | null>(null);
+  useEffect(() => {
+    const alvo = String(numeroAbrir || "").replace(/\D/g, "");
+    if (!alvo) {
+      ultimoNumeroAbertoExternamenteRef.current = null;
+      return;
+    }
+    const encontrado = atendimentos.find(a => {
+      const atual = String(a.numero || "").replace(/\D/g, "");
+      if (!atual) return false;
+      if (atual === alvo) return true;
+      if (atual.length >= 8 && alvo.length >= 8 && (atual.endsWith(alvo) || alvo.endsWith(atual))) return true;
+      return atual.length >= 8 && alvo.length >= 8 && atual.slice(-8) === alvo.slice(-8);
+    });
+    if (!encontrado) return;
+    const chave = `${encontrado.id}:${alvo}`;
+    if (ultimoNumeroAbertoExternamenteRef.current === chave && atendimentoAtivo?.id === encontrado.id) return;
+    ultimoNumeroAbertoExternamenteRef.current = chave;
+    abrirAtendimento(encontrado);
+  // abrirAtendimento usa apenas estados/funcoes estaveis desta renderizacao.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [numeroAbrir, atendimentos, atendimentoAtivo?.id]);
   const tempoRelativo = (data: string) => { const d = Math.floor((Date.now() - new Date(data).getTime()) / 60000); return d < 1 ? "agora" : d < 60 ? `${d}min` : d < 1440 ? `${Math.floor(d/60)}h` : `${Math.floor(d/1440)}d`; };
   const horaMsg = (data: string) => new Date(data).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const dataHoraMsg = (data: string) => new Date(data).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });

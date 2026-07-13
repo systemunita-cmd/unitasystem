@@ -528,7 +528,7 @@ export default function CobrancaPage() {
   };
 
   const abrirConversaCob = async (numero: string) => {
-    if (convAberta === numero) { setConvAberta(null); setMsgsConv([]); return; }
+    if (!numero) return;
     setConvAberta(numero);
     setMsgsConv([]);
     try {
@@ -2306,7 +2306,7 @@ export default function CobrancaPage() {
                 </div>
                 <div style={{ height: isMobile ? 620 : "calc(100vh - 305px)", minHeight: 520, position: "relative", overflow: "hidden", borderRadius: 0 }}>
                   <div style={{ position: "absolute", inset: 0, overflow: "auto" }}>
-                    <ChatSection moduloFiltro="cobranca" />
+                    <ChatSection moduloFiltro="cobranca" numeroAbrir={convAberta} />
                   </div>
                 </div>
               </div>
