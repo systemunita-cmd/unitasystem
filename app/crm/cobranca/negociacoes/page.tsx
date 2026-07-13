@@ -698,8 +698,8 @@ export default function CobrancaPage() {
     "Olá {{nome}}! 👋\n\nLembrete: sua fatura referente a {{mes_referencia}} no valor de {{valor}} vence em {{vencimento}}.\n\nPara evitar atrasos, faça o pagamento até o vencimento.\n\nQualquer dúvida, estou à disposição!\n\nGrupo Unita"
   );
   const [envioNomeCampanha, setEnvioNomeCampanha] = useState("");
-  const [envioDelayMin, setEnvioDelayMin] = useState(30);
-  const [envioDelayMax, setEnvioDelayMax] = useState(60);
+  const [envioDelayMin, setEnvioDelayMin] = useState(45);
+  const [envioDelayMax, setEnvioDelayMax] = useState(120);
   const [envioEnviando, setEnvioEnviando] = useState(false);
 
   const [feedback, setFeedback] = useState<{
@@ -3039,8 +3039,8 @@ export default function CobrancaPage() {
               <div>
                 <label style={labelStyle}>Delay entre envios (segundos)</label>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <input type="number" min={1} max={300} value={envioDelayMin} onChange={e => setEnvioDelayMin(parseInt(e.target.value) || 30)} style={inputStyle} placeholder="Mínimo" />
-                  <input type="number" min={1} max={300} value={envioDelayMax} onChange={e => setEnvioDelayMax(parseInt(e.target.value) || 60)} style={inputStyle} placeholder="Máximo" />
+                  <input type="number" min={envioTipo === "webjs" ? 45 : 1} max={300} value={envioDelayMin} onChange={e => setEnvioDelayMin(parseInt(e.target.value) || (envioTipo === "webjs" ? 45 : 1))} style={inputStyle} placeholder="Mínimo" />
+                  <input type="number" min={envioTipo === "webjs" ? 45 : 1} max={300} value={envioDelayMax} onChange={e => setEnvioDelayMax(parseInt(e.target.value) || (envioTipo === "webjs" ? 120 : 60))} style={inputStyle} placeholder="Máximo" />
                 </div>
                 <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>💡 Recomendo 30-60s pra WebJS evitar ban. WABA pode ser mais rápido (1-3s).</p>
               </div>

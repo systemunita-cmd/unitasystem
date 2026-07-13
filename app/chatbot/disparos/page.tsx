@@ -14,7 +14,7 @@ type Template = {
   categoria: string; idioma: string; status: string; componentes: any[];
 };
 type Disparo = {
-  id: number;
+  id: number; nome?: string; criado_por?: string;
   mensagem: string; delay_min_seg: number; delay_max_seg: number; status: string;
   total_contatos: number; total_enviados: number; total_falhas: number;
   pausado_motivo?: string; erro_msg?: string;
@@ -274,8 +274,8 @@ export default function DisparosPage() {
     if (!canalSelecionado) return alert("Selecione um canal!");
     if (!mensagem.trim()) return alert("Digite a mensagem!");
     if (numeros.length === 0) return alert("Nenhum número válido!");
-    if (numeros.length > 1000) return alert("Máximo 1000 números por disparo!");
-    if (delayMin < 30) return alert("Delay mínimo deve ser pelo menos 30 segundos");
+    if (numeros.length > 80) return alert("Por segurança anti-ban, o WhatsApp Web permite no máximo 80 números por campanha.");
+    if (delayMin < 45) return alert("Delay mínimo do WhatsApp Web deve ser pelo menos 45 segundos");
     if (delayMin > delayMax) return alert("Delay mínimo não pode ser maior que o máximo");
 
     // 🗓️ valida agendamento (se ativo)
@@ -290,7 +290,7 @@ export default function DisparosPage() {
     setEnviando(true);
     try {
       const resp = await wa("disparos/criar", { canalId: canalSelecionado, criadoPor: user?.email,
-        nome: nome || null, mensagem, numeros,
+        nome: nome || null, mensagem, contatos: numeros.map(numero => ({ numero, vars: {} })),
         delayMinSeg: delayMin, delayMaxSeg: delayMax,
         // 🗓️ Backend deve salvar em disparos.agendado_para. Se preenchido e
         // no futuro, o worker NÃO inicia até o horário chegar.
@@ -362,24 +362,31 @@ export default function DisparosPage() {
     else iniciarDisparoWaba();
   };
 
-  const pausarDisparo = async (id: number) => { await wa("disparos/pausar", { disparoId: id}); fetchDisparos(); };
-    // 🛡️ Pra pausar/cancelar campanha de OUTROS, precisa controlar_outros
+  const podeControlarDisparo = (id: number): boolean => {
     const d = disparos.find(x => x.id === id);
-    if (d && d.criado_por !== user?.email && !novoPodeControlarOutros && !perm.superAdmin && !isDono && perfil !== "Administrador") {
-      alert("Você não pode controlar campanhas de outras pessoas.");
-      return;
-    }
-  const retomarDisparo = async (id: number) => { await wa("disparos/retomar", { disparoId: id}); fetchDisparos(); };
+    if (!d || d.criado_por === user?.email || novoPodeControlarOutros || perm.superAdmin || isDono || perfil === "Administrador") return true;
+    alert("Você não pode controlar campanhas de outras pessoas.");
+    return false;
+  };
+
+  const pausarDisparo = async (id: number) => {
+    if (!podeControlarDisparo(id)) return;
+    const resp = await wa("disparos/pausar", { disparoId: id });
+    if (!resp.success) alert("Erro ao pausar: " + (resp.error || "desconhecido"));
+    await fetchDisparos();
+  };
+  const retomarDisparo = async (id: number) => {
+    if (!podeControlarDisparo(id)) return;
+    const resp = await wa("disparos/retomar", { disparoId: id });
+    if (!resp.success) alert("Erro ao retomar: " + (resp.error || "desconhecido"));
+    await fetchDisparos();
+  };
   const cancelarDisparo = async (id: number) => {
-    // 🛡️ Pra pausar/cancelar campanha de OUTROS, precisa controlar_outros
-    const d = disparos.find(x => x.id === id);
-    if (d && d.criado_por !== user?.email && !novoPodeControlarOutros && !perm.superAdmin && !isDono && perfil !== "Administrador") {
-      alert("Você não pode controlar campanhas de outras pessoas.");
-      return;
-    }
-    if (!confirm("Cancelar esse disparo?")) return;
-    await wa("disparos/cancelar", { disparoId: id});
-    fetchDisparos();
+    if (!podeControlarDisparo(id)) return;
+    if (!confirm("Cancelar esse disparo? Contatos ainda pendentes não serão enviados.")) return;
+    const resp = await wa("disparos/cancelar", { disparoId: id });
+    if (!resp.success) alert("Erro ao cancelar: " + (resp.error || "desconhecido"));
+    await fetchDisparos();
   };
 
   const numerosValidos = tipoDisparo === "webjs"
@@ -392,13 +399,13 @@ export default function DisparosPage() {
 
   const statusColor: Record<string, string> = {
     pendente: "#f59e0b", rodando: "#2563eb", pausado: "#f59e0b",
-    concluido: "#16a34a", cancelado: "#6b7280", erro: "#dc2626",
+    concluida: "#16a34a", concluido: "#16a34a", cancelado: "#6b7280", erro: "#dc2626",
     // 🗓️ Novo status visual pra disparo aguardando o horário marcado
     agendado: "#8b5cf6"
   };
   const statusLabel: Record<string, string> = {
     pendente: "⏳ Pendente", rodando: "🚀 Enviando", pausado: "⏸️ Pausado",
-    concluido: "✅ Concluído", cancelado: "🛑 Cancelado", erro: "❌ Erro",
+    concluida: "✅ Concluído", concluido: "✅ Concluído", cancelado: "🛑 Cancelado", erro: "❌ Erro",
     agendado: "🗓️ Agendado"
   };
 
@@ -620,14 +627,14 @@ export default function DisparosPage() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
           <div>
             <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>⏱️ Delay Mínimo (seg)</label>
-            <input type="number" min={tipoDisparo === "webjs" ? 30 : 0} max={300} value={delayMin} onChange={e => setDelayMin(parseInt(e.target.value) || 0)} style={IS} />
+            <input type="number" min={tipoDisparo === "webjs" ? 45 : 0} max={300} value={delayMin} onChange={e => setDelayMin(parseInt(e.target.value) || 0)} style={IS} />
             <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>
               {tipoDisparo === "webjs" ? "Mínimo 30s, recomendado 60s+" : "WABA: pode ser 0-5s"}
             </p>
           </div>
           <div>
             <label style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>⏱️ Delay Máximo (seg)</label>
-            <input type="number" min={tipoDisparo === "webjs" ? 30 : 0} max={300} value={delayMax} onChange={e => setDelayMax(parseInt(e.target.value) || 0)} style={IS} />
+            <input type="number" min={tipoDisparo === "webjs" ? 45 : 0} max={300} value={delayMax} onChange={e => setDelayMax(parseInt(e.target.value) || 0)} style={IS} />
             <p style={{ color: "#9ca3af", fontSize: 10, margin: "4px 0 0" }}>Máx: 300s</p>
           </div>
         </div>
