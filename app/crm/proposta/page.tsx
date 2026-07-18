@@ -228,6 +228,7 @@ function PropostaForm() {
         // ── Carrega lista de usuários (e detecta admin) ──
         const respUsuarios = await supabase.from("usuarios")
           .select("id, email, nome, role, fila_id, equipe_id, equipes_acesso, filas_acesso")
+          .eq("ativo", true)
           .order("nome");
 
         if (respUsuarios.error?.code === "PGRST205") faltando.push("usuarios");

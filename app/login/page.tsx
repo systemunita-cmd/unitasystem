@@ -31,6 +31,11 @@ export default function Login() {
   const [erro, setErro] = useState("");
   const [info, setInfo] = useState("");
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("inativo") === "1") {
+      setErro("Este login está inativo. Fale com um administrador para reativar o acesso.");
+    }
+  }, []);
   const [reenvioCooldown, setReenvioCooldown] = useState(0);
   useEffect(() => {
     if (reenvioCooldown <= 0) return;
@@ -51,6 +56,23 @@ export default function Login() {
 
   // ─── HANDLERS (lógica idêntica) ────────────────────────────────────────
 
+  const bloquearSeInativo = async (user: { id: string; email?: string | null }) => {
+    let perfil: { ativo?: boolean } | null = null;
+    const porAuth = await supabase.from("usuarios").select("ativo").eq("auth_user_id", user.id).maybeSingle();
+    perfil = porAuth.data;
+
+    if (!perfil && user.email) {
+      const porEmail = await supabase.from("usuarios").select("ativo").ilike("email", user.email).maybeSingle();
+      perfil = porEmail.data;
+    }
+
+    if (perfil?.ativo !== false) return false;
+
+    await supabase.auth.signOut();
+    setLoading(false);
+    setErro("Este login está inativo. Fale com um administrador para reativar o acesso.");
+    return true;
+  };
   const handleLogin = async () => {
     if (!email || !password) { setErro("Preencha e-mail e senha!"); return; }
     setLoading(true); setErro(""); setInfo("");
@@ -66,6 +88,7 @@ export default function Login() {
       setErro("E-mail ou senha incorretos");
       return;
     }
+    if (data.user && await bloquearSeInativo(data.user)) return;
     setLoading(false);
     if (data.user) router.push("/crm");
   };
@@ -91,6 +114,7 @@ export default function Login() {
       otpRefs.current[0]?.focus();
       return;
     }
+    if (data.user && await bloquearSeInativo(data.user)) return;
     if (data.session) router.push("/crm");
   };
 

@@ -617,6 +617,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
     role: "atendente" as "admin" | "supervisor" | "atendente",
     grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
+    ativo: true,
     exige_selfie: true,
     exige_ponto: true,
     equipes_acesso: [] as number[],
@@ -670,7 +671,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [], canais_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", ativo: true, exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [], canais_acesso: [] });
     setShowForm(true);
   };
 
@@ -696,6 +697,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
       grupo_id: u.grupo_id?.toString() || "",
       ramal: u.ramal || "", telefone: u.telefone || "",
       fila_id: u.fila_id?.toString() || "",
+      ativo: u.ativo !== false,
       exige_selfie: u.exige_selfie !== false, // default true
       exige_ponto: u.exige_ponto !== false,   // default true
       equipes_acesso: equipesIniciais,
@@ -729,6 +731,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
         equipes_acesso: formUsuario.equipes_acesso,
         filas_acesso: formUsuario.filas_acesso,
         canais_acesso: formUsuario.canais_acesso,
+        ativo: formUsuario.ativo,
       }).eq("id", editandoUsuario.id);
       setSalvando(false);
       if (error) { alert("Erro: " + error.message); return; }
@@ -799,18 +802,20 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
     }
   };
 
-  const excluirUsuario = async (u: Usuario) => {
-    // 🛡️ Defesa extra: bloqueia exclusão do super admin
+  const alternarStatusUsuario = async (u: Usuario) => {
+    // 🛡️ Defesa extra: bloqueia inativação do super admin
     if (ehSuperAdminMaster(u.email)) {
-      alert("🛡️ Esse usuário é o Super Admin do sistema e não pode ser excluído.");
+      alert("🛡️ Esse usuário é o Super Admin do sistema e não pode ser inativado.");
       return;
     }
     if (!podeGerenciar) { alert("Você não tem permissão."); return; }
-    if (!confirm(`Excluir ${u.nome}?\n\nIsso vai remover só a entry em \`usuarios\`. Pra apagar o login completo, vá em Authentication > Users no Supabase.`)) return;
-    const { error } = await supabase.from("usuarios").delete().eq("id", u.id);
+    const ativoAtual = u.ativo !== false;
+    const acao = ativoAtual ? "Inativar" : "Reativar";
+    if (!confirm(`${acao} o login de ${u.nome}?\n\nAs vendas e todo o histórico desse usuário serão preservados.`)) return;
+    const { error } = await supabase.from("usuarios").update({ ativo: !ativoAtual }).eq("id", u.id);
     if (error) { alert("Erro: " + error.message); return; }
     await onRefetch();
-    alert("✅ Usuário removido!");
+    alert(`✅ Login ${ativoAtual ? "inativado" : "reativado"}!`);
   };
 
   return (
@@ -1045,7 +1050,24 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
                 </>
               )}
             </div>
-                        {/* 🤳 Selfie no ponto: sim (com foto) ou não (só GPS, p/ internos) */}
+            {editandoUsuario && (
+              <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
+                <label style={labelStyle}>🔐 Status do login</label>
+                <div
+                  onClick={() => setFormUsuario({ ...formUsuario, ativo: !formUsuario.ativo })}
+                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", border: `1px solid ${formUsuario.ativo ? "#a7f3d0" : "#fecaca"}`, borderRadius: 10, padding: "10px 12px", background: formUsuario.ativo ? "#ecfdf5" : "#fef2f2" }}
+                >
+                  <div style={{ width: 40, height: 22, borderRadius: 999, background: formUsuario.ativo ? "#10b981" : "#ef4444", position: "relative", flexShrink: 0, transition: "background 0.15s" }}>
+                    <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: formUsuario.ativo ? 20 : 2, transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+                  </div>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: formUsuario.ativo ? "#047857" : "#b91c1c" }}>
+                    {formUsuario.ativo ? "Ativo — pode entrar no sistema" : "Inativo — acesso bloqueado, histórico preservado"}
+                  </span>
+                </div>
+                <p style={{ color: "#9ca3af", fontSize: 11, margin: "5px 0 0" }}>Inativar não apaga vendas, atendimentos nem o histórico do usuário.</p>
+              </div>
+            )}
+            {/* 🤳 Selfie no ponto: sim (com foto) ou não (só GPS, p/ internos) */}
             <div>
               <label style={labelStyle}>🤳 Selfie ao bater ponto</label>
               <div
@@ -1124,7 +1146,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 900 : "auto" }}>
               <thead>
                 <tr style={{ background: "#f9fafb" }}>
-                  {["Nome", "Função", "Equipe", "Filas", "Grupo", "Ramal", "Ações"].map(h => (
+                  {["Nome", "Função", "Equipe", "Filas", "Grupo", "Ramal", "Status", "Ações"].map(h => (
                     <th key={h} style={{ padding: "12px 16px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -1226,16 +1248,21 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
                         {u.ramal || <span style={{ color: "#d1d5db" }}>—</span>}
                       </td>
                       <td style={{ padding: "12px 16px" }}>
+                        <span style={{ background: u.ativo !== false ? "#ecfdf5" : "#fef2f2", color: u.ativo !== false ? "#047857" : "#b91c1c", border: `1px solid ${u.ativo !== false ? "#a7f3d0" : "#fecaca"}`, padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
+                          {u.ativo !== false ? "● Ativo" : "○ Inativo"}
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
                         <div style={{ display: "flex", gap: 6 }}>
-                          {/* 🛡️ Super Admin não pode ser editado nem excluído */}
+                          {/* 🛡️ Super Admin não pode ser editado nem inativado */}
                           {ehSuperAdminMaster(u.email) ? (
                             <span title="Super Admin protegido" style={{ color: "#9ca3af", fontSize: 11, fontStyle: "italic", padding: "5px 11px" }}>🔒 Protegido</span>
                           ) : (
                             <>
                               <button onClick={() => abrirEditar(u)}
                                 style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>✏️</button>
-                              <button onClick={() => excluirUsuario(u)}
-                                style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>🗑️</button>
+                              <button onClick={() => alternarStatusUsuario(u)} title={u.ativo !== false ? "Inativar login" : "Reativar login"}
+                                style={{ background: u.ativo !== false ? "#fef2f2" : "#ecfdf5", color: u.ativo !== false ? "#dc2626" : "#047857", border: `1px solid ${u.ativo !== false ? "#fecaca" : "#a7f3d0"}`, borderRadius: 8, padding: "5px 11px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>{u.ativo !== false ? "⛔ Inativar" : "✅ Reativar"}</button>
                             </>
                           )}
                         </div>

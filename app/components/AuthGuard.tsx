@@ -16,23 +16,70 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [autenticado, setAutenticado] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    let montado = true;
+    let bloqueandoInativo = false;
+
+    const validarSessao = async (session: any) => {
       if (!session) {
-        router.replace("/login");
+        if (!bloqueandoInativo) router.replace("/login");
         return;
       }
-      setAutenticado(true);
-      setChecando(false);
-    })();
 
-    // Escuta logout em outras abas / expiração de sessão
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) router.replace("/login");
+      let perfil: { ativo?: boolean } | null = null;
+      const porAuth = await supabase
+        .from("usuarios")
+        .select("ativo")
+        .eq("auth_user_id", session.user.id)
+        .maybeSingle();
+      perfil = porAuth.data;
+
+      // Compatibilidade com cadastros antigos que ainda não têm auth_user_id.
+      if (!perfil && session.user.email) {
+        const porEmail = await supabase
+          .from("usuarios")
+          .select("ativo")
+          .ilike("email", session.user.email)
+          .maybeSingle();
+        perfil = porEmail.data;
+      }
+
+      if (perfil?.ativo === false) {
+        bloqueandoInativo = true;
+        if (montado) {
+          setAutenticado(false);
+          setChecando(true);
+        }
+        await supabase.auth.signOut();
+        router.replace("/login?inativo=1");
+        return;
+      }
+
+      if (montado) {
+        setAutenticado(true);
+        setChecando(false);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      void validarSessao(session);
     });
-    return () => { sub.subscription.unsubscribe(); };
-  }, [router]);
 
+    // Escuta logout em outras abas, expiração de sessão e revalida o perfil.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      void validarSessao(session);
+    });
+
+    // Também derruba sessões que já estavam abertas quando o perfil foi inativado.
+    const revalidacao = setInterval(() => {
+      supabase.auth.getSession().then(({ data: { session } }) => void validarSessao(session));
+    }, 30000);
+
+    return () => {
+      montado = false;
+      clearInterval(revalidacao);
+      sub.subscription.unsubscribe();
+    };
+  }, [router]);
   if (checando) {
     return (
       <div style={{

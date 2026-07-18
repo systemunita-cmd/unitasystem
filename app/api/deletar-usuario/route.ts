@@ -2,14 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 // ═══════════════════════════════════════════════════════════════════════
-// 🗑️ DELETAR USUÁRIO — UnitaSystem (single-tenant)
+// ⛔ INATIVAR USUÁRIO — UnitaSystem (single-tenant)
 // ───────────────────────────────────────────────────────────────────────
-// Remove do auth.users + tabela `usuarios`. Protege contra:
-//   • Auto-exclusão (não pode deletar a si mesmo)
-//   • Esvaziar a equipe de admins (não deleta o último admin)
-//   • Chamadas não autenticadas / não-admin
+// Preserva a linha em `usuarios`, o login no Auth e todo o histórico.
+// Protege contra auto-inativação, último admin e chamadas não autorizadas.
 // ═══════════════════════════════════════════════════════════════════════
-
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -44,7 +41,7 @@ export async function POST(req: NextRequest) {
     if (chamador?.role !== "admin") {
       return NextResponse.json({
         success: false,
-        error: "Só administradores podem remover usuários"
+        error: "Só administradores podem inativar usuários"
       }, { status: 403 });
     }
 
@@ -52,7 +49,7 @@ export async function POST(req: NextRequest) {
     if (chamador.email?.toLowerCase() === email.toLowerCase()) {
       return NextResponse.json({
         success: false,
-        error: "Você não pode remover a si mesmo. Peça pra outro admin fazer isso."
+        error: "Você não pode inativar a si mesmo. Peça pra outro admin fazer isso."
       }, { status: 400 });
     }
 
@@ -77,22 +74,22 @@ export async function POST(req: NextRequest) {
       if ((totalAdmins || 0) <= 1) {
         return NextResponse.json({
           success: false,
-          error: "Não dá pra remover o último administrador. Crie outro admin antes."
+          error: "Não dá pra inativar o último administrador. Crie outro admin antes."
         }, { status: 400 });
       }
     }
 
-    // ═══ 6. Remove da tabela usuarios ═══
-    await supabase.from("usuarios").delete().eq("id", alvo.id);
+    // ═══ 6. Inativa sem apagar cadastro, Auth ou vínculos históricos ═══
+    const { error: updateError } = await supabase
+      .from("usuarios")
+      .update({ ativo: false })
+      .eq("id", alvo.id);
 
-    // ═══ 7. Remove do Supabase Auth ═══
-    if (alvo.auth_user_id) {
-      await supabase.auth.admin.deleteUser(alvo.auth_user_id).catch((e: any) => {
-        console.error("[deletar-usuario] erro ao apagar do Auth:", e?.message);
-      });
+    if (updateError) {
+      return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, inativado: true });
   } catch (e: any) {
     return NextResponse.json({ success: false, error: e.message });
   }
