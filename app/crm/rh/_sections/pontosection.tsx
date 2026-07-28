@@ -140,17 +140,33 @@ export function PontoSection() {
     const [ano, mm] = m.split("-").map(Number);
     const inicio = new Date(ano, mm - 1, 1, 0, 0, 0);
     const fim = new Date(ano, mm, 1, 0, 0, 0); // 1º dia do mês seguinte
-    const { data, error } = await supabase
-      .from("ponto_registros")
-      .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por")
-      .gte("data_hora", inicio.toISOString())
-      .lt("data_hora", fim.toISOString())
-      .order("data_hora", { ascending: true });
-    if (error) {
-      console.error(error);
-      alert("Erro ao carregar o ponto: " + error.message);
+    const pagina = 1000;
+    const todos: Registro[] = [];
+    let de = 0;
+    let erro: any = null;
+
+    // O Supabase limita cada resposta a 1.000 linhas. Busca todas as páginas
+    // para que as batidas novas não desapareçam quando o mês ultrapassar esse limite.
+    while (true) {
+      const { data, error } = await supabase
+        .from("ponto_registros")
+        .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por")
+        .gte("data_hora", inicio.toISOString())
+        .lt("data_hora", fim.toISOString())
+        .order("data_hora", { ascending: true })
+        .order("id", { ascending: true })
+        .range(de, de + pagina - 1);
+      if (error) { erro = error; break; }
+      const lote = (data || []) as Registro[];
+      todos.push(...lote);
+      if (lote.length < pagina) break;
+      de += pagina;
+    }
+    if (erro) {
+      console.error(erro);
+      alert("Erro ao carregar o ponto: " + erro.message);
     } else {
-      setRegistros((data || []) as Registro[]);
+      setRegistros(todos);
     }
     setCarregando(false);
   };
