@@ -26,6 +26,7 @@ type Fechamento = { competencia: string; status: string; entradas_snapshot: numb
 type Venda = { id: number; nome: string; vendedor: string; data_instalacao: string; comissao_manual: number };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
+type IdentidadeVendedor = { email: string; nome: string; fila: string };
 
 export function GestaoFinanceiraRH() {
   const [aba, setAba] = useState("competencias");
@@ -37,7 +38,27 @@ export function GestaoFinanceiraRH() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState("");
+  const [identidades, setIdentidades] = useState<IdentidadeVendedor[]>([]);
 
+  useEffect(() => {
+    (async () => {
+      const [u, f] = await Promise.all([
+        supabase.from("usuarios").select("email,nome,fila_id"),
+        supabase.from("filas").select("id,nome"),
+      ]);
+      const filas = new Map((f.data || []).map((x: any) => [String(x.id), x.nome]));
+      setIdentidades((u.data || []).map((x: any) => ({
+        email: String(x.email || ""),
+        nome: String(x.nome || x.email || ""),
+        fila: x.fila_id == null ? "Sem fila" : String(filas.get(String(x.fila_id)) || `Fila ${x.fila_id}`),
+      })));
+    })();
+  }, []);
+
+  const identidadeDoVendedor = (chave: string) => {
+    const normal = chave.trim().toLowerCase();
+    return identidades.find(x => x.email.trim().toLowerCase() === normal || x.nome.trim().toLowerCase() === normal);
+  };
   const carregar = async () => {
     const [t, f, v, e, a] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo").order("vencimento"),
@@ -172,7 +193,7 @@ export function GestaoFinanceiraRH() {
       {aba === "rh" && <div style={card}><h3>Sincronização RH → Financeiro</h3><p style={{ color: "#64748b", fontSize: 12 }}>Cria a folha da competência com salário, VT, alimentação, benefícios, encargos e recalcula comissões elegíveis. Itens pagos não são alterados.</p><button disabled={ocupado || fechado} onClick={sincronizarRH} style={botao}>Sincronizar competência</button></div>}
 
       {aba === "comissoes" && <div style={{ display: "grid", gap: 10 }}>
-        {porVendedor.map(([nome,x]) => <div key={nome} style={card}><b>{nome}</b><p style={{ fontSize: 12 }}>Instaladas: <b>{x.qtd}/20</b> · faltam {Math.max(0,20-x.qtd)} · potencial {moeda(x.valor)} · {x.qtd >= 20 ? "LIBERADA" : "BLOQUEADA"}</p></div>)}
+        {porVendedor.map(([vendedor,x]) => { const pessoa = identidadeDoVendedor(vendedor); return <div key={vendedor} style={card}><b>{pessoa?.nome || vendedor}</b><p style={{ margin: "4px 0", fontSize: 11, color: "#64748b" }}>E-mail: {pessoa?.email || vendedor} · Fila: {pessoa?.fila || "Não identificada"}</p><p style={{ fontSize: 12 }}>Instaladas: <b>{x.qtd}/20</b> · faltam {Math.max(0,20-x.qtd)} · potencial {moeda(x.valor)} · {x.qtd >= 20 ? "LIBERADA" : "BLOQUEADA"}</p></div>})}
         <div style={card}><b>Vendas instaladas da competência</b>{vendas.map(v => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 8, alignItems: "center", padding: 7, borderBottom: "1px solid #eee", fontSize: 11 }}><span>{v.nome}<br/><small>{v.vendedor}</small></span><input type="number" step=".01" value={v.comissao_manual} onChange={e => salvarVenda(v,{ comissao_manual:Number(e.target.value) })} style={input}/></div>)}</div>
       </div>}
 
