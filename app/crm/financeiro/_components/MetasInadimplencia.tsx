@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 const inp={border:"1px solid #d1d5db",borderRadius:8,padding:8,fontSize:12};
-const box={background:"#fff",padding:18,border:"1px solid #e5e7eb",borderRadius:14} as const;
+const box={background:"#fff",padding:20,border:"1px solid #e2e8f0",borderRadius:16,boxShadow:"0 10px 28px rgba(15,23,42,.055)"} as const;
 export function MetasInadimplencia({competencia}:{competencia:string}) {
  const [metas,setMetas]=useState<any[]>([]),[inad,setInad]=useState<any[]>([]),[msg,setMsg]=useState("");
  const [vendedor,setVendedor]=useState(""),[meta,setMeta]=useState(20),[valor,setValor]=useState(0);

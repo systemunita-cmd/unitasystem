@@ -20,9 +20,9 @@ const R_COR = "#d97706";
 const R_COR_TEXTO = "#b45309";
 const R_card = {
   background: "#ffffff",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.055)",
 };
 const R_real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const R_MESES = [
@@ -432,9 +432,9 @@ const O_COR = "#d97706";
 const O_COR_TEXTO = "#b45309";
 const O_card = {
   background: "#ffffff",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.055)",
 };
 const O_inputStyle = {
   width: "100%",
@@ -1213,9 +1213,9 @@ const D_COR = "#d97706";
 const D_COR_TEXTO = "#b45309";
 const D_card = {
   background: "#ffffff",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.055)",
 };
 const D_inputStyle = {
   width: "100%",
@@ -2148,9 +2148,9 @@ const F_COR = "#d97706";
 const F_COR_TEXTO = "#b45309";
 const F_card = {
   background: "#ffffff",
-  borderRadius: 14,
-  border: "1px solid #e5e7eb",
-  boxShadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+  borderRadius: 16,
+  border: "1px solid #e2e8f0",
+  boxShadow: "0 10px 28px rgba(15,23,42,0.055)",
 };
 const F_real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const F_MESES = [
@@ -2802,16 +2802,39 @@ export default function FinanceiroLayolt() {
   };
 
   return (
-    <div
+    <div className="financeiro-shell"
       style={{
         display: "flex",
         height: "100%",
         minHeight: 0,
-        fontFamily: "Arial, sans-serif",
+        fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
         background: "#f8fafc",
         position: "relative",
       }}
     >
+      <style>{`
+        .financeiro-shell { --fin-primary:#d97706; --fin-primary-dark:#92400e; --fin-soft:#fff7ed; --fin-line:#e2e8f0; color:#0f172a; }
+        .financeiro-shell * { box-sizing:border-box; }
+        .financeiro-sidebar { background:rgba(255,255,255,.96)!important; border-right:1px solid #e2e8f0!important; box-shadow:8px 0 28px rgba(15,23,42,.035)!important; }
+        .financeiro-content { background:radial-gradient(circle at 85% 0%,rgba(245,158,11,.07),transparent 28%),#f8fafc; }
+        .financeiro-content button { min-height:38px; border-radius:10px!important; font-weight:750!important; letter-spacing:-.01em; transition:transform .16s ease,box-shadow .16s ease,filter .16s ease!important; box-shadow:0 2px 0 rgba(15,23,42,.10),0 5px 12px rgba(15,23,42,.07)!important; }
+        .financeiro-content button:hover:not(:disabled) { transform:translateY(-1px); filter:saturate(1.05); box-shadow:0 3px 0 rgba(15,23,42,.09),0 9px 18px rgba(15,23,42,.10)!important; }
+        .financeiro-content button:active:not(:disabled) { transform:translateY(1px); box-shadow:0 1px 0 rgba(15,23,42,.10),0 3px 8px rgba(15,23,42,.08)!important; }
+        .financeiro-content button:disabled { opacity:.52; cursor:not-allowed!important; box-shadow:none!important; }
+        .financeiro-content button:not([style]) { background:linear-gradient(180deg,#f59e0b 0%,#d97706 100%); color:#fff; border:1px solid #c96b05; padding:9px 14px; }
+        .financeiro-content input:not([type=checkbox]):not([type=radio]),.financeiro-content select,.financeiro-content textarea { min-height:42px; border:1px solid #cbd5e1!important; border-radius:10px!important; background:#fff!important; color:#0f172a!important; box-shadow:0 1px 2px rgba(15,23,42,.04),inset 0 1px 1px rgba(15,23,42,.025); transition:border-color .15s ease,box-shadow .15s ease!important; }
+        .financeiro-content input:focus,.financeiro-content select:focus,.financeiro-content textarea:focus { outline:none!important; border-color:#f59e0b!important; box-shadow:0 0 0 3px rgba(245,158,11,.14)!important; }
+        .financeiro-content table { border-collapse:separate!important; border-spacing:0; }
+        .financeiro-content thead tr { background:#f8fafc!important; }
+        .financeiro-content th { color:#64748b!important; font-size:10px!important; font-weight:850!important; letter-spacing:.055em!important; text-transform:uppercase; }
+        .financeiro-content tbody tr { transition:background .14s ease; }
+        .financeiro-content tbody tr:hover { background:#fffbeb!important; }
+        .financeiro-content h1,.financeiro-content h2,.financeiro-content h3 { color:#0f172a; letter-spacing:-.025em; }
+        .fin-gestao-tabs { display:flex; gap:8px; overflow-x:auto; padding:5px 3px 11px; scrollbar-width:thin; }
+        .fin-gestao-tabs button { white-space:nowrap; min-height:42px; padding:10px 15px!important; }
+        .fin-gestao-toolbar { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:12px 14px; box-shadow:0 8px 24px rgba(15,23,42,.045); }
+        @media (max-width:767px) { .financeiro-content { padding-left:12px!important; padding-right:12px!important; } .financeiro-content button { min-height:42px; } }
+      `}</style>
       {/* HAMBÚRGUER (mobile) */}
       {isMobile && !menuMobileAberto && (
         <button
@@ -2851,9 +2874,9 @@ export default function FinanceiroLayolt() {
       )}
 
       {/* SUB-SIDEBAR DO MÓDULO */}
-      <div
+      <div className="financeiro-sidebar"
         style={{
-          width: isMobile ? 260 : 224,
+          width: isMobile ? 276 : 232,
           background: "#ffffff",
           borderRight: "1px solid #e5e7eb",
           display: "flex",
@@ -3057,7 +3080,7 @@ export default function FinanceiroLayolt() {
       </div>
 
       {/* CONTEÚDO */}
-      <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
+      <div className="financeiro-content" style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : "28px 32px 40px" }}>
         {aba === "resumo" ? (
           <ResumoSection />
         ) : aba === "gestao" ? (

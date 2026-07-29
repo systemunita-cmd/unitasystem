@@ -128,13 +128,13 @@ export function FinanceiroAnexos({ tituloId }: { tituloId: string }) {
   };
 
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 12, background: "#f8fafc" }}>
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "linear-gradient(180deg,#ffffff,#f8fafc)", boxShadow: "0 6px 18px rgba(15,23,42,.045)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
           <p style={{ margin: 0, color: "#374151", fontSize: 12, fontWeight: 800 }}>Documentos anexados</p>
           <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: 10 }}>Notas, boletos e comprovantes · até 10 MB</p>
         </div>
-        <label style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", borderRadius: 8, padding: "7px 11px", fontSize: 11, fontWeight: 800, cursor: enviando ? "wait" : "pointer" }}>
+        <label style={{ background: "linear-gradient(180deg,#f59e0b,#d97706)", color: "#fff", border: "1px solid #c96b05", borderRadius: 10, padding: "9px 13px", boxShadow: "0 2px 0 #92400e,0 6px 12px rgba(217,119,6,.16)", fontSize: 11, fontWeight: 800, cursor: enviando ? "wait" : "pointer" }}>
           {enviando ? "Enviando..." : "＋ Anexar"}
           <input
             ref={inputRef}

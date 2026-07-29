@@ -17,9 +17,9 @@ const mesNome = (c: string) => {
   const [a, m] = c.split("-").map(Number);
   return new Date(a, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 };
-const card = { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 14, padding: 18 } as const;
-const input = { border: "1px solid #d1d5db", borderRadius: 9, padding: "9px 11px", fontSize: 12, background: "#fff" } as const;
-const botao = { border: 0, borderRadius: 9, padding: "9px 13px", fontSize: 12, fontWeight: 800, cursor: "pointer", background: "#d97706", color: "#fff" } as const;
+const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16, padding: 20, boxShadow: "0 10px 28px rgba(15,23,42,.05)" } as const;
+const input = { border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 12px", minHeight: 42, fontSize: 12, background: "#fff" } as const;
+const botao = { border: "1px solid #c96b05", borderRadius: 10, padding: "10px 15px", minHeight: 40, fontSize: 12, fontWeight: 800, cursor: "pointer", background: "linear-gradient(180deg,#f59e0b 0%,#d97706 100%)", color: "#fff", boxShadow: "0 2px 0 #92400e,0 7px 14px rgba(217,119,6,.18)" } as const;
 
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
@@ -194,10 +194,10 @@ export function GestaoFinanceiraRH() {
 
   const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["ia","Leitura por IA"]] as const;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div><h1 style={{ margin: 0, fontSize: 23 }}>Gestão Financeira + RH</h1><p style={{ color: "#64748b", fontSize: 12 }}>Fechamento, automações, auditoria e planejamento</p></div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>{abas.map(([k,l]) => <button key={k} onClick={() => setAba(k)} style={{ ...botao, background: aba === k ? "#d97706" : "#fff", color: aba === k ? "#fff" : "#92400e", border: "1px solid #fde68a" }}>{l}</button>)}</div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}><input type="month" value={comp} onChange={e => setComp(e.target.value)} style={input}/>{msg && <span style={{ fontSize: 11, color: "#475569" }}>{msg}</span>}</div>
+    <div className="fin-gestao" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ background: "linear-gradient(135deg,#ffffff 0%,#fff7ed 100%)", border: "1px solid #fed7aa", borderRadius: 18, padding: "20px 22px", boxShadow: "0 12px 32px rgba(146,64,14,.07)" }}><span style={{ display: "inline-block", background: "#ffedd5", color: "#9a3412", borderRadius: 999, padding: "5px 9px", fontSize: 10, fontWeight: 900, letterSpacing: ".06em" }}>CENTRAL FINANCEIRA</span><h1 style={{ margin: "9px 0 0", fontSize: 25 }}>Gestão Financeira + RH</h1><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Competências, folha, comissões, conciliação e planejamento em um só lugar.</p></div>
+      <div className="fin-gestao-tabs">{abas.map(([k,l]) => <button key={k} onClick={() => setAba(k)} style={{ ...botao, background: aba === k ? "#d97706" : "#fff", color: aba === k ? "#fff" : "#92400e", border: "1px solid #fde68a" }}>{l}</button>)}</div>
+      <div className="fin-gestao-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><span style={{ color: "#64748b", fontSize: 11, fontWeight: 800 }}>COMPETÊNCIA</span><input type="month" value={comp} onChange={e => setComp(e.target.value)} style={input}/>{msg && <span style={{ fontSize: 11, color: "#475569" }}>{msg}</span>}</div>
 
       {aba === "competencias" && <div style={{ display: "grid", gap: 12 }}>
         <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><b>{mesNome(comp)}</b><p style={{ margin: "4px 0 0", fontSize: 12, color: fechado ? "#16a34a" : "#d97706" }}>{fechado ? "Fechada" : "Aberta"}</p></div><button disabled={ocupado} onClick={fechar} style={botao}>{fechado ? "Reabrir" : "Fechar competência"}</button></div>

@@ -38,7 +38,7 @@ export function LeitorFinanceiroIA() {
     }
     setMsg(envio.error ? `Lançamento criado, mas o anexo falhou: ${envio.error.message}` : "Lançamento e documento criados para conferência.");
   };
-  return <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:14,padding:18}}>
+  return <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,padding:20,boxShadow:"0 10px 28px rgba(15,23,42,.055)"}}>
     <h3>Leitura automática de boletos e notas</h3>
     <p style={{fontSize:12,color:"#64748b"}}>A IA extrai fornecedor, valor, vencimento e categoria. O lançamento fica pendente para conferência.</p>
     <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={e=>setArquivo(e.target.files?.[0]||null)}/>
