@@ -32,12 +32,15 @@ create or replace function public.sincronizar_inadimplencia_faturas()
 returns integer language plpgsql security definer set search_path=public as $$
 declare v_total integer:=0; v_i integer:=0; begin
  insert into public.fin_inadimplencia(proposta_id,fatura_status_id,cliente,cpf,vendedor,valor,vencimento,status,observacao,updated_at)
- select p.id,f.id,p.nome,p.cpf,p.vendedor,coalesce(p.valor_plano,0),f.data_vencimento,'aberta','Gerada automaticamente pela fatura '||coalesce(f.numero_referencia,f.numero_fatura::text),now()
+ select distinct on (p.id,f.data_vencimento)
+ p.id,f.id,p.nome,p.cpf,p.vendedor,coalesce(p.valor_plano,0),f.data_vencimento,'aberta','Gerada automaticamente pela fatura '||coalesce(f.numero_referencia,f.numero_fatura::text),now()
  from public.faturas_status f join public.proposta p on p.id=f.proposta_id
  where f.data_vencimento<current_date and coalesce(lower(f.status),'pendente') not in ('pago','paga','paga_atraso','regularizada') and f.data_pagamento is null
- and not exists (select 1 from public.fin_inadimplencia atual where atual.proposta_id=p.id and atual.vencimento=f.data_vencimento and atual.fatura_status_id is distinct from f.id)
- on conflict (fatura_status_id) where fatura_status_id is not null do update set valor=excluded.valor,vencimento=excluded.vencimento,updated_at=now()
- where fin_inadimplencia.status<>'regularizada'; get diagnostics v_total=row_count;
+ order by p.id,f.data_vencimento,f.id desc
+ on conflict (proposta_id,vencimento) do update set
+ fatura_status_id=excluded.fatura_status_id,cliente=excluded.cliente,cpf=excluded.cpf,vendedor=excluded.vendedor,
+ valor=excluded.valor,status='aberta',observacao=excluded.observacao,updated_at=now();
+ get diagnostics v_total=row_count;
  update public.fin_inadimplencia i set status='regularizada',updated_at=now()
  from public.faturas_status f where i.fatura_status_id=f.id and i.status<>'regularizada' and (f.data_pagamento is not null or coalesce(lower(f.status),'') in ('pago','paga','paga_atraso','regularizada')); get diagnostics v_i=row_count;
  return v_total+v_i; end $$;
