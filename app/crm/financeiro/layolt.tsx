@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { FinanceiroAnexos } from "./_components/FinanceiroAnexos";
+import { GestaoFinanceiraRH } from "./_components/GestaoFinanceiraRH";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 💵 FINANCEIRO — Módulo COMPLETO num único arquivo (UnitaSystem)
@@ -479,6 +480,7 @@ type O_Titulo = {
   vencimento: string;
   status: string;
   categoria: string;
+  centro_custo: string;
   observacao: string;
   pago_em: string;
 };
@@ -491,6 +493,7 @@ const O_FORM_VAZIO: O_Titulo = {
   vencimento: "",
   status: "pendente",
   categoria: "",
+  centro_custo: "",
   observacao: "",
   pago_em: "",
 };
@@ -539,6 +542,7 @@ export function OperadorasSection() {
         vencimento: r.vencimento || "",
         status: r.status || "pendente",
         categoria: r.categoria || "",
+        centro_custo: r.centro_custo || "",
         observacao: r.observacao || "",
         pago_em: r.pago_em || "",
       }))
@@ -589,6 +593,7 @@ export function OperadorasSection() {
       vencimento: form.vencimento || null,
       status: form.status || "pendente",
       categoria: form.categoria || null,
+      centro_custo: form.centro_custo || null,
       observacao: form.observacao || null,
       pago_em: form.status === "pago" ? form.pago_em || O_hoje() : null,
     };
@@ -1062,6 +1067,7 @@ export function OperadorasSection() {
                   </select>
                 </O_Campo>
               </div>
+              <O_Campo label="Centro de custo"><input value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={O_inputStyle} placeholder="Ex: Comercial, Operações" /></O_Campo>
               <O_Campo label="Observação">
                 <input
                   value={form.observacao}
@@ -1279,6 +1285,7 @@ type D_Despesa = {
   competencia: string;
   vencimento: string;
   status: string;
+  centro_custo: string;
   observacao: string;
 };
 const D_FORM_VAZIO: D_Despesa = {
@@ -1289,6 +1296,7 @@ const D_FORM_VAZIO: D_Despesa = {
   competencia: "",
   vencimento: "",
   status: "pendente",
+  centro_custo: "",
   observacao: "",
 };
 type D_Aviso = { tipo: "erro" | "ok"; titulo: string } | null;
@@ -1338,6 +1346,7 @@ export function DespesasSection() {
         competencia: r.competencia || "",
         vencimento: r.vencimento || "",
         status: r.status || "pendente",
+        centro_custo: r.centro_custo || "",
         observacao: r.observacao || "",
       }))
     );
@@ -1398,6 +1407,7 @@ export function DespesasSection() {
       competencia: form.competencia || null,
       vencimento: form.vencimento || null,
       status: form.status || "pendente",
+      centro_custo: form.centro_custo || null,
       observacao: form.observacao || null,
       pago_em: form.status === "pago" ? D_hoje() : null,
     };
@@ -1992,6 +2002,7 @@ export function DespesasSection() {
                   <option value="pago">Já pago</option>
                 </select>
               </D_Campo>
+              <D_Campo label="Centro de custo"><input value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={D_inputStyle} placeholder="Ex: Administrativo, RH" /></D_Campo>
               <D_Campo label="Observação">
                 <input
                   value={form.observacao}
@@ -2751,7 +2762,10 @@ const GRUPOS: Grupo[] = [
     key: "geral",
     icon: "📊",
     label: "Visão",
-    itens: [{ key: "resumo", label: "Resumo" }],
+    itens: [
+      { key: "resumo", label: "Resumo" },
+      { key: "gestao", label: "Gestão Financeira + RH" },
+    ],
   },
   {
     key: "mov",
@@ -3046,6 +3060,8 @@ export default function FinanceiroLayolt() {
       <div style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : 28 }}>
         {aba === "resumo" ? (
           <ResumoSection />
+        ) : aba === "gestao" ? (
+          <GestaoFinanceiraRH />
         ) : aba === "receber" ? (
           <OperadorasSection />
         ) : aba === "pagar" ? (

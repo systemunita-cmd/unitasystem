@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { supabase } from "../../lib/supabase";
 import { usePermissao } from "../../hooks/usePermissao";
 import { useEquipeFiltro } from "../../hooks/useEquipeFiltro";
+import { InadimplenciaComercial } from "./_components/InadimplenciaComercial";
 import {
   STATUS_OPCOES,
   montarCamposUnificados,
@@ -1892,6 +1893,7 @@ export default function Vendas() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      <InadimplenciaComercial />
 
       {/* ═══ MODAL EDITAR ═══ */}
       {showModal && propostaEditando && (

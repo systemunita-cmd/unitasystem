@@ -27,6 +27,7 @@ import { AvaliacoesSection } from "./_sections/avaliacoessection";
 import { DocumentosSection } from "./_sections/documentossection";
 import { ContratosSection } from "./_sections/contratossection";
 import { ConfigSection } from "./_sections/configsection";
+import { IntegracaoFinanceiraSection } from "./_sections/integracaofinanceirasection";
 
 // 🗂️ Registry de seções — cada key bate com a key do menu (GRUPOS).
 // Pra ligar uma nova section: importe acima e adicione uma linha aqui.
@@ -56,6 +57,7 @@ const SECTIONS: Record<string, ComponentType> = {
   documentos: DocumentosSection,
   contratos: ContratosSection,
   config: ConfigSection,
+  integracao_financeira: IntegracaoFinanceiraSection,
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -103,6 +105,7 @@ const GRUPOS: Grupo[] = [
     itens: [
       { key: "folha", label: "Folha do Mês" },
       { key: "holerites", label: "Holerites" },
+      { key: "integracao_financeira", label: "Integração Financeira" },
       { key: "encargos", label: "Encargos & Impostos" },
     ],
   },

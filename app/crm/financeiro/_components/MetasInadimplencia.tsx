@@ -1,0 +1,21 @@
+"use client";
+import { useEffect, useState } from "react";
+import { supabase } from "../../../lib/supabase";
+const inp={border:"1px solid #d1d5db",borderRadius:8,padding:8,fontSize:12};
+const box={background:"#fff",padding:18,border:"1px solid #e5e7eb",borderRadius:14} as const;
+export function MetasInadimplencia({competencia}:{competencia:string}) {
+ const [metas,setMetas]=useState<any[]>([]),[inad,setInad]=useState<any[]>([]),[msg,setMsg]=useState("");
+ const [vendedor,setVendedor]=useState(""),[meta,setMeta]=useState(20),[valor,setValor]=useState(0);
+ const [cliente,setCliente]=useState(""),[cpf,setCpf]=useState(""),[vendInad,setVendInad]=useState(""),[valInad,setValInad]=useState(0),[venc,setVenc]=useState("");
+ const carregar=async()=>{const [m,i]=await Promise.all([supabase.from("fin_metas").select("*").eq("competencia",competencia).order("vendedor"),supabase.from("fin_inadimplencia").select("*").neq("status","regularizada").order("vencimento")]);setMetas(m.data||[]);setInad(i.data||[])};
+ useEffect(()=>{carregar()},[competencia]);
+ const salvar=async()=>{if(!vendedor.trim())return setMsg("Informe o vendedor.");const existente=metas.find(x=>(x.vendedor||"").toLowerCase()===vendedor.toLowerCase()&&!x.equipe_id);const q=existente?supabase.from("fin_metas").update({meta_vendas:meta,meta_valor:valor}).eq("id",existente.id):supabase.from("fin_metas").insert({competencia,vendedor,meta_vendas:meta,meta_valor:valor});const {error}=await q;setMsg(error?error.message:"Meta salva.");setVendedor("");carregar()};
+ const cadastrar=async()=>{if(!cliente.trim())return setMsg("Informe o cliente inadimplente.");const {error}=await supabase.from("fin_inadimplencia").insert({cliente,cpf:cpf||null,vendedor:vendInad||null,valor:valInad,vencimento:venc||null,status:"aberta"});setMsg(error?error.message:"Inadimplência cadastrada e disponibilizada ao Comercial.");if(!error){setCliente("");setCpf("");setVendInad("");setValInad(0);setVenc("")}carregar()};
+ const regularizar=async(id:string)=>{const {error}=await supabase.from("fin_inadimplencia").update({status:"regularizada",updated_at:new Date().toISOString()}).eq("id",id);setMsg(error?error.message:"Cliente regularizado.");carregar()};
+ return <div style={{display:"grid",gap:14}}>
+  {msg&&<p style={{fontSize:12}}>{msg}</p>}
+  <div style={box}><h3>Metas por vendedor e equipe</h3><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><input placeholder="Vendedor/e-mail" value={vendedor} onChange={e=>setVendedor(e.target.value)} style={inp}/><input type="number" value={meta} onChange={e=>setMeta(Number(e.target.value))} style={inp}/><input type="number" value={valor} onChange={e=>setValor(Number(e.target.value))} placeholder="Meta R$" style={inp}/><button onClick={salvar}>Salvar meta</button></div>{metas.map(m=><p key={m.id} style={{fontSize:12}}><b>{m.vendedor||`Equipe ${m.equipe_id}`}</b>: {m.meta_vendas} vendas · R$ {Number(m.meta_valor||0).toLocaleString("pt-BR")}</p>)}</div>
+  <div style={box}><h3>Cadastrar inadimplência</h3><div style={{display:"flex",gap:8,flexWrap:"wrap"}}><input placeholder="Cliente" value={cliente} onChange={e=>setCliente(e.target.value)} style={inp}/><input placeholder="CPF/CNPJ" value={cpf} onChange={e=>setCpf(e.target.value)} style={inp}/><input placeholder="Vendedor" value={vendInad} onChange={e=>setVendInad(e.target.value)} style={inp}/><input type="number" step=".01" value={valInad} onChange={e=>setValInad(Number(e.target.value))} style={inp}/><input type="date" value={venc} onChange={e=>setVenc(e.target.value)} style={inp}/><button onClick={cadastrar}>Cadastrar</button></div></div>
+  <div style={box}><h3>Inadimplência visível ao comercial</h3>{inad.length===0?<p style={{fontSize:12,color:"#64748b"}}>Nenhuma inadimplência aberta.</p>:inad.map(i=><div key={i.id} style={{display:"grid",gridTemplateColumns:"1fr 140px 100px",padding:8,borderBottom:"1px solid #eee",fontSize:12}}><span><b>{i.cliente}</b><br/>{i.vendedor}</span><span>R$ {Number(i.valor).toLocaleString("pt-BR")}</span><button onClick={()=>regularizar(i.id)}>Regularizar</button></div>)}</div>
+ </div>
+}
