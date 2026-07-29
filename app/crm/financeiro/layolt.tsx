@@ -2785,17 +2785,21 @@ const COR_BG = "#f7fee7"; // âmbar bem claro (fundos)
 const COR_BORDA = "#bef264"; // âmbar borda
 
 type SubItem = { key: string; label: string };
-type Grupo = { key: string; icon: string; label: string; itens: SubItem[] };
+type Grupo = { key: string; icon: string; label: string; itens: SubItem[]; abaDireta?: string };
 
 const GRUPOS: Grupo[] = [
   {
     key: "geral",
     icon: "📊",
     label: "Visão",
-    itens: [
-      { key: "resumo", label: "Resumo" },
-      { key: "gestao", label: "Gestão Financeira + RH" },
-    ],
+    itens: [{ key: "resumo", label: "Resumo" }],
+  },
+  {
+    key: "gestao-modulo",
+    icon: "🧩",
+    label: "Gestão Financeira + RH",
+    itens: [],
+    abaDireta: "gestao",
   },
   {
     key: "mov",
@@ -2810,12 +2814,15 @@ const GRUPOS: Grupo[] = [
 ];
 
 const LABELS: Record<string, string> = Object.fromEntries(
-  GRUPOS.flatMap((g) => g.itens.map((i) => [i.key, i.label]))
+  GRUPOS.flatMap((g) => [
+    ...g.itens.map((i) => [i.key, i.label]),
+    ...(g.abaDireta ? [[g.abaDireta, g.label]] : []),
+  ])
 );
 
 export default function FinanceiroLayolt() {
   const [aba, setAba] = useState("resumo");
-  const [grupoAberto, setGrupoAberto] = useState<string | null>("mov");
+  const [grupoAberto, setGrupoAberto] = useState<string | null>("geral");
   const [isMobile, setIsMobile] = useState(false);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
 
@@ -2981,12 +2988,13 @@ export default function FinanceiroLayolt() {
         {/* Menus agrupados */}
         <div style={{ padding: 10, flex: 1 }}>
           {GRUPOS.map((g) => {
-            const aberto = grupoAberto === g.key;
-            const temAtivo = g.itens.some((i) => i.key === aba);
+            const direto = !!g.abaDireta;
+            const aberto = !direto && grupoAberto === g.key;
+            const temAtivo = direto ? aba === g.abaDireta : g.itens.some((i) => i.key === aba);
             return (
               <div key={g.key} style={{ marginBottom: 4 }}>
                 <button
-                  onClick={() => setGrupoAberto(aberto ? null : g.key)}
+                  onClick={() => g.abaDireta ? selecionar(g.abaDireta) : setGrupoAberto(aberto ? null : g.key)}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -3029,18 +3037,20 @@ export default function FinanceiroLayolt() {
                     </span>
                     {g.label}
                   </span>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      color: aberto || temAtivo ? COR : "#9ca3af",
-                      transform: aberto ? "rotate(0)" : "rotate(-90deg)",
-                      transition: "transform .2s",
-                    }}
-                  >
-                    ▼
-                  </span>
+                  {!direto && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        color: aberto || temAtivo ? COR : "#9ca3af",
+                        transform: aberto ? "rotate(0)" : "rotate(-90deg)",
+                        transition: "transform .2s",
+                      }}
+                    >
+                      ▼
+                    </span>
+                  )}
                 </button>
-                {aberto && (
+                {!direto && aberto && (
                   <div
                     style={{
                       paddingLeft: 8,
