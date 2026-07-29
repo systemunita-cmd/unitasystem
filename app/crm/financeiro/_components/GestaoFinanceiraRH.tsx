@@ -39,6 +39,8 @@ export function GestaoFinanceiraRH() {
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState("");
   const [identidades, setIdentidades] = useState<IdentidadeVendedor[]>([]);
+  const [vendedorAberto, setVendedorAberto] = useState<string | null>(null);
+  const [salvandoVenda, setSalvandoVenda] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -169,13 +171,26 @@ export function GestaoFinanceiraRH() {
   };
 
   const porVendedor = useMemo(() => {
-    const m: Record<string, { qtd: number; valor: number }> = {};
+    const m: Record<string, { qtd: number; valor: number; vendas: Venda[] }> = {};
     vendas.forEach(v => {
-      const k = v.vendedor || "Sem vendedor"; m[k] ||= { qtd: 0, valor: 0 };
-      m[k].qtd++; m[k].valor += v.comissao_manual;
+      const k = v.vendedor || "Sem vendedor";
+      m[k] ||= { qtd: 0, valor: 0, vendas: [] };
+      m[k].qtd++;
+      m[k].valor += v.comissao_manual;
+      m[k].vendas.push(v);
     });
     return Object.entries(m).sort((a, b) => b[1].qtd - a[1].qtd);
   }, [vendas]);
+
+  const editarComissaoLocal = (id: number, valor: number) => {
+    setVendas(xs => xs.map(x => x.id === id ? { ...x, comissao_manual: valor } : x));
+  };
+
+  const gravarComissao = async (v: Venda) => {
+    setSalvandoVenda(v.id);
+    await salvarVenda(v, { comissao_manual: v.comissao_manual });
+    setSalvandoVenda(null);
+  };
 
   const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["ia","Leitura por IA"]] as const;
   return (
@@ -192,11 +207,32 @@ export function GestaoFinanceiraRH() {
 
       {aba === "rh" && <div style={card}><h3>Sincronização RH → Financeiro</h3><p style={{ color: "#64748b", fontSize: 12 }}>Cria a folha da competência com salário, VT, alimentação, benefícios, encargos e recalcula comissões elegíveis. Itens pagos não são alterados.</p><button disabled={ocupado || fechado} onClick={sincronizarRH} style={botao}>Sincronizar competência</button></div>}
 
-      {aba === "comissoes" && <div style={{ display: "grid", gap: 10 }}>
-        {porVendedor.map(([vendedor,x]) => { const pessoa = identidadeDoVendedor(vendedor); return <div key={vendedor} style={card}><b>{pessoa?.nome || vendedor}</b><p style={{ margin: "4px 0", fontSize: 11, color: "#64748b" }}>E-mail: {pessoa?.email || vendedor} · Fila: {pessoa?.fila || "Não identificada"}</p><p style={{ fontSize: 12 }}>Instaladas: <b>{x.qtd}/20</b> · faltam {Math.max(0,20-x.qtd)} · potencial {moeda(x.valor)} · {x.qtd >= 20 ? "LIBERADA" : "BLOQUEADA"}</p></div>})}
-        <div style={card}><b>Vendas instaladas da competência</b>{vendas.map(v => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 8, alignItems: "center", padding: 7, borderBottom: "1px solid #eee", fontSize: 11 }}><span>{v.nome}<br/><small>{v.vendedor}</small></span><input type="number" step=".01" value={v.comissao_manual} onChange={e => salvarVenda(v,{ comissao_manual:Number(e.target.value) })} style={input}/></div>)}</div>
+      {aba === "comissoes" && <div style={{ display: "grid", gap: 16 }}>
+        <div style={{ background: "linear-gradient(135deg,#fff7ed 0%,#fffbeb 100%)", border: "1px solid #fed7aa", borderRadius: 16, padding: "16px 18px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div><b style={{ color: "#9a3412", fontSize: 15 }}>Comissões por vendedor</b><p style={{ margin: "4px 0 0", color: "#78716c", fontSize: 12 }}>A edição é liberada ao completar 20 vendas instaladas na competência.</p></div>
+          <span style={{ background: "#fff", border: "1px solid #fed7aa", borderRadius: 999, padding: "7px 12px", color: "#9a3412", fontSize: 11, fontWeight: 800 }}>{vendas.length} instalações em {mesNome(comp)}</span>
+        </div>
+        {porVendedor.map(([vendedor,x]) => {
+          const pessoa = identidadeDoVendedor(vendedor);
+          const liberada = x.qtd >= 20;
+          const aberta = vendedorAberto === vendedor;
+          const percentual = Math.min(100, (x.qtd / 20) * 100);
+          return <div key={vendedor} style={{ background: "#fff", border: `1px solid ${liberada ? "#bbf7d0" : "#e2e8f0"}`, borderRadius: 18, overflow: "hidden", boxShadow: liberada ? "0 8px 24px rgba(22,163,74,.08)" : "0 4px 16px rgba(15,23,42,.04)" }}>
+            <div style={{ padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(220px,1.4fr) minmax(220px,1fr) auto", gap: 18, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 13, flexShrink: 0, display: "grid", placeItems: "center", background: liberada ? "#dcfce7" : "#f1f5f9", color: liberada ? "#15803d" : "#64748b", fontWeight: 900 }}>{(pessoa?.nome || vendedor).slice(0,2).toUpperCase()}</div>
+                <div style={{ minWidth: 0 }}><b style={{ color: "#0f172a", fontSize: 14 }}>{pessoa?.nome || vendedor}</b><p style={{ margin: "4px 0 0", color: "#64748b", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>{pessoa?.email || vendedor}</p><span style={{ display: "inline-block", marginTop: 6, borderRadius: 999, padding: "4px 8px", background: "#eff6ff", color: "#1d4ed8", fontSize: 10, fontWeight: 800 }}>{pessoa?.fila || "Fila não identificada"}</span></div>
+              </div>
+              <div><div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 7 }}><span style={{ color: "#64748b" }}>Progresso da meta</span><b style={{ color: liberada ? "#15803d" : "#b45309" }}>{x.qtd}/20</b></div><div style={{ height: 8, background: "#f1f5f9", borderRadius: 999, overflow: "hidden" }}><div style={{ height: "100%", width: `${percentual}%`, borderRadius: 999, background: liberada ? "linear-gradient(90deg,#22c55e,#16a34a)" : "linear-gradient(90deg,#fbbf24,#f59e0b)" }}/></div><p style={{ margin: "7px 0 0", fontSize: 11, color: "#64748b" }}>{liberada ? `${x.qtd - 20} venda(s) acima da meta` : `Faltam ${20 - x.qtd} venda(s)`}</p></div>
+              <div style={{ textAlign: "right" }}><span style={{ display: "inline-block", borderRadius: 999, padding: "6px 10px", background: liberada ? "#dcfce7" : "#fff7ed", color: liberada ? "#166534" : "#9a3412", fontSize: 10, fontWeight: 900 }}>{liberada ? "LIBERADA" : "BLOQUEADA"}</span><b style={{ display: "block", marginTop: 8, fontSize: 16, color: "#0f172a" }}>{moeda(x.valor)}</b>{liberada && <button onClick={() => setVendedorAberto(aberta ? null : vendedor)} style={{ ...botao, marginTop: 10, background: aberta ? "#475569" : "#16a34a", minWidth: 152 }}>{aberta ? "Fechar edição" : "Definir comissões"}</button>}</div>
+            </div>
+            {aberta && liberada && <div style={{ borderTop: "1px solid #dcfce7", background: "#f8fffa", padding: "18px 20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}><div><b style={{ color: "#166534", fontSize: 13 }}>Vendas instaladas de {pessoa?.nome || vendedor}</b><p style={{ margin: "3px 0 0", color: "#64748b", fontSize: 11 }}>Informe a comissão individual de cada instalação. O valor é salvo ao sair do campo.</p></div><span style={{ color: "#166534", fontSize: 12, fontWeight: 800 }}>Total: {moeda(x.valor)}</span></div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 10 }}>{x.vendas.map(v => <div key={v.id} style={{ background: "#fff", border: "1px solid #d1fae5", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "1fr 130px", gap: 12, alignItems: "center" }}><div style={{ minWidth: 0 }}><b style={{ display: "block", color: "#1e293b", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.nome}</b><span style={{ color: "#94a3b8", fontSize: 10 }}>Instalada em {v.data_instalacao ? new Date(`${v.data_instalacao}T00:00:00`).toLocaleDateString("pt-BR") : "data não informada"}</span></div><label style={{ position: "relative" }}><span style={{ position: "absolute", left: 10, top: 9, color: "#64748b", fontSize: 11, fontWeight: 700 }}>R$</span><input aria-label={`Comissão de ${v.nome}`} type="number" min="0" step="0.01" value={v.comissao_manual} onChange={e => editarComissaoLocal(v.id, Number(e.target.value))} onBlur={() => gravarComissao(v)} style={{ ...input, width: "100%", paddingLeft: 31, borderColor: v.comissao_manual > 0 ? "#86efac" : "#cbd5e1", boxSizing: "border-box" }}/>{salvandoVenda === v.id && <small style={{ position: "absolute", right: 7, bottom: -14, color: "#16a34a", fontSize: 9 }}>Salvando...</small>}</label></div>)}</div>
+            </div>}
+          </div>;
+        })}
       </div>}
-
       {aba === "importacao" && <div style={card}><h3>Importar extrato/planilha</h3><p style={{ fontSize: 12, color: "#64748b" }}>CSV com data, descrição, valor e tipo. A importação não altera lançamentos existentes.</p><input type="file" accept=".csv,.xls,.xlsx,.ofx,text/csv" onChange={e => importarArquivo(e.target.files?.[0])}/></div>}
       {aba === "conciliacao" && <div style={card}><button disabled={ocupado} onClick={conciliarAutomatico} style={botao}>Conciliar valores correspondentes</button><p style={{ fontSize: 12 }}>{extratos.filter(x=>x.conciliado).length} conciliados · {extratos.filter(x=>!x.conciliado).length} pendentes</p>{extratos.slice(0,100).map(e=><div key={e.id} style={{ display:"grid",gridTemplateColumns:"100px 1fr 120px 100px",fontSize:11,padding:7,borderBottom:"1px solid #eee" }}><span>{e.data}</span><span>{e.descricao}</span><b>{moeda(e.valor)}</b><span>{e.conciliado?"Conciliado":"Pendente"}</span></div>)}</div>}
       {aba === "projecao" && <div style={card}><h3>Fluxo de caixa projetado</h3>{meses.slice(0,12).map(m=><div key={m.competencia} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",fontSize:12,padding:8,borderBottom:"1px solid #eee"}}><span>{mesNome(m.competencia)}</span><span>{moeda(m.entradas)}</span><span>{moeda(m.saidas)}</span><b>{moeda(m.saldo)}</b></div>)}</div>}
