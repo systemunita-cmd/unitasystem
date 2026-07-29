@@ -40,7 +40,7 @@ begin
     from public.vale_transporte x where lower(trim(x.nome))=lower(trim(f.nome))
   ) vt on true
   left join lateral (
-    select sum(coalesce(x.valor_diario,0)*coalesce(x.dias_uteis,22)) total
+    select sum(coalesce(x.valor_diario,0)*coalesce(x.dias,22)) total
     from public.vale_refeicao x where lower(trim(x.nome))=lower(trim(f.nome))
   ) va on true
   left join lateral (
