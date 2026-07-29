@@ -167,7 +167,6 @@ begin
       ) order by p.data_instalacao) detalhes
     from public.proposta p
     where p.status_venda = 'INSTALADA'
-      and p.instalacao_auditada = true
       and to_char(p.data_instalacao::date, 'YYYY-MM') = p_competencia
     group by lower(trim(coalesce(p.vendedor,'')))
   )

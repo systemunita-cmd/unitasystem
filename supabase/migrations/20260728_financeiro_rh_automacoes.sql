@@ -134,7 +134,7 @@ for each row execute function public.rh_sincronizar_competencia_atual();
 
 drop trigger if exists proposta_comissao_financeiro_sync on public.proposta;
 create trigger proposta_comissao_financeiro_sync
-  after insert or update of status_venda,data_instalacao,vendedor,comissao_manual,instalacao_auditada
+  after insert or update of status_venda,data_instalacao,vendedor,comissao_manual
   on public.proposta for each row execute function public.rh_sincronizar_competencia_atual();
 
 create or replace function public.fin_titulo_alerta_automatico()

@@ -23,7 +23,7 @@ const botao = { border: 0, borderRadius: 9, padding: "9px 13px", fontSize: 12, f
 
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
-type Venda = { id: number; nome: string; vendedor: string; data_instalacao: string; comissao_manual: number; instalacao_auditada: boolean };
+type Venda = { id: number; nome: string; vendedor: string; data_instalacao: string; comissao_manual: number };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
 
@@ -42,7 +42,7 @@ export function GestaoFinanceiraRH() {
     const [t, f, v, e, a] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
-      supabase.from("proposta").select("id,nome,vendedor,data_instalacao,comissao_manual,instalacao_auditada").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
+      supabase.from("proposta").select("id,nome,vendedor,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
       supabase.from("fin_alertas").select("*").neq("status", "resolvido").order("vencimento"),
     ]);
@@ -92,11 +92,6 @@ export function GestaoFinanceiraRH() {
     const atualizado = { ...v, ...patch };
     setVendas(xs => xs.map(x => x.id === v.id ? atualizado : x));
     const payload: any = { ...patch };
-    if (patch.instalacao_auditada === true) {
-      const { data: auth } = await supabase.auth.getUser();
-      payload.instalacao_auditada_em = new Date().toISOString();
-      payload.instalacao_auditada_por = auth.user?.email || null;
-    }
     const { error } = await supabase.from("proposta").update(payload).eq("id", v.id);
     if (!error) await supabase.rpc("sincronizar_financeiro_rh", { p_competencia: comp });
     else setMsg(error.message);
@@ -153,12 +148,12 @@ export function GestaoFinanceiraRH() {
   };
 
   const porVendedor = useMemo(() => {
-    const m: Record<string, { qtd: number; valor: number; auditadas: number }> = {};
+    const m: Record<string, { qtd: number; valor: number }> = {};
     vendas.forEach(v => {
-      const k = v.vendedor || "Sem vendedor"; m[k] ||= { qtd: 0, valor: 0, auditadas: 0 };
-      m[k].qtd++; if (v.instalacao_auditada) { m[k].valor += v.comissao_manual; m[k].auditadas++; }
+      const k = v.vendedor || "Sem vendedor"; m[k] ||= { qtd: 0, valor: 0 };
+      m[k].qtd++; m[k].valor += v.comissao_manual;
     });
-    return Object.entries(m).sort((a, b) => b[1].auditadas - a[1].auditadas);
+    return Object.entries(m).sort((a, b) => b[1].qtd - a[1].qtd);
   }, [vendas]);
 
   const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["ia","Leitura por IA"]] as const;
@@ -177,8 +172,8 @@ export function GestaoFinanceiraRH() {
       {aba === "rh" && <div style={card}><h3>Sincronização RH → Financeiro</h3><p style={{ color: "#64748b", fontSize: 12 }}>Cria a folha da competência com salário, VT, alimentação, benefícios, encargos e recalcula comissões elegíveis. Itens pagos não são alterados.</p><button disabled={ocupado || fechado} onClick={sincronizarRH} style={botao}>Sincronizar competência</button></div>}
 
       {aba === "comissoes" && <div style={{ display: "grid", gap: 10 }}>
-        {porVendedor.map(([nome,x]) => <div key={nome} style={card}><b>{nome}</b><p style={{ fontSize: 12 }}>Auditadas: <b>{x.auditadas}/20</b> · faltam {Math.max(0,20-x.auditadas)} · potencial {moeda(x.valor)} · {x.auditadas >= 20 ? "LIBERADA" : "BLOQUEADA"}</p></div>)}
-        <div style={card}><b>Vendas instaladas da competência</b>{vendas.map(v => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px 100px", gap: 8, alignItems: "center", padding: 7, borderBottom: "1px solid #eee", fontSize: 11 }}><span>{v.nome}<br/><small>{v.vendedor}</small></span><input type="number" step=".01" value={v.comissao_manual} onChange={e => salvarVenda(v,{ comissao_manual:Number(e.target.value) })} style={input}/><label><input type="checkbox" checked={v.instalacao_auditada} onChange={e => salvarVenda(v,{ instalacao_auditada:e.target.checked })}/> Auditada</label></div>)}</div>
+        {porVendedor.map(([nome,x]) => <div key={nome} style={card}><b>{nome}</b><p style={{ fontSize: 12 }}>Instaladas: <b>{x.qtd}/20</b> · faltam {Math.max(0,20-x.qtd)} · potencial {moeda(x.valor)} · {x.qtd >= 20 ? "LIBERADA" : "BLOQUEADA"}</p></div>)}
+        <div style={card}><b>Vendas instaladas da competência</b>{vendas.map(v => <div key={v.id} style={{ display: "grid", gridTemplateColumns: "1fr 160px", gap: 8, alignItems: "center", padding: 7, borderBottom: "1px solid #eee", fontSize: 11 }}><span>{v.nome}<br/><small>{v.vendedor}</small></span><input type="number" step=".01" value={v.comissao_manual} onChange={e => salvarVenda(v,{ comissao_manual:Number(e.target.value) })} style={input}/></div>)}</div>
       </div>}
 
       {aba === "importacao" && <div style={card}><h3>Importar extrato/planilha</h3><p style={{ fontSize: 12, color: "#64748b" }}>CSV com data, descrição, valor e tipo. A importação não altera lançamentos existentes.</p><input type="file" accept=".csv,.xls,.xlsx,.ofx,text/csv" onChange={e => importarArquivo(e.target.files?.[0])}/></div>}
