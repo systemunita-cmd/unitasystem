@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
+import { FinanceiroAnexos } from "./_components/FinanceiroAnexos";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 💵 FINANCEIRO — Módulo COMPLETO num único arquivo (UnitaSystem)
@@ -1069,6 +1070,7 @@ export function OperadorasSection() {
                   placeholder="Opcional"
                 />
               </O_Campo>
+              {form.id && <FinanceiroAnexos tituloId={form.id} />}
             </div>
             <div
               style={{
@@ -1998,6 +2000,7 @@ export function DespesasSection() {
                   placeholder="Opcional"
                 />
               </D_Campo>
+              {form.id && <FinanceiroAnexos tituloId={form.id} />}
             </div>
             <div
               style={{
