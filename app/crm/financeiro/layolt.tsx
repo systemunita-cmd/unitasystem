@@ -474,6 +474,7 @@ type O_Titulo = {
   descricao: string;
   parte: string;
   valor: number;
+  competencia: string;
   vencimento: string;
   status: string;
   categoria: string;
@@ -485,6 +486,7 @@ const O_FORM_VAZIO: O_Titulo = {
   descricao: "",
   parte: "",
   valor: 0,
+  competencia: "",
   vencimento: "",
   status: "pendente",
   categoria: "",
@@ -532,6 +534,7 @@ export function OperadorasSection() {
         descricao: r.descricao || "",
         parte: r.parte || "",
         valor: Number(r.valor) || 0,
+        competencia: r.competencia || "",
         vencimento: r.vencimento || "",
         status: r.status || "pendente",
         categoria: r.categoria || "",
@@ -562,7 +565,7 @@ export function OperadorasSection() {
   }, [lista]);
 
   const abrirNovo = () => {
-    setForm(O_FORM_VAZIO);
+    setForm({ ...O_FORM_VAZIO, competencia: O_hoje().slice(0, 7) });
     setModal(true);
   };
   const abrirEditar = (t: O_Titulo) => {
@@ -581,6 +584,7 @@ export function OperadorasSection() {
       descricao: form.descricao,
       parte: form.parte || null,
       valor: form.valor || 0,
+      competencia: form.competencia || null,
       vencimento: form.vencimento || null,
       status: form.status || "pendente",
       categoria: form.categoria || null,
@@ -824,6 +828,11 @@ export function OperadorasSection() {
                         {t.categoria && (
                           <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{t.categoria}</p>
                         )}
+                        {t.competencia && (
+                          <p style={{ color: "#6366f1", fontSize: 11, margin: "2px 0 0", fontWeight: 700 }}>
+                            Competência: {F_fmtComp(t.competencia)}
+                          </p>
+                        )}
                       </td>
                       <td style={{ padding: "12px 16px", color: "#4b5563", fontSize: 12 }}>
                         {t.parte || "—"}
@@ -1041,16 +1050,17 @@ export function OperadorasSection() {
                   />
                 </O_Campo>
               </div>
-              <O_Campo label="Status">
-                <select
-                  value={form.status}
-                  onChange={(e) => set("status", e.target.value)}
-                  style={O_inputStyle}
-                >
-                  <option value="pendente">A receber</option>
-                  <option value="pago">Já recebido</option>
-                </select>
-              </O_Campo>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <O_Campo label="Competência">
+                  <input type="month" value={form.competencia} onChange={(e) => set("competencia", e.target.value)} style={O_inputStyle} />
+                </O_Campo>
+                <O_Campo label="Status">
+                  <select value={form.status} onChange={(e) => set("status", e.target.value)} style={O_inputStyle}>
+                    <option value="pendente">A receber</option>
+                    <option value="pago">Já recebido</option>
+                  </select>
+                </O_Campo>
+              </div>
               <O_Campo label="Observação">
                 <input
                   value={form.observacao}
@@ -1264,6 +1274,7 @@ type D_Despesa = {
   descricao: string;
   categoria: string;
   valor: number;
+  competencia: string;
   vencimento: string;
   status: string;
   observacao: string;
@@ -1273,6 +1284,7 @@ const D_FORM_VAZIO: D_Despesa = {
   descricao: "",
   categoria: "Outro",
   valor: 0,
+  competencia: "",
   vencimento: "",
   status: "pendente",
   observacao: "",
@@ -1321,6 +1333,7 @@ export function DespesasSection() {
         descricao: r.descricao || "",
         categoria: r.categoria || "Outro",
         valor: Number(r.valor) || 0,
+        competencia: r.competencia || "",
         vencimento: r.vencimento || "",
         status: r.status || "pendente",
         observacao: r.observacao || "",
@@ -1361,7 +1374,7 @@ export function DespesasSection() {
   }, [lista]);
 
   const abrirNovo = () => {
-    setForm(D_FORM_VAZIO);
+    setForm({ ...D_FORM_VAZIO, competencia: D_hoje().slice(0, 7) });
     setModal(true);
   };
   const abrirEditar = (d: D_Despesa) => {
@@ -1380,6 +1393,7 @@ export function DespesasSection() {
       descricao: form.descricao,
       categoria: form.categoria || "Outro",
       valor: form.valor || 0,
+      competencia: form.competencia || null,
       vencimento: form.vencimento || null,
       status: form.status || "pendente",
       observacao: form.observacao || null,
@@ -1472,6 +1486,11 @@ export function DespesasSection() {
       valor: total,
       vencimento: D_ultimoDiaDoMes(compFolha),
       status: "pendente",
+      competencia: compFolha,
+      origem_modulo: "RH",
+      origem_tipo: "folha",
+      origem_id: compFolha,
+      metadata: { competencia: compFolha, total_itens: (data || []).length },
     });
     setPuxando(false);
     if (insErr) {
@@ -1731,6 +1750,11 @@ export function DespesasSection() {
                         <p style={{ color: "#1f2937", fontSize: 13, fontWeight: 700, margin: 0 }}>
                           {d.descricao}
                         </p>
+                        {d.competencia && (
+                          <p style={{ color: "#6366f1", fontSize: 11, margin: "2px 0 0", fontWeight: 700 }}>
+                            Competência: {D_fmtComp(d.competencia)}
+                          </p>
+                        )}
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         <span
@@ -1956,17 +1980,16 @@ export function DespesasSection() {
                     style={D_inputStyle}
                   />
                 </D_Campo>
-                <D_Campo label="Status">
-                  <select
-                    value={form.status}
-                    onChange={(e) => set("status", e.target.value)}
-                    style={D_inputStyle}
-                  >
-                    <option value="pendente">A pagar</option>
-                    <option value="pago">Já pago</option>
-                  </select>
+                <D_Campo label="Competência">
+                  <input type="month" value={form.competencia} onChange={(e) => set("competencia", e.target.value)} style={D_inputStyle} />
                 </D_Campo>
               </div>
+              <D_Campo label="Status">
+                <select value={form.status} onChange={(e) => set("status", e.target.value)} style={D_inputStyle}>
+                  <option value="pendente">A pagar</option>
+                  <option value="pago">Já pago</option>
+                </select>
+              </D_Campo>
               <D_Campo label="Observação">
                 <input
                   value={form.observacao}
