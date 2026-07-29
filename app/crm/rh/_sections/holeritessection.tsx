@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
+import { baixarPdfHolerites, imprimirPdfHolerites } from "./holeritepdf";
 // 🧑‍💼 RH · Holerites (CONECTADO — 'holerites'; proventos/descontos jsonb [{rotulo,valor}])
 const COR = "#4f46e5";
 const COR_TEXTO = "#4338ca";
@@ -124,11 +125,21 @@ export function HoleritesSection() {
       .map((f: any) => {
         const base = Number(f.base) || 0;
         const comissao = Number(f.comissao) || 0;
+        const valeTransporte = Number(f.vale_transporte) || 0;
+        const valeAlimentacao = Number(f.vale_alimentacao) || 0;
+        const beneficios = Number(f.beneficios) || 0;
+        const outrosProventos = Number(f.proventos) || 0;
+        const bonusMeta = Number(f.bonus_meta) || 0;
         const inss = Number(f.inss) || 0;
         const irrf = Number(f.irrf) || 0;
         const outros = Number(f.outros) || 0;
         const proventos: Linha[] = [{ rotulo: "Salário base", valor: base }];
+        if (valeTransporte > 0) proventos.push({ rotulo: "Vale-transporte", valor: valeTransporte });
+        if (valeAlimentacao > 0) proventos.push({ rotulo: "Vale-alimentação", valor: valeAlimentacao });
+        if (beneficios > 0) proventos.push({ rotulo: "Benefícios", valor: beneficios });
+        if (outrosProventos > 0) proventos.push({ rotulo: "Outros proventos", valor: outrosProventos });
         if (comissao > 0) proventos.push({ rotulo: "Comissão", valor: comissao });
+        if (bonusMeta > 0) proventos.push({ rotulo: "Bônus de meta", valor: bonusMeta });
         const descontos: Linha[] = [];
         if (inss > 0) descontos.push({ rotulo: "INSS", valor: inss });
         if (irrf > 0) descontos.push({ rotulo: "IRRF", valor: irrf });
@@ -224,6 +235,16 @@ export function HoleritesSection() {
                 </option>
               ))}
             </select>
+          )}
+          {itens.length > 0 && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={() => baixarPdfHolerites(itens, `holerites-${comp}.pdf`)} style={{ background: "#ffffff", color: COR_TEXTO, border: "1px solid #c7d2fe", borderRadius: 9, padding: "9px 13px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                Baixar todos em PDF
+              </button>
+              <button onClick={() => imprimirPdfHolerites(itens)} style={{ background: COR, color: "#ffffff", border: "none", borderRadius: 9, padding: "9px 13px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                Imprimir todos
+              </button>
+            </div>
           )}
           {compsFolha.length > 0 && (
             <div
@@ -368,21 +389,11 @@ export function HoleritesSection() {
                         </span>
                       </td>
                       <td style={{ padding: "12px 16px" }}>
-                        <button
-                          onClick={() => setVer(h)}
-                          style={{
-                            background: "#eef2ff",
-                            color: COR_TEXTO,
-                            border: "1px solid #c7d2fe",
-                            borderRadius: 8,
-                            padding: "5px 11px",
-                            fontSize: 11,
-                            cursor: "pointer",
-                            fontWeight: 600,
-                          }}
-                        >
-                          👁️ Ver
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button onClick={() => setVer(h)} style={{ background: "#eef2ff", color: COR_TEXTO, border: "1px solid #c7d2fe", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>Ver</button>
+                          <button onClick={() => baixarPdfHolerites([h], `holerite-${h.competencia}-${h.nome.replace(/\s+/g, "-")}.pdf`)} style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>PDF</button>
+                          <button onClick={() => imprimirPdfHolerites([h])} style={{ background: "#f8fafc", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>Imprimir</button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -436,21 +447,11 @@ export function HoleritesSection() {
                   {ver.nome} — {ver.cargo}
                 </p>
               </div>
-              <button
-                onClick={() => setVer(null)}
-                style={{
-                  background: "#f3f4f6",
-                  border: "none",
-                  color: "#6b7280",
-                  fontSize: 16,
-                  cursor: "pointer",
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                }}
-              >
-                ✕
-              </button>
+              <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button onClick={() => baixarPdfHolerites([ver], `holerite-${ver.competencia}-${ver.nome.replace(/\s+/g, "-")}.pdf`)} style={{ background: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0", borderRadius: 8, padding: "7px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>Baixar PDF</button>
+                <button onClick={() => imprimirPdfHolerites([ver])} style={{ background: COR, color: "white", border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}>Imprimir</button>
+                <button onClick={() => setVer(null)} aria-label="Fechar" style={{ background: "#f3f4f6", border: "none", color: "#6b7280", fontSize: 16, cursor: "pointer", width: 32, height: 32, borderRadius: 8 }}>×</button>
+              </div>
             </div>
             <div style={{ padding: 24, overflowY: "auto" }}>
               <p
