@@ -7,8 +7,8 @@ import { supabase } from "../../../lib/supabase";
 // entra das operadoras × sai (despesas, incluindo folha) = resultado.
 // ═══════════════════════════════════════════════════════════════════════
 
-const COR = "#d97706";
-const COR_TEXTO = "#b45309";
+const COR = "#65a30d";
+const COR_TEXTO = "#4d7c0f";
 const card = {
   background: "#ffffff",
   borderRadius: 14,
@@ -127,7 +127,7 @@ export function ResumoSection() {
             width: 48,
             height: 48,
             borderRadius: 14,
-            background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+            background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -306,9 +306,9 @@ export function ResumoSection() {
               ) : (
                 <span
                   style={{
-                    background: "#fffbeb",
+                    background: "#f7fee7",
                     color: COR_TEXTO,
-                    border: "1px solid #fde68a",
+                    border: "1px solid #bef264",
                     padding: "5px 12px",
                     borderRadius: 10,
                     fontSize: 11,

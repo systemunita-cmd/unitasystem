@@ -7,8 +7,8 @@ import { supabase } from "../../../lib/supabase";
 // Erros em toast amigável (sem alert cru). Detalhe técnico só no console.
 // ═══════════════════════════════════════════════════════════════════════
 
-const COR = "#d97706";
-const COR_TEXTO = "#b45309";
+const COR = "#65a30d";
+const COR_TEXTO = "#4d7c0f";
 const card = {
   background: "#ffffff",
   borderRadius: 14,
@@ -246,7 +246,7 @@ export function OperadorasSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+              background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -268,7 +268,7 @@ export function OperadorasSection() {
         <button
           onClick={abrirNovo}
           style={{
-            background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+            background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
             color: "white",
             border: "none",
             borderRadius: 12,
@@ -490,9 +490,9 @@ export function OperadorasSection() {
                           <button
                             onClick={() => abrirEditar(t)}
                             style={{
-                              background: "#fffbeb",
+                              background: "#f7fee7",
                               color: COR_TEXTO,
-                              border: "1px solid #fde68a",
+                              border: "1px solid #bef264",
                               borderRadius: 8,
                               padding: "5px 10px",
                               fontSize: 11,
@@ -670,7 +670,7 @@ export function OperadorasSection() {
                 onClick={salvar}
                 disabled={salvando}
                 style={{
-                  background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+                  background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
                   color: "white",
                   border: "none",
                   borderRadius: 10,

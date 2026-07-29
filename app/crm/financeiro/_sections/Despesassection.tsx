@@ -8,8 +8,8 @@ import { supabase } from "../../../lib/supabase";
 // de salários+comissão do mês (folha_itens) como uma despesa automática.
 // ═══════════════════════════════════════════════════════════════════════
 
-const COR = "#d97706";
-const COR_TEXTO = "#b45309";
+const COR = "#65a30d";
+const COR_TEXTO = "#4d7c0f";
 const card = {
   background: "#ffffff",
   borderRadius: 14,
@@ -334,7 +334,7 @@ export function DespesasSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+              background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -356,7 +356,7 @@ export function DespesasSection() {
         <button
           onClick={abrirNovo}
           style={{
-            background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+            background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
             color: "white",
             border: "none",
             borderRadius: 12,
@@ -423,8 +423,8 @@ export function DespesasSection() {
             alignItems: "center",
             gap: 10,
             flexWrap: "wrap",
-            background: "#fffbeb",
-            borderColor: "#fde68a",
+            background: "#f7fee7",
+            borderColor: "#bef264",
           }}
         >
           <span style={{ fontSize: 18 }}>👥</span>
@@ -435,7 +435,7 @@ export function DespesasSection() {
             value={compFolha}
             onChange={(e) => setCompFolha(e.target.value)}
             style={{
-              border: "1px solid #fde68a",
+              border: "1px solid #bef264",
               borderRadius: 8,
               padding: "6px 10px",
               fontSize: 13,
@@ -645,9 +645,9 @@ export function DespesasSection() {
                           <button
                             onClick={() => abrirEditar(d)}
                             style={{
-                              background: "#fffbeb",
+                              background: "#f7fee7",
                               color: COR_TEXTO,
-                              border: "1px solid #fde68a",
+                              border: "1px solid #bef264",
                               borderRadius: 8,
                               padding: "5px 10px",
                               fontSize: 11,
@@ -822,7 +822,7 @@ export function DespesasSection() {
                 onClick={salvar}
                 disabled={salvando}
                 style={{
-                  background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+                  background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
                   color: "white",
                   border: "none",
                   borderRadius: 10,

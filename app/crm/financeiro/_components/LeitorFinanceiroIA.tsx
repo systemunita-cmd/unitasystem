@@ -42,7 +42,7 @@ export function LeitorFinanceiroIA() {
     <h3>Leitura automática de boletos e notas</h3>
     <p style={{fontSize:12,color:"#64748b"}}>A IA extrai fornecedor, valor, vencimento e categoria. O lançamento fica pendente para conferência.</p>
     <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={e=>setArquivo(e.target.files?.[0]||null)}/>
-    <button onClick={ler} disabled={!arquivo||lendo} style={{marginLeft:8,padding:"8px 12px",background:"#d97706",color:"#fff",border:0,borderRadius:8}}>{lendo?"Lendo...":"Ler com IA"}</button>
+    <button onClick={ler} disabled={!arquivo||lendo} style={{marginLeft:8,padding:"8px 12px",background:"#65a30d",color:"#fff",border:0,borderRadius:8}}>{lendo?"Lendo...":"Ler com IA"}</button>
     {dados&&<div style={{marginTop:14,fontSize:12}}><pre style={{whiteSpace:"pre-wrap",background:"#f8fafc",padding:10}}>{JSON.stringify(dados,null,2)}</pre><button onClick={lancar}>Criar lançamento</button></div>}
     {msg&&<p style={{fontSize:11}}>{msg}</p>}
   </div>;

@@ -9,8 +9,8 @@ import { supabase } from "../../../lib/supabase";
 // Cruza folha_itens (nome, base, comissao) com funcionarios (departamento).
 // ═══════════════════════════════════════════════════════════════════════
 
-const COR = "#d97706";
-const COR_TEXTO = "#b45309";
+const COR = "#65a30d";
+const COR_TEXTO = "#4d7c0f";
 const card = {
   background: "#ffffff",
   borderRadius: 14,
@@ -160,7 +160,7 @@ export function FolhaSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${COR} 0%, #f59e0b 100%)`,
+              background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -295,8 +295,8 @@ export function FolhaSection() {
                   <div
                     style={{
                       padding: "14px 18px",
-                      background: "#fffbeb",
-                      borderBottom: "1px solid #fde68a",
+                      background: "#f7fee7",
+                      borderBottom: "1px solid #bef264",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
@@ -494,7 +494,7 @@ export function FolhaSection() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: "#fffbeb", borderTop: "2px solid #fde68a" }}>
+                    <tr style={{ background: "#f7fee7", borderTop: "2px solid #bef264" }}>
                       <td
                         style={{ padding: "12px 16px", color: "#1f2937", fontSize: 13, fontWeight: 800 }}
                         colSpan={2}

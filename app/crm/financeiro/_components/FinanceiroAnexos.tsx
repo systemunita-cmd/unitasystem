@@ -134,7 +134,7 @@ export function FinanceiroAnexos({ tituloId }: { tituloId: string }) {
           <p style={{ margin: 0, color: "#374151", fontSize: 12, fontWeight: 800 }}>Documentos anexados</p>
           <p style={{ margin: "2px 0 0", color: "#9ca3af", fontSize: 10 }}>Notas, boletos e comprovantes · até 10 MB</p>
         </div>
-        <label style={{ background: "linear-gradient(180deg,#f59e0b,#d97706)", color: "#fff", border: "1px solid #c96b05", borderRadius: 10, padding: "9px 13px", boxShadow: "0 2px 0 #92400e,0 6px 12px rgba(217,119,6,.16)", fontSize: 11, fontWeight: 800, cursor: enviando ? "wait" : "pointer" }}>
+        <label style={{ background: "linear-gradient(180deg,#84cc16,#65a30d)", color: "#fff", border: "1px solid #4d7c0f", borderRadius: 10, padding: "9px 13px", boxShadow: "0 2px 0 #3f6212,0 6px 12px rgba(101,163,13,.16)", fontSize: 11, fontWeight: 800, cursor: enviando ? "wait" : "pointer" }}>
           {enviando ? "Enviando..." : "＋ Anexar"}
           <input
             ref={inputRef}
