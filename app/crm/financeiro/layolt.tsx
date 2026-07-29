@@ -4,6 +4,22 @@ import { supabase } from "../../lib/supabase";
 import { FinanceiroAnexos } from "./_components/FinanceiroAnexos";
 import { GestaoFinanceiraRH } from "./_components/GestaoFinanceiraRH";
 
+function useClassificacoesFinanceiras(tipo: "pagar" | "receber") {
+  const [categorias, setCategorias] = useState<string[]>([]);
+  const [centros, setCentros] = useState<string[]>([]);
+  useEffect(() => {
+    (async () => {
+      const [categoriasResult, centrosResult] = await Promise.all([
+        supabase.from("fin_categorias").select("nome,tipo").eq("ativo", true).order("nome"),
+        supabase.from("fin_centros_custo").select("nome").eq("ativo", true).order("nome"),
+      ]);
+      setCategorias((categoriasResult.data || []).filter((item: any) => item.tipo === "ambos" || item.tipo === tipo).map((item: any) => item.nome));
+      setCentros((centrosResult.data || []).map((item: any) => item.nome));
+    })();
+  }, [tipo]);
+  return { categorias, centros };
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 💵 FINANCEIRO — Módulo COMPLETO num único arquivo (UnitaSystem)
 // Tudo aqui dentro de propósito: zero imports de _sections => zero risco de
@@ -507,6 +523,7 @@ export function OperadorasSection() {
   const [form, setForm] = useState<O_Titulo>(O_FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<O_Aviso>(null);
+  const { categorias, centros } = useClassificacoesFinanceiras("receber");
   const set = (k: keyof O_Titulo, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -1029,12 +1046,11 @@ export function OperadorasSection() {
                   />
                 </O_Campo>
                 <O_Campo label="Categoria">
-                  <input
-                    value={form.categoria}
-                    onChange={(e) => set("categoria", e.target.value)}
-                    style={O_inputStyle}
-                    placeholder="Ex: Serviços"
-                  />
+                  <select value={form.categoria} onChange={(e) => set("categoria", e.target.value)} style={O_inputStyle}>
+                    <option value="">Selecione uma categoria</option>
+                    {form.categoria && !categorias.includes(form.categoria) && <option value={form.categoria}>{form.categoria}</option>}
+                    {categorias.map((categoria) => <option key={categoria} value={categoria}>{categoria}</option>)}
+                  </select>
                 </O_Campo>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -1067,7 +1083,13 @@ export function OperadorasSection() {
                   </select>
                 </O_Campo>
               </div>
-              <O_Campo label="Centro de custo"><input value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={O_inputStyle} placeholder="Ex: Comercial, Operações" /></O_Campo>
+              <O_Campo label="Centro de custo">
+                <select value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={O_inputStyle}>
+                  <option value="">Sem centro de custo</option>
+                  {form.centro_custo && !centros.includes(form.centro_custo) && <option value={form.centro_custo}>{form.centro_custo}</option>}
+                  {centros.map((centro) => <option key={centro} value={centro}>{centro}</option>)}
+                </select>
+              </O_Campo>
               <O_Campo label="Observação">
                 <input
                   value={form.observacao}
@@ -1312,6 +1334,8 @@ export function DespesasSection() {
   const [compsFolha, setCompsFolha] = useState<string[]>([]);
   const [compFolha, setCompFolha] = useState("");
   const [puxando, setPuxando] = useState(false);
+  const { categorias, centros } = useClassificacoesFinanceiras("pagar");
+  const categoriasDisponiveis = Array.from(new Set([...D_CATEGORIAS, ...categorias]));
   const set = (k: keyof D_Despesa, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -1966,7 +1990,7 @@ export function DespesasSection() {
                     onChange={(e) => set("categoria", e.target.value)}
                     style={D_inputStyle}
                   >
-                    {D_CATEGORIAS.map((c) => (
+                    {categoriasDisponiveis.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -2002,7 +2026,13 @@ export function DespesasSection() {
                   <option value="pago">Já pago</option>
                 </select>
               </D_Campo>
-              <D_Campo label="Centro de custo"><input value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={D_inputStyle} placeholder="Ex: Administrativo, RH" /></D_Campo>
+              <D_Campo label="Centro de custo">
+                <select value={form.centro_custo} onChange={(e) => set("centro_custo", e.target.value)} style={D_inputStyle}>
+                  <option value="">Sem centro de custo</option>
+                  {form.centro_custo && !centros.includes(form.centro_custo) && <option value={form.centro_custo}>{form.centro_custo}</option>}
+                  {centros.map((centro) => <option key={centro} value={centro}>{centro}</option>)}
+                </select>
+              </D_Campo>
               <D_Campo label="Observação">
                 <input
                   value={form.observacao}

@@ -5,6 +5,8 @@ import * as XLSX from "xlsx";
 import { supabase } from "../../../lib/supabase";
 import { LeitorFinanceiroIA } from "./LeitorFinanceiroIA";
 import { MetasInadimplencia } from "./MetasInadimplencia";
+import { CadastrosFinanceiros } from "./CadastrosFinanceiros";
+import { IntegracaoBancaria } from "./IntegracaoBancaria";
 
 const moeda = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const compAtual = () => new Date().toISOString().slice(0, 7);
@@ -232,7 +234,7 @@ export function GestaoFinanceiraRH() {
     setSalvandoVenda(null);
   };
 
-  const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["ia","Leitura por IA"]] as const;
+  const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["cadastros","Cadastros"],["bancos","Open Finance"],["ia","Leitura por IA"]] as const;
   return (
     <div className="fin-gestao" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: "linear-gradient(135deg,#ffffff 0%,#f7fee7 100%)", border: "1px solid #d9f99d", borderRadius: 18, padding: "20px 22px", boxShadow: "0 12px 32px rgba(63,98,18,.07)" }}><span style={{ display: "inline-block", background: "#ecfccb", color: "#3f6212", borderRadius: 999, padding: "5px 9px", fontSize: 10, fontWeight: 900, letterSpacing: ".06em" }}>CENTRAL FINANCEIRA</span><h1 style={{ margin: "9px 0 0", fontSize: 25 }}>Gestão Financeira + RH</h1><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Competências, folha, comissões, conciliação e planejamento em um só lugar.</p></div>
@@ -294,6 +296,8 @@ export function GestaoFinanceiraRH() {
       {aba === "projecao" && <div style={card}><h3>Fluxo de caixa projetado</h3>{meses.slice(0,12).map(m=><div key={m.competencia} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",fontSize:12,padding:8,borderBottom:"1px solid #eee"}}><span>{mesNome(m.competencia)}</span><span>{moeda(m.entradas)}</span><span>{moeda(m.saidas)}</span><b>{moeda(m.saldo)}</b></div>)}</div>}
       {aba === "alertas" && <div style={card}><button onClick={gerarAlertas} disabled={ocupado} style={botao}>Atualizar alertas</button>{alertas.map(a=><div key={a.id} style={{padding:9,borderBottom:"1px solid #eee"}}><b style={{fontSize:12}}>{a.titulo}</b><p style={{margin:3,fontSize:11}}>{a.mensagem} · {a.vencimento}</p></div>)}</div>}
       {aba === "metas" && <MetasInadimplencia competencia={comp} />}
+      {aba === "cadastros" && <CadastrosFinanceiros />}
+      {aba === "bancos" && <IntegracaoBancaria />}
       {aba === "ia" && <LeitorFinanceiroIA />}
     </div>
   );
