@@ -139,6 +139,26 @@ export function EventosSection() {
           </div>)}
         </section>
 
+        <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18, boxShadow: "0 4px 16px rgba(15,23,42,.05)" }}>
+          <div style={{ marginBottom: 15 }}>
+            <h2 style={{ margin: 0, fontSize: 17, color: "#0f172a" }}>Mensagens das automatizações</h2>
+            <p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 12 }}>Altere os textos por aqui. Não é necessário editar código nem reiniciar o Unitazap.</p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 12 }}>
+            {regras.map(regra => <article key={"mensagem-" + regra.id} style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, display: "grid", gap: 10, background: "#f8fafc" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                <div>
+                  <span style={{ display: "inline-block", color: CORES[modulo(regra.evento)], fontSize: 10, fontWeight: 900, letterSpacing: .5 }}>{modulo(regra.evento)}</span>
+                  <h3 style={{ margin: "4px 0 0", color: "#0f172a", fontSize: 13 }}>{regra.nome}</h3>
+                </div>
+                <span style={{ color: regra.ativo ? "#166534" : "#64748b", background: regra.ativo ? "#dcfce7" : "#e2e8f0", borderRadius: 999, padding: "4px 7px", fontSize: 9, fontWeight: 900 }}>{regra.ativo ? "ATIVA" : "PAUSADA"}</span>
+              </div>
+              <p style={{ margin: 0, minHeight: 50, color: "#475569", fontSize: 11, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{regra.mensagem || "Nenhuma mensagem configurada."}</p>
+              <button onClick={() => abrir(regra)} style={{ justifySelf: "start", border: 0, borderRadius: 9, padding: "8px 11px", color: "white", background: CORES[modulo(regra.evento)], fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Alterar mensagem</button>
+            </article>)}
+          </div>
+        </section>
+
         <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 18, padding: 18 }}>
           <h2 style={{ margin: "0 0 14px", fontSize: 16, color: "#0f172a" }}>Últimos eventos do sistema</h2>
           <div style={{ display: "grid", gap: 8 }}>{eventos.map(evento => {

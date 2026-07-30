@@ -50,7 +50,7 @@ language sql
 stable
 security definer
 set search_path = public
-as $
+as $$
   select exists (
     select 1
     from public.usuarios u
@@ -60,11 +60,11 @@ as $
       and (
         u.role in ('admin', 'supervisor')
         or lower(u.email) = 'admin@grupounita.net.br'
-        or g.nome = 'Administra??o Geral'
+        or g.nome = 'Administração Geral'
         or coalesce(g.permissoes ->> 'fluxos.acessar', 'off') not in ('off', 'none', 'false', '')
       )
   );
-$;
+$$;
 
 revoke all on function public.usuario_pode_gerenciar_automacoes() from public;
 grant execute on function public.usuario_pode_gerenciar_automacoes() to authenticated;
@@ -165,7 +165,7 @@ begin
 end;
 $$;
 
-do $
+do $$
 declare v_trigger record;
 begin
   for v_trigger in
@@ -177,7 +177,7 @@ begin
   loop
     execute format('drop trigger if exists %I on public.proposta', v_trigger.tgname);
   end loop;
-end $;
+end $$;
 
 drop trigger if exists proposta_automacao_status_trg on public.proposta;
 create trigger proposta_automacao_status_trg
@@ -230,7 +230,7 @@ begin
 end;
 $$;
 
-do $
+do $$
 declare v_trigger record;
 begin
   for v_trigger in
@@ -242,7 +242,7 @@ begin
   loop
     execute format('drop trigger if exists %I on public.suporte_chamados', v_trigger.tgname);
   end loop;
-end $;
+end $$;
 
 drop trigger if exists suporte_chamado_automacao_status_trg on public.suporte_chamados;
 create trigger suporte_chamado_automacao_status_trg
@@ -304,7 +304,7 @@ begin
 end;
 $$;
 
-do $
+do $$
 declare v_trigger record;
 begin
   for v_trigger in
@@ -316,7 +316,7 @@ begin
   loop
     execute format('drop trigger if exists %I on public.faturas_status', v_trigger.tgname);
   end loop;
-end $;
+end $$;
 
 drop trigger if exists fatura_automacao_eventos_trg on public.faturas_status;
 create trigger fatura_automacao_eventos_trg
