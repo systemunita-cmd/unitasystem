@@ -11,6 +11,7 @@ import { EtiquetasSection } from "./_sections/EtiquetasSection";
 import { RelatoriosSection } from "./_sections/RelatoriosSection";
 import { RespostasRapidasSection } from "./_sections/RespostasRapidasSection";
 import { RoletaSection } from "./_sections/RoletaSection";
+import { EventosSection } from "./_sections/EventosSection";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🎯 CHATBOT — UnitaSystem
@@ -85,7 +86,10 @@ function ChatbotInner() {
     }] : []),
     ...(podeVerAutomacao ? [{
       key: "automacao", icon: "🤖", label: "Automação", cor: "#8b5cf6",
-      subitens: [{ key: "fluxos", label: "Chatbot / Fluxos" }]
+      subitens: [
+        { key: "eventos", label: "Eventos dos m\u00f3dulos" },
+        { key: "fluxos", label: "Chatbot / Fluxos" },
+      ]
     }] : []),
     ...(podeVerMarketing ? [{
       key: "marketing", icon: "📢", label: "Marketing", cor: "#f59e0b",
@@ -309,6 +313,7 @@ function ChatbotInner() {
           </div>
         )}
         {aba === "conexoes" && verConexoes && <ConexoesSection />}
+        {aba === "eventos" && podeVerAutomacao && <EventosSection />}
         {aba === "fluxos" && podeVerAutomacao && (
           <div style={{ padding: 32, display: "flex", flexDirection: "column", gap: 24, alignItems: "center", justifyContent: "center", flex: 1 }}>
             <div style={{
