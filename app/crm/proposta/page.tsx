@@ -29,6 +29,7 @@ type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: stri
 type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type AnexoMeta = { url: string; nome: string; tipo: string; tamanho: number; enviado_em: string };
+type InadimplenciaCliente = { id:string; cliente:string; valor:number; vencimento?:string; status:string; origem:string };
 
 // 🔍 Status padrão de toda proposta nova
 const STATUS_PADRAO = "AGUARDANDO AUDITORIA";
@@ -204,6 +205,9 @@ function PropostaForm() {
   // Busca de cliente por CPF (cadastro interno)
   const [buscandoCpf, setBuscandoCpf] = useState(false);
   const [cpfEncontrado, setCpfEncontrado] = useState(false);
+  const [buscandoInadimplencia,setBuscandoInadimplencia]=useState(false);
+  const [inadimplenciasCliente,setInadimplenciasCliente]=useState<InadimplenciaCliente[]>([]);
+  const [erroConsultaInadimplencia,setErroConsultaInadimplencia]=useState("");
 
   // Upload loading
   const [uploadando, setUploadando] = useState<Record<string, boolean>>({});
@@ -467,7 +471,24 @@ function PropostaForm() {
         setCpfEncontrado(true);
       }
     } catch (e) { /* ignore */ }
+
     setBuscandoCpf(false);
+  };
+
+  const consultarInadimplencia=async(documento:string,nome?:string):Promise<InadimplenciaCliente[]>=>{
+    const digitos=String(documento||"").replace(/\D/g,"");
+    if(digitos.length<8){setInadimplenciasCliente([]);setErroConsultaInadimplencia("");return[]}
+    setBuscandoInadimplencia(true);setErroConsultaInadimplencia("");
+    const {data,error}=await supabase.rpc("consultar_inadimplencia_cliente",{p_documento:documento,p_nome:nome||form.nome||null});
+    setBuscandoInadimplencia(false);
+    if(error){
+      console.warn("Consulta de inadimplencia indisponivel:",error.message);
+      setErroConsultaInadimplencia("Nao foi possivel consultar a inadimplencia agora.");
+      setInadimplenciasCliente([]);return[];
+    }
+    const itens=(data||[]) as InadimplenciaCliente[];
+    setInadimplenciasCliente(itens);
+    return itens;
   };
 
   // ═══ UPLOAD ═══
@@ -542,6 +563,9 @@ function PropostaForm() {
         return;
       }
     }
+
+    const pendencias=await consultarInadimplencia(form.cpf||"",form.nome||"");
+    if(pendencias.length>0&&!window.confirm(`Este cliente possui ${pendencias.length} pendencia(s), total de ${pendencias.reduce((s,i)=>s+Number(i.valor||0),0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}. Deseja continuar e cadastrar a venda mesmo assim?`))return;
 
     setLoading(true);
 
@@ -1132,7 +1156,7 @@ function PropostaForm() {
       } else if (c.slug === "cpf") {
         input = tipoPessoa === "cnpj"
           ? <input placeholder="00.000.000/0000-00" value={valorEfetivo}
-              onChange={e => set(mascaraCNPJ(e.target.value))} style={inputStyleParaCampo(c)} />
+              onChange={e => { const v=mascaraCNPJ(e.target.value); set(v); if(v.replace(/\D/g, "").length===14) consultarInadimplencia(v); }} onBlur={e=>consultarInadimplencia(e.target.value)} style={inputStyleParaCampo(c)} />
           : (
             <div style={{ position: "relative" }}>
               <input placeholder={c.placeholder || "000.000.000-00"} value={valorEfetivo}
@@ -1140,7 +1164,7 @@ function PropostaForm() {
                   const v = mascaraCPF(e.target.value);
                   set(v);
                   setCpfEncontrado(false);
-                  if (v.replace(/\D/g, "").length === 11) buscarClientePorCpf(v);
+                  if (v.replace(/\D/g, "").length === 11) { buscarClientePorCpf(v); consultarInadimplencia(v); }
                 }}
                 style={inputStyleParaCampo(c)} />
               {buscandoCpf && (
@@ -1168,6 +1192,17 @@ function PropostaForm() {
       return (
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
+          {c.slug==="cpf"&&buscandoInadimplencia&&<small style={{color:"#2563eb",fontWeight:700,marginTop:6}}>Consultando inadimplencia...</small>}
+          {c.slug==="cpf"&&erroConsultaInadimplencia&&<small style={{color:"#b45309",fontWeight:700,marginTop:6}}>{erroConsultaInadimplencia}</small>}
+          {c.slug==="cpf"&&inadimplenciasCliente.length>0&&<div style={{marginTop:8,padding:12,border:"1px solid #fca5a5",borderRadius:10,background:"#fef2f2",color:"#991b1b"}}>
+            <b style={{fontSize:12}}>Cliente com inadimplencia em aberto</b>
+            <p style={{fontSize:11,margin:"4px 0 8px"}}>O vendedor deve analisar antes de concluir uma nova venda. Total: {inadimplenciasCliente.reduce((s,i)=>s+Number(i.valor||0),0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}.</p>
+            {inadimplenciasCliente.slice(0,3).map(i=><div key={i.id} style={{fontSize:10,display:"flex",justifyContent:"space-between",gap:8,borderTop:"1px solid #fecaca",paddingTop:5,marginTop:5}}>
+              <span>{i.origem==="fatura"?"Fatura vencida":"Registro manual"}{i.vencimento?` - ${new Date(`${i.vencimento}T00:00:00`).toLocaleDateString("pt-BR")}`:""}</span>
+              <b>{Number(i.valor||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</b>
+            </div>)}
+            {inadimplenciasCliente.length>3&&<small>+ {inadimplenciasCliente.length-3} registro(s)</small>}
+          </div>}
           {input}
         </div>
       );

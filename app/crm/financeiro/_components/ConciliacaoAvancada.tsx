@@ -18,8 +18,11 @@ export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extr
   const [ajuste,setAjuste]=useState(0);
   const [observacao,setObservacao]=useState("");
   const [ocupado,setOcupado]=useState(false);
+  const [automatico,setAutomatico]=useState(false);
+  const [tolerancia,setTolerancia]=useState(3);
   const [msg,setMsg]=useState("");
   const pendentes=extratos.filter(e=>!e.conciliado);
+  const competencia=extratos.find(e=>e.data)?.data?.slice(0,7)||titulos.find(t=>t.competencia)?.competencia||"";
 
   const abrir=(e:Extrato)=>{
     setAberto(e.id);setTarifa(0);setAjuste(0);setObservacao("");setMsg("");
@@ -64,6 +67,21 @@ export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extr
     setMsg(`Conciliação salva: ${data.status}. Diferença ${brl(Number(data.diferenca||0))}.`);
     setAberto(null);onAtualizar();
   };
+  const conciliarAutomaticamente=async()=>{
+    if(fechado)return setMsg("A competencia esta fechada. Reabra antes de conciliar.");
+    if(!competencia)return setMsg("Nao ha competencia disponivel para processar.");
+    setAutomatico(true);setMsg("Analisando correspondencias seguras...");
+    const simulacao=await supabase.rpc("conciliar_extratos_automaticamente",{p_competencia:competencia,p_tolerancia_dias:tolerancia,p_aplicar:false});
+    if(simulacao.error){setAutomatico(false);return setMsg(simulacao.error.message)}
+    const qtd=Number(simulacao.data?.sugeridos||0);
+    if(!qtd){setAutomatico(false);return setMsg("Nenhuma correspondencia automatica segura. Os casos ambiguos continuam disponiveis para conciliacao manual.")}
+    if(!window.confirm(`${qtd} movimento(s) possuem titulo unico, valor exato e data compativel. Aplicar essas conciliacoes agora?`)){setAutomatico(false);return setMsg(`Simulacao concluida: ${qtd} correspondencia(s) segura(s), nenhuma alteracao aplicada.`)}
+    const aplicacao=await supabase.rpc("conciliar_extratos_automaticamente",{p_competencia:competencia,p_tolerancia_dias:tolerancia,p_aplicar:true});
+    setAutomatico(false);
+    if(aplicacao.error)return setMsg(aplicacao.error.message);
+    setMsg(`Conciliacao automatica concluida: ${aplicacao.data?.conciliados||0} conciliado(s), ${aplicacao.data?.ignorados||0} mantido(s) para analise manual e ${aplicacao.data?.erros||0} erro(s).`);
+    onAtualizar();
+  };
 
   const totais=useMemo(()=>({
     conciliados:extratos.filter(e=>e.conciliado).length,
@@ -74,6 +92,10 @@ export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extr
   return <div style={{display:"grid",gap:12}}>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(140px,1fr))",gap:9}}>
       {([["Conciliados",totais.conciliados,"#166534"],["Parciais",totais.parciais,"#b45309"],["Pendentes",totais.pendentes,"#475569"]] as const).map(x=><div key={x[0]} style={{background:"#fff",border:"1px solid #d9f99d",borderRadius:13,padding:14}}><small style={{color:"#64748b"}}>{x[0]}</small><b style={{display:"block",fontSize:23,color:x[2]}}>{x[1]}</b></div>)}
+    </div>
+    <div style={{background:"#f7fee7",border:"1px solid #bef264",borderRadius:13,padding:13,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+      <div><b style={{color:"#365314"}}>Conciliacao automatica segura</b><small style={{display:"block",color:"#64748b",marginTop:3}}>Aplica apenas valor exato, tipo compativel, titulo unico e vencimento dentro da tolerancia. Ambiguidades nao sao alteradas.</small></div>
+      <div style={{display:"flex",alignItems:"center",gap:8}}><label style={{fontSize:10,color:"#64748b"}}>Tolerancia em dias <input type="number" min="0" max="31" value={tolerancia} onChange={e=>setTolerancia(Math.max(0,Math.min(31,Number(e.target.value)||0)))} style={{...inp,width:72,marginLeft:5}}/></label><button disabled={fechado||automatico||!pendentes.length} onClick={conciliarAutomaticamente} style={{...btn,opacity:(fechado||automatico||!pendentes.length) ? .55 : 1}}>{automatico?"Processando...":"Conciliar seguros em lote"}</button></div>
     </div>
     {fechado&&<div style={{background:"#fff7ed",border:"1px solid #fdba74",padding:12,borderRadius:12,color:"#9a3412",fontSize:12,fontWeight:700}}>Competência fechada: consulta liberada, alterações bloqueadas.</div>}
     {msg&&<div style={{background:"#f8fafc",border:"1px solid #e2e8f0",padding:10,borderRadius:10,fontSize:11}}>{msg}</div>}

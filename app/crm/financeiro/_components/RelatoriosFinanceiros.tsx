@@ -28,6 +28,8 @@ export function RelatoriosFinanceiros({ titulos }: { titulos: TituloRelatorio[] 
   const competencias = useMemo(() => [...new Set(titulos.map(t => t.competencia).filter(Boolean))].sort(), [titulos]);
   const [inicio, setInicio] = useState(competencias.at(-12) || "");
   const [fim, setFim] = useState(competencias.at(-1) || "");
+  const [recebimentoRealista,setRecebimentoRealista]=useState(85);
+  const [recebimentoPessimista,setRecebimentoPessimista]=useState(65);
   const filtrados = useMemo(() => titulos.filter(t => (!inicio || t.competencia >= inicio) && (!fim || t.competencia <= fim)), [titulos, inicio, fim]);
 
   const mensal = useMemo(() => {
@@ -41,6 +43,21 @@ export function RelatoriosFinanceiros({ titulos }: { titulos: TituloRelatorio[] 
     let acumulado = 0;
     return [...mapa.values()].sort((a,b) => a.competencia.localeCompare(b.competencia)).map(x => ({ ...x, acumulado: acumulado += x.saldo }));
   }, [filtrados]);
+
+  const cenarios=useMemo(()=>{
+    let otimista=0,realista=0,pessimista=0;
+    return mensal.map(x=>{
+      otimista+=x.entradas-x.saidas*.98;
+      realista+=x.entradas*(recebimentoRealista/100)-x.saidas;
+      pessimista+=x.entradas*(recebimentoPessimista/100)-x.saidas*1.08;
+      return{
+        competencia:x.competencia,
+        otimista:Math.round(otimista*100)/100,
+        realista:Math.round(realista*100)/100,
+        pessimista:Math.round(pessimista*100)/100,
+      };
+    });
+  },[mensal,recebimentoRealista,recebimentoPessimista]);
 
   const porCategoria = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -96,6 +113,13 @@ export function RelatoriosFinanceiros({ titulos }: { titulos: TituloRelatorio[] 
       {[["Entradas",entradas,"#3f6212"],["Saídas",saidas,"#dc2626"],["Saldo",entradas-saidas,entradas-saidas>=0?"#166534":"#dc2626"],["Vencido em aberto",vencido,"#b45309"]].map(([l,v,c])=><div key={String(l)} style={box}><small style={{color:"#64748b",fontWeight:800}}>{l}</small><b style={{display:"block",fontSize:21,marginTop:8,color:String(c)}}>{brl(Number(v))}</b></div>)}
     </div>
     <div style={{...box,height:360}}><h3>Entradas, saídas e saldo acumulado</h3><ResponsiveContainer width="100%" height="85%"><AreaChart data={mensal}><defs><linearGradient id="gIn" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#65a30d" stopOpacity={.35}/><stop offset="95%" stopColor="#65a30d" stopOpacity={.02}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0"/><XAxis dataKey="competencia"/><YAxis tickFormatter={v=>`${Math.round(v/1000)}k`}/><Tooltip formatter={(v:number)=>brl(v)}/><Legend/><Area type="monotone" dataKey="entradas" name="Entradas" stroke="#65a30d" fill="url(#gIn)"/><Bar dataKey="saidas" name="Saídas" fill="#ef4444" radius={[5,5,0,0]}/><Line type="monotone" dataKey="acumulado" name="Saldo acumulado" stroke="#2563eb" strokeWidth={3}/></AreaChart></ResponsiveContainer></div>
+    <div style={{...box}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"center"}}><div><h3 style={{margin:"0 0 4px"}}>Fluxo projetado por cenario</h3><small style={{color:"#64748b"}}>Otimista: 100% dos recebimentos. Realista e pessimista usam os percentuais configurados abaixo; o pessimista tambem considera 8% de aumento nas saidas.</small></div><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><label style={{fontSize:10,color:"#64748b"}}>Recebimento realista <input type="number" min="0" max="100" value={recebimentoRealista} onChange={e=>setRecebimentoRealista(Math.max(0,Math.min(100,Number(e.target.value)||0)))} style={{width:65,marginLeft:5}}/>%</label><label style={{fontSize:10,color:"#64748b"}}>Recebimento pessimista <input type="number" min="0" max="100" value={recebimentoPessimista} onChange={e=>setRecebimentoPessimista(Math.max(0,Math.min(100,Number(e.target.value)||0)))} style={{width:65,marginLeft:5}}/>%</label></div></div>
+      <div style={{height:310,marginTop:14}}><ResponsiveContainer width="100%" height="100%"><AreaChart data={cenarios}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0"/><XAxis dataKey="competencia"/><YAxis tickFormatter={v=>`${Math.round(v/1000)}k`}/><Tooltip formatter={(v:number)=>brl(v)}/><Legend/>
+        <Line type="monotone" dataKey="otimista" name="Otimista" stroke="#65a30d" strokeWidth={3}/><Line type="monotone" dataKey="realista" name="Realista" stroke="#2563eb" strokeWidth={3}/><Line type="monotone" dataKey="pessimista" name="Pessimista" stroke="#dc2626" strokeWidth={3}/>
+      </AreaChart></ResponsiveContainer></div>
+    </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(360px,1fr))",gap:12}}>
       <div style={{...box,height:340}}><h3>Saídas por categoria</h3><ResponsiveContainer width="100%" height="84%"><PieChart><Pie data={porCategoria} dataKey="valor" nameKey="nome" innerRadius={55} outerRadius={95} label={(p:any)=>p.name}>{porCategoria.map((_,i)=><Cell key={i} fill={cores[i%cores.length]}/>)}</Pie><Tooltip formatter={(v:number)=>brl(v)}/></PieChart></ResponsiveContainer></div>
       <div style={{...box,height:340}}><h3>Saídas por centro de custo</h3><ResponsiveContainer width="100%" height="84%"><BarChart data={porCentro} layout="vertical"><CartesianGrid strokeDasharray="3 3"/><XAxis type="number" tickFormatter={v=>`${Math.round(v/1000)}k`}/><YAxis type="category" dataKey="nome" width={105}/><Tooltip formatter={(v:number)=>brl(v)}/><Bar dataKey="valor" name="Saídas" fill="#65a30d" radius={[0,6,6,0]}/></BarChart></ResponsiveContainer></div>
