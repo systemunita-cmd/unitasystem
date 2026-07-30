@@ -3,7 +3,8 @@
 -- consulta contextual de inadimplência e regularização de candidatos antigos.
 
 insert into public.fin_categorias(nome, tipo, cor)
-values
+select v.nome, v.tipo, v.cor
+from (values
   ('Vendas e mensalidades', 'receber', '#65a30d'),
   ('Folha de pagamento', 'pagar', '#2563eb'),
   ('Benefícios', 'pagar', '#0f766e'),
@@ -14,17 +15,27 @@ values
   ('Tarifas bancárias', 'pagar', '#64748b'),
   ('Outras receitas', 'receber', '#0891b2'),
   ('Outras despesas', 'pagar', '#475569')
-on conflict (nome) do nothing;
+) as v(nome, tipo, cor)
+where not exists (
+  select 1 from public.fin_categorias atual
+  where lower(trim(atual.nome)) = lower(trim(v.nome))
+);
 
 insert into public.fin_centros_custo(nome, codigo)
-values
+select v.nome, v.codigo
+from (values
   ('Administrativo', 'ADM'),
   ('Comercial', 'COM'),
   ('Financeiro', 'FIN'),
   ('Recursos Humanos', 'RH'),
   ('Instalação', 'INST'),
   ('Suporte', 'SUP')
-on conflict do nothing;
+) as v(nome, codigo)
+where not exists (
+  select 1 from public.fin_centros_custo atual
+  where lower(trim(atual.nome)) = lower(trim(v.nome))
+     or upper(trim(coalesce(atual.codigo, ''))) = upper(trim(v.codigo))
+);
 
 create or replace function public.consultar_inadimplencia_cliente(
   p_documento text,
