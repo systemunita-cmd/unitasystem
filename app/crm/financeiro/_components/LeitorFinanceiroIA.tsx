@@ -7,6 +7,15 @@ export function LeitorFinanceiroIA() {
   const [dados, setDados] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [lendo, setLendo] = useState(false);
+  const [diagnostico, setDiagnostico] = useState<any>(null);
+  const [testando, setTestando] = useState(false);
+  const testar = async () => {
+    setTestando(true); setMsg("");
+    const { data: sessao } = await supabase.auth.getSession();
+    const r = await fetch("/api/financeiro/ler-documento", { headers: { Authorization: `Bearer ${sessao.session?.access_token}` } });
+    const j = await r.json(); setTestando(false); setDiagnostico(j);
+    if (!r.ok) setMsg(j.error || "Configuração da IA indisponível.");
+  };
   const ler = async () => {
     if (!arquivo) return;
     setLendo(true); setMsg("");
@@ -41,6 +50,7 @@ export function LeitorFinanceiroIA() {
   return <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:16,padding:20,boxShadow:"0 10px 28px rgba(15,23,42,.055)"}}>
     <h3>Leitura automática de boletos e notas</h3>
     <p style={{fontSize:12,color:"#64748b"}}>A IA extrai fornecedor, valor, vencimento e categoria. O lançamento fica pendente para conferência.</p>
+    <div style={{display:"flex",gap:8,alignItems:"center",margin:"12px 0",padding:11,border:"1px solid #d9f99d",borderRadius:11,background:"#fbfff4"}}><button onClick={testar} disabled={testando} style={{padding:"8px 12px",background:"#0f172a",color:"#fff",border:0,borderRadius:8,fontWeight:700}}>{testando?"Testando...":"Testar configuração da IA"}</button>{diagnostico&&<span style={{fontSize:11,color:diagnostico.status==="operacional"?"#166534":"#b45309",fontWeight:800}}>{diagnostico.status==="operacional"?`Operacional · ${diagnostico.modelo}`:`${diagnostico.status} · ${diagnostico.modelo||""}`}</span>}</div>
     <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={e=>setArquivo(e.target.files?.[0]||null)}/>
     <button onClick={ler} disabled={!arquivo||lendo} style={{marginLeft:8,padding:"8px 12px",background:"#65a30d",color:"#fff",border:0,borderRadius:8}}>{lendo?"Lendo...":"Ler com IA"}</button>
     {dados&&<div style={{marginTop:14,fontSize:12}}><pre style={{whiteSpace:"pre-wrap",background:"#f8fafc",padding:10}}>{JSON.stringify(dados,null,2)}</pre><button onClick={lancar}>Criar lançamento</button></div>}

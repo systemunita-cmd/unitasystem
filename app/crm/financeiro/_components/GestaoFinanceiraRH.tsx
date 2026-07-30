@@ -7,6 +7,8 @@ import { LeitorFinanceiroIA } from "./LeitorFinanceiroIA";
 import { MetasInadimplencia } from "./MetasInadimplencia";
 import { CadastrosFinanceiros } from "./CadastrosFinanceiros";
 import { IntegracaoBancaria } from "./IntegracaoBancaria";
+import { RelatoriosFinanceiros } from "./RelatoriosFinanceiros";
+import { ConciliacaoAvancada } from "./ConciliacaoAvancada";
 
 const moeda = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const compAtual = () => new Date().toISOString().slice(0, 7);
@@ -23,10 +25,10 @@ const card = { background: "#fff", border: "1px solid #e2e8f0", borderRadius: 16
 const input = { border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 12px", minHeight: 42, fontSize: 12, background: "#fff" } as const;
 const botao = { border: "1px solid #4d7c0f", borderRadius: 10, padding: "10px 15px", minHeight: 40, fontSize: 12, fontWeight: 800, cursor: "pointer", background: "linear-gradient(180deg,#84cc16 0%,#65a30d 100%)", color: "#fff", boxShadow: "0 2px 0 #3f6212,0 7px 14px rgba(101,163,13,.18)" } as const;
 
-type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string };
+type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string; valor_conciliado?: number };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
 type Venda = { id: number; nome: string; vendedor: string; data_instalacao: string; comissao_manual: number };
-type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string };
+type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string; status_conciliacao?: string; valor_alocado?: number };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
 type IdentidadeVendedor = { email: string; nome: string; fila: string };
 type FaixaComissao = { de: number; ate: number | null; valor: number };
@@ -69,7 +71,7 @@ export function GestaoFinanceiraRH() {
   };
   const carregar = async () => {
     const [t, f, v, e, a, r] = await Promise.all([
-      supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo").order("vencimento"),
+      supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo,valor_conciliado").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
       supabase.from("proposta").select("id,nome,vendedor,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
@@ -234,7 +236,7 @@ export function GestaoFinanceiraRH() {
     setSalvandoVenda(null);
   };
 
-  const abas = [["competencias","Competências"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["cadastros","Cadastros"],["bancos","Open Finance"],["ia","Leitura por IA"]] as const;
+  const abas = [["competencias","Competências"],["relatorios","Relatórios"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["cadastros","Cadastros"],["bancos","Open Finance"],["ia","Leitura por IA"]] as const;
   return (
     <div className="fin-gestao" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: "linear-gradient(135deg,#ffffff 0%,#f7fee7 100%)", border: "1px solid #d9f99d", borderRadius: 18, padding: "20px 22px", boxShadow: "0 12px 32px rgba(63,98,18,.07)" }}><span style={{ display: "inline-block", background: "#ecfccb", color: "#3f6212", borderRadius: 999, padding: "5px 9px", fontSize: 10, fontWeight: 900, letterSpacing: ".06em" }}>CENTRAL FINANCEIRA</span><h1 style={{ margin: "9px 0 0", fontSize: 25 }}>Gestão Financeira + RH</h1><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Competências, folha, comissões, conciliação e planejamento em um só lugar.</p></div>
@@ -246,6 +248,8 @@ export function GestaoFinanceiraRH() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>{[["Entradas",atual.entradas],["Saídas",atual.saidas],["Saldo",atual.saldo]].map(([l,v]) => <div style={card} key={String(l)}><small>{l}</small><h3>{moeda(Number(v))}</h3></div>)}</div>
         <div style={card}><b>Comparação mensal</b>{meses.slice(0,12).map(m => <div key={m.competencia} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", padding: "8px 0", borderBottom: "1px solid #f1f5f9", fontSize: 12 }}><span>{mesNome(m.competencia)}</span><span>{moeda(m.entradas)}</span><span>{moeda(m.saidas)}</span><b>{moeda(m.saldo)}</b></div>)}</div>
       </div>}
+
+      {aba === "relatorios" && <RelatoriosFinanceiros titulos={titulos} />}
 
       {aba === "rh" && <div style={card}><h3>Sincronização RH → Financeiro</h3><p style={{ color: "#64748b", fontSize: 12 }}>Cria a folha da competência com salário, VT, alimentação, benefícios, encargos e recalcula comissões elegíveis. Itens pagos não são alterados.</p><button disabled={ocupado || fechado} onClick={sincronizarRH} style={botao}>Sincronizar competência</button></div>}
 
@@ -292,7 +296,7 @@ export function GestaoFinanceiraRH() {
         })}
       </div>}
       {aba === "importacao" && <div style={card}><h3>Importar extrato/planilha</h3><p style={{ fontSize: 12, color: "#64748b" }}>CSV com data, descrição, valor e tipo. A importação não altera lançamentos existentes.</p><input type="file" accept=".csv,.xls,.xlsx,.ofx,text/csv" onChange={e => importarArquivo(e.target.files?.[0])}/></div>}
-      {aba === "conciliacao" && <div style={card}><button disabled={ocupado} onClick={conciliarAutomatico} style={botao}>Conciliar valores correspondentes</button><p style={{ fontSize: 12 }}>{extratos.filter(x=>x.conciliado).length} conciliados · {extratos.filter(x=>!x.conciliado).length} pendentes</p>{extratos.slice(0,100).map(e=><div key={e.id} style={{ display:"grid",gridTemplateColumns:"100px 1fr 120px 100px",fontSize:11,padding:7,borderBottom:"1px solid #eee" }}><span>{e.data}</span><span>{e.descricao}</span><b>{moeda(e.valor)}</b><span>{e.conciliado?"Conciliado":"Pendente"}</span></div>)}</div>}
+      {aba === "conciliacao" && <ConciliacaoAvancada extratos={extratos} titulos={titulos} fechado={fechado} onAtualizar={carregar} />}
       {aba === "projecao" && <div style={card}><h3>Fluxo de caixa projetado</h3>{meses.slice(0,12).map(m=><div key={m.competencia} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",fontSize:12,padding:8,borderBottom:"1px solid #eee"}}><span>{mesNome(m.competencia)}</span><span>{moeda(m.entradas)}</span><span>{moeda(m.saidas)}</span><b>{moeda(m.saldo)}</b></div>)}</div>}
       {aba === "alertas" && <div style={card}><button onClick={gerarAlertas} disabled={ocupado} style={botao}>Atualizar alertas</button>{alertas.map(a=><div key={a.id} style={{padding:9,borderBottom:"1px solid #eee"}}><b style={{fontSize:12}}>{a.titulo}</b><p style={{margin:3,fontSize:11}}>{a.mensagem} · {a.vencimento}</p></div>)}</div>}
       {aba === "metas" && <MetasInadimplencia competencia={comp} />}

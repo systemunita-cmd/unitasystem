@@ -477,6 +477,9 @@ const O_hoje = () => new Date().toISOString().slice(0, 10);
 function O_msgAmigavel(error: any, padrao: string): string {
   const code = error?.code;
   const txt = (error?.message || "").toLowerCase();
+  if (txt.includes("competencia_fechada") || (txt.includes("competência") && txt.includes("fechada"))) {
+    return "Esta competência está fechada. Reabra a competência em Gestão Financeira + RH antes de alterar o lançamento.";
+  }
   if (code === "42703" || txt.includes("does not exist") || txt.includes("fin_titulos")) {
     return "O financeiro precisa de uma atualização no sistema que ainda não foi aplicada.";
   }
@@ -1289,6 +1292,9 @@ const D_CATEGORIAS = ["Imposto", "Custo de Nota", "Folha", "Aluguel", "Fornecedo
 function D_msgAmigavel(error: any, padrao: string): string {
   const code = error?.code;
   const txt = (error?.message || "").toLowerCase();
+  if (txt.includes("competencia_fechada") || (txt.includes("competência") && txt.includes("fechada"))) {
+    return "Esta competência está fechada. Reabra a competência em Gestão Financeira + RH antes de alterar o lançamento.";
+  }
   if (code === "42703" || txt.includes("does not exist") || txt.includes("fin_titulos")) {
     return "O financeiro precisa de uma atualização no sistema que ainda não foi aplicada.";
   }
