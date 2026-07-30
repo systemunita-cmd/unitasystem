@@ -21,6 +21,9 @@ where not exists (
   where lower(trim(atual.nome)) = lower(trim(v.nome))
 );
 
+alter table public.fin_centros_custo
+  add column if not exists codigo text;
+
 insert into public.fin_centros_custo(nome, codigo)
 select v.nome, v.codigo
 from (values
