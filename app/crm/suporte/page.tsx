@@ -28,12 +28,13 @@ type Chamado = {
   created_at: string;
 };
 
-const STATUS_OPCOES = ["ABERTO", "EM ANDAMENTO", "PENDENTE", "RESOLVIDO"];
+const STATUS_OPCOES = ["ABERTO", "EM ANDAMENTO", "PENDENTE", "NÃO RESOLVIDO", "RESOLVIDO"];
 
 const statusMeta: Record<string, { label: string; cor: string; bg: string; border: string }> = {
   ABERTO: { label: "Aberto", cor: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
   "EM ANDAMENTO": { label: "Em andamento", cor: "#d97706", bg: "#fffbeb", border: "#fde68a" },
   PENDENTE: { label: "Pendente", cor: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+  "NÃO RESOLVIDO": { label: "Não resolvido", cor: "#be123c", bg: "#fff1f2", border: "#fecdd3" },
   RESOLVIDO: { label: "Resolvido", cor: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
 };
 
@@ -59,7 +60,7 @@ export default function Suporte() {
   const [range, setRange] = useState<"todos" | "hoje" | "7d" | "30d" | "custom">("todos");
   const [dIni, setDIni] = useState("");
   const [dFim, setDFim] = useState("");
-  const [filtroStatusChamado, setFiltroStatusChamado] = useState<"todos" | "sem" | "ABERTO" | "EM ANDAMENTO" | "PENDENTE" | "RESOLVIDO">("todos");
+  const [filtroStatusChamado, setFiltroStatusChamado] = useState<"todos" | "sem" | "ABERTO" | "EM ANDAMENTO" | "PENDENTE" | "NÃO RESOLVIDO" | "RESOLVIDO">("todos");
   const [pagina, setPagina] = useState(1);
 
   const fetchTudo = async (mostraLoading = true) => {
@@ -146,10 +147,11 @@ export default function Suporte() {
     const abertos = chamados.filter(c => c.status === "ABERTO").length;
     const andamento = chamados.filter(c => c.status === "EM ANDAMENTO").length;
     const pendentes = chamados.filter(c => c.status === "PENDENTE").length;
+    const naoResolvidos = chamados.filter(c => c.status === "NÃO RESOLVIDO").length;
     const resolvidos = chamados.filter(c => c.status === "RESOLVIDO").length;
     const clientesComChamado = new Set(chamados.map(c => c.proposta_id)).size;
     const semChamado = Math.max(0, propostas.length - clientesComChamado);
-    return { abertos, andamento, pendentes, resolvidos, clientesComChamado, semChamado };
+    return { abertos, andamento, pendentes, naoResolvidos, resolvidos, clientesComChamado, semChamado };
   }, [chamados, propostas]);
 
   const filtradas = useMemo(() => {
@@ -259,6 +261,7 @@ export default function Suporte() {
           ["Abertos", kpis.abertos, "#dc2626"],
           ["Em andamento", kpis.andamento, "#d97706"],
           ["Pendentes", kpis.pendentes, "#7c3aed"],
+          ["Não resolvidos", kpis.naoResolvidos, "#be123c"],
           ["Resolvidos", kpis.resolvidos, "#16a34a"],
           ["Sem chamado", kpis.semChamado, "#64748b"],
         ].map(([label, valor, cor]) => (

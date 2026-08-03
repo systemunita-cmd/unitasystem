@@ -28,6 +28,7 @@ const STATUS_META: Record<string, { label: string; cor: string; bg: string; bord
   ABERTO: { label: "Abertos", cor: "#dc2626", bg: "#fef2f2", border: "#fecaca" },
   "EM ANDAMENTO": { label: "Em andamento", cor: "#d97706", bg: "#fffbeb", border: "#fde68a" },
   PENDENTE: { label: "Pendentes", cor: "#7c3aed", bg: "#f5f3ff", border: "#ddd6fe" },
+  "NÃO RESOLVIDO": { label: "Não resolvidos", cor: "#be123c", bg: "#fff1f2", border: "#fecdd3" },
   RESOLVIDO: { label: "Concluidos", cor: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0" },
 };
 
@@ -132,12 +133,13 @@ export default function SuporteDashboard() {
     const abertos = chamadosPeriodo.filter(c => c.status === "ABERTO").length;
     const andamento = chamadosPeriodo.filter(c => c.status === "EM ANDAMENTO").length;
     const pendentes = chamadosPeriodo.filter(c => c.status === "PENDENTE").length;
+    const naoResolvidos = chamadosPeriodo.filter(c => c.status === "NÃO RESOLVIDO").length;
     const concluidos = chamadosPeriodo.filter(c => c.status === "RESOLVIDO").length;
     const total = chamadosPeriodo.length;
     const clientes = new Set(chamadosPeriodo.map(c => c.proposta_id)).size;
-    const ativos = abertos + andamento + pendentes;
+    const ativos = abertos + andamento + pendentes + naoResolvidos;
     const taxaConclusao = total > 0 ? Math.round((concluidos / total) * 100) : 0;
-    return { total, abertos, andamento, pendentes, concluidos, clientes, ativos, taxaConclusao };
+    return { total, abertos, andamento, pendentes, naoResolvidos, concluidos, clientes, ativos, taxaConclusao };
   }, [chamadosPeriodo]);
 
   const ultimos = chamadosPeriodo.slice(0, 15);
@@ -202,6 +204,7 @@ export default function SuporteDashboard() {
               ["Suportes ativos", metricas.ativos, "#d97706", "#fffbeb"],
               ["Abertos", metricas.abertos, "#dc2626", "#fef2f2"],
               ["Pendentes", metricas.pendentes, "#7c3aed", "#f5f3ff"],
+              ["Não resolvidos", metricas.naoResolvidos, "#be123c", "#fff1f2"],
               ["Concluidos", metricas.concluidos, "#16a34a", "#f0fdf4"],
               ["Taxa conclusao", `${metricas.taxaConclusao}%`, "#2563eb", "#eff6ff"],
             ].map(([label, valor, cor, bg]) => (
