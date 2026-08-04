@@ -43,6 +43,7 @@ type Holerite = {
   pago: boolean;
   proventos: Linha[];
   descontos: Linha[];
+  informacoes?: Record<string, any>;
 };
 const somaL = (l: Linha[]) => (l || []).reduce((s, x) => s + (Number(x.valor) || 0), 0);
 export function HoleritesSection() {
@@ -72,6 +73,7 @@ export function HoleritesSection() {
       pago: !!r.pago,
       proventos: Array.isArray(r.proventos) ? r.proventos : [],
       descontos: Array.isArray(r.descontos) ? r.descontos : [],
+      informacoes: r.informacoes || {},
     })) as Holerite[];
     setTodos(items);
     const comps = Array.from(new Set(items.map((i) => i.competencia)))
@@ -118,11 +120,9 @@ export function HoleritesSection() {
       return;
     }
     // não duplica quem já tem holerite nessa competência
-    const { data: jaTem } = await supabase.from("holerites").select("nome").eq("competencia", compGerar);
-    const existentes = new Set((jaTem || []).map((h: any) => (h.nome || "").toLowerCase()));
-    const novos = folha
-      .filter((f: any) => !existentes.has((f.nome || "").toLowerCase()))
-      .map((f: any) => {
+    const { data: jaTem } = await supabase.from("holerites").select("id,nome").eq("competencia", compGerar);
+    const existentes = new Map((jaTem || []).map((h: any) => [(h.nome || "").toLowerCase(), h.id]));
+    const novos = folha.map((f: any) => {
         const base = Number(f.base) || 0;
         const comissao = Number(f.comissao) || 0;
         const valeTransporte = Number(f.vale_transporte) || 0;
@@ -133,6 +133,8 @@ export function HoleritesSection() {
         const inss = Number(f.inss) || 0;
         const irrf = Number(f.irrf) || 0;
         const outros = Number(f.outros) || 0;
+        const descontoHoras = Number(f.desconto_horas) || 0;
+        const descontoVt = Number(f.desconto_vale_transporte) || 0;
         const proventos: Linha[] = [{ rotulo: "Salário base", valor: base }];
         if (valeTransporte > 0) proventos.push({ rotulo: "Vale-transporte", valor: valeTransporte });
         if (valeAlimentacao > 0) proventos.push({ rotulo: "Vale-alimentação", valor: valeAlimentacao });
@@ -143,6 +145,8 @@ export function HoleritesSection() {
         const descontos: Linha[] = [];
         if (inss > 0) descontos.push({ rotulo: "INSS", valor: inss });
         if (irrf > 0) descontos.push({ rotulo: "IRRF", valor: irrf });
+        if (descontoHoras > 0) descontos.push({ rotulo: `Horas pendentes (${Math.round(Math.abs(Number(f.saldo_banco_min)||0)/60*100)/100}h)`, valor: descontoHoras });
+        if (descontoVt > 0) descontos.push({ rotulo: "Vale-transporte (até 6%)", valor: descontoVt });
         if (outros > 0) descontos.push({ rotulo: "Outros descontos", valor: outros });
         return {
           nome: f.nome,
@@ -152,22 +156,20 @@ export function HoleritesSection() {
           pago: f.status === "pago",
           proventos,
           descontos,
+          informacoes: { salario_bruto: base, horas_previstas_min: Number(f.horas_previstas_min)||0, horas_trabalhadas_min: Number(f.horas_trabalhadas_min)||0, saldo_banco_min: Number(f.saldo_banco_min)||0, base_inss: Number(f.base_inss)||0, base_fgts: Number(f.base_fgts)||0, fgts: Number(f.fgts)||0, calculado_ate: f.memoria_calculo?.calculado_ate },
         };
       });
-    if (novos.length === 0) {
-      setGerando(false);
-      alert("Todos os holerites dessa competência já foram gerados.");
-      return;
+    let insErr: any = null;
+    for (const holerite of novos) {
+      const id = existentes.get((holerite.nome || "").toLowerCase());
+      const resp = id ? await supabase.from("holerites").update(holerite).eq("id", id) : await supabase.from("holerites").insert(holerite);
+      if (resp.error) { insErr = resp.error; break; }
     }
-    const { error: insErr } = await supabase.from("holerites").insert(novos);
     setGerando(false);
-    if (insErr) {
-      alert("Erro ao gerar: " + insErr.message);
-      return;
-    }
+    if (insErr) { alert("Erro ao gerar: " + insErr.message); return; }
     setComp(compGerar);
     await carregar();
-    alert(`✅ ${novos.length} holerite(s) gerado(s) para ${fmtComp(compGerar)}!`);
+    alert(`✅ ${novos.length} holerite(s) gerado(s)/atualizado(s) para ${fmtComp(compGerar)}!`);
   };
   const competencias = useMemo(
     () =>

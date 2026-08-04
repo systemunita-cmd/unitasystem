@@ -4,6 +4,7 @@ export type HoleriteParaPdf = {
   competencia: string;
   proventos: { rotulo: string; valor: number }[];
   descontos: { rotulo: string; valor: number }[];
+  informacoes?: Record<string, any>;
 };
 
 const moeda = (valor: number) =>
@@ -101,6 +102,12 @@ function paginaHolerite(h: HoleriteParaPdf, pagina: number, totalPaginas: number
   c += texto("F2", 11, 220, totalY + 10, `R$ ${moeda(totalDescontos)}`, "0.75 0.12 0.18");
   c += texto("F1", 8, 390, totalY + 26, "LÍQUIDO A RECEBER", "0.39 0.45 0.55");
   c += texto("F2", 12, 390, totalY + 10, `R$ ${moeda(liquido)}`, "0.31 0.27 0.90");
+
+  const info = h.informacoes || {};
+  c += "0.96 0.97 0.98 rg 52 310 490 54 re f\n";
+  c += texto("F1", 7.5, 62, 346, `SALÁRIO BRUTO R$ ${moeda(info.salario_bruto || 0)}   |   BASE INSS R$ ${moeda(info.base_inss || 0)}   |   INSS NO QUADRO DE DESCONTOS`, "0.30 0.35 0.43");
+  c += texto("F1", 7.5, 62, 332, `BASE FGTS R$ ${moeda(info.base_fgts || 0)}   |   FGTS DO MÊS R$ ${moeda(info.fgts || 0)} (DEPÓSITO DA EMPRESA)`, "0.30 0.35 0.43");
+  c += texto("F1", 7.5, 62, 318, `BANCO: ${Math.round(Number(info.horas_trabalhadas_min || 0)/60*100)/100}h TRABALHADAS / ${Math.round(Number(info.horas_previstas_min || 0)/60*100)/100}h VENCIDAS`, "0.30 0.35 0.43");
 
   c += texto("F1", 8.5, 52, 280, "Declaro ter recebido o valor líquido indicado neste demonstrativo, referente à competência acima,");
   c += texto("F1", 8.5, 52, 266, "dando plena quitação dos valores discriminados neste documento.");

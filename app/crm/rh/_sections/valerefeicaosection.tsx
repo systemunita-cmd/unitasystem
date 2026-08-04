@@ -25,30 +25,36 @@ const real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency"
 const MODALIDADES = ["Refeição", "Alimentação"];
 type VR = {
   id: string;
+  funcionarioId: string;
   nome: string;
   cargo: string;
   modalidade: string;
   operadora: string;
+  periodicidade: "diario" | "mensal";
   valorDiario: number;
+  valorMensal: number;
   dias: number;
 };
 const FORM_VAZIO: VR = {
   id: "",
+  funcionarioId: "",
   nome: "",
   cargo: "",
   modalidade: MODALIDADES[0],
   operadora: "",
+  periodicidade: "diario",
   valorDiario: 0,
+  valorMensal: 0,
   dias: 22,
 };
-const mensal = (v: VR) => v.valorDiario * v.dias;
+const mensal = (v: VR) => v.periodicidade === "mensal" ? v.valorMensal : v.valorDiario * v.dias;
 export function ValeRefeicaoSection() {
   const [lista, setLista] = useState<VR[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<VR>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
-  const [funcionarios, setFuncionarios] = useState<{ nome: string; cargo: string }[]>([]);
+  const [funcionarios, setFuncionarios] = useState<{ id: string; nome: string; cargo: string }[]>([]);
   const carregar = async () => {
     setCarregando(true);
     const { data, error } = await supabase
@@ -62,11 +68,14 @@ export function ValeRefeicaoSection() {
       setLista(
         (data || []).map((r: any) => ({
           id: r.id,
+          funcionarioId: r.funcionario_id || "",
           nome: r.nome,
           cargo: r.cargo || "",
           modalidade: r.modalidade || MODALIDADES[0],
           operadora: r.operadora || "",
+          periodicidade: r.periodicidade === "mensal" ? "mensal" : "diario",
           valorDiario: Number(r.valor_diario) || 0,
+          valorMensal: Number(r.valor_mensal) || 0,
           dias: r.dias || 22,
         }))
       );
@@ -81,27 +90,30 @@ export function ValeRefeicaoSection() {
     (async () => {
       const { data } = await supabase
         .from("funcionarios")
-        .select("nome, cargo")
+        .select("id, nome, cargo")
         .order("nome", { ascending: true });
-      if (data) setFuncionarios(data as { nome: string; cargo: string }[]);
+      if (data) setFuncionarios(data as { id: string; nome: string; cargo: string }[]);
     })();
   }, []);
   const totalMes = useMemo(() => lista.reduce((s, v) => s + mensal(v), 0), [lista]);
   const salvar = async () => {
-    if (!form.nome.trim()) {
-      alert("Informe o colaborador.");
+    if (!form.nome.trim() || (form.periodicidade === "diario" ? form.valorDiario <= 0 : form.valorMensal <= 0)) {
+      alert("Informe o colaborador e um valor válido.");
       return;
     }
     setSalvando(true);
     const payload = {
+      funcionario_id: form.funcionarioId || null,
       nome: form.nome,
       cargo: form.cargo,
       modalidade: form.modalidade,
       operadora: form.operadora,
-      valor_diario: form.valorDiario || 0,
+      periodicidade: form.periodicidade,
+      valor_diario: form.periodicidade === "diario" ? form.valorDiario || 0 : 0,
+      valor_mensal: form.periodicidade === "mensal" ? form.valorMensal || 0 : 0,
       dias: form.dias || 22,
     };
-    const { error } = await supabase.from("vale_refeicao").insert(payload);
+    const { error } = form.id ? await supabase.from("vale_refeicao").update(payload).eq("id", form.id) : await supabase.from("vale_refeicao").insert(payload);
     setSalvando(false);
     if (error) {
       alert("Erro: " + error.message);
@@ -285,7 +297,7 @@ export function ValeRefeicaoSection() {
                     <td style={{ padding: "12px 16px", color: "#1f2937", fontSize: 12, fontWeight: 700 }}>
                       {real(mensal(v))}
                     </td>
-                    <td style={{ padding: "12px 16px" }}>
+                    <td style={{ padding: "12px 16px" }}><div style={{ display: "flex", gap: 6 }}><button onClick={() => { setForm(v); setModal(true); }} style={{ background: "#eef2ff", color: "#4338ca", border: "1px solid #c7d2fe", borderRadius: 8, padding: "5px 9px", cursor: "pointer" }}>✏️ Editar</button>
                       <button
                         onClick={() => excluir(v)}
                         style={{
@@ -300,7 +312,7 @@ export function ValeRefeicaoSection() {
                         }}
                       >
                         🗑️
-                      </button>
+                      </button></div>
                     </td>
                   </tr>
                 ))}
@@ -338,7 +350,7 @@ export function ValeRefeicaoSection() {
               }}
             >
               <h3 style={{ color: "#1f2937", fontSize: 16, fontWeight: 700, margin: 0 }}>
-                Adicionar VR / VA
+                {form.id ? "Editar Vale Alimentação / Refeição" : "Adicionar Vale Alimentação / Refeição"}
               </h3>
               <button
                 onClick={() => setModal(false)}
@@ -363,7 +375,7 @@ export function ValeRefeicaoSection() {
                     value={form.nome}
                     onChange={(e) => {
                       const f = funcionarios.find((x) => x.nome === e.target.value);
-                      setForm((prev) => ({ ...prev, nome: e.target.value, cargo: f?.cargo || "" }));
+                      setForm((prev) => ({ ...prev, funcionarioId: f?.id || "", nome: e.target.value, cargo: f?.cargo || "" }));
                     }}
                     style={inputStyle}
                   >
@@ -408,22 +420,23 @@ export function ValeRefeicaoSection() {
                 </Campo>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <Campo label="Valor diário (R$)">
+                <Campo label="Forma de cálculo"><select value={form.periodicidade} onChange={(e)=>set("periodicidade",e.target.value)} style={inputStyle}><option value="diario">Valor diário</option><option value="mensal">Valor mensal fixo</option></select></Campo>
+                <Campo label={form.periodicidade === "diario" ? "Valor diário (R$)" : "Valor mensal (R$)"}>
                   <input
                     type="number"
-                    value={form.valorDiario || ""}
-                    onChange={(e) => set("valorDiario", Number(e.target.value))}
+                    value={(form.periodicidade === "diario" ? form.valorDiario : form.valorMensal) || ""}
+                    onChange={(e) => set(form.periodicidade === "diario" ? "valorDiario" : "valorMensal", Number(e.target.value))}
                     style={inputStyle}
                   />
                 </Campo>
-                <Campo label="Dias">
+                {form.periodicidade === "diario" && <Campo label="Dias">
                   <input
                     type="number"
                     value={form.dias || ""}
                     onChange={(e) => set("dias", Number(e.target.value))}
                     style={inputStyle}
                   />
-                </Campo>
+                </Campo>}
               </div>
             </div>
             <div
@@ -466,7 +479,7 @@ export function ValeRefeicaoSection() {
                   opacity: salvando ? 0.7 : 1,
                 }}
               >
-                {salvando ? "Salvando..." : "+ Adicionar"}
+                {salvando ? "Salvando..." : form.id ? "Salvar alterações" : "+ Adicionar"}
               </button>
             </div>
           </div>

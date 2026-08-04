@@ -44,7 +44,17 @@ type Funcionario = {
   salario: number;
   status: Status;
   user_email: string; // login do sistema vinculado (tabela usuarios.email) — usado no ponto
+  carga_horaria_mensal: number;
+  jornada_inicio: string;
+  intervalo_inicio: string;
+  intervalo_fim: string;
+  jornada_fim: string;
 };
+type BeneficiosForm = {
+  vt_ativo: boolean; vt_periodicidade: "diario" | "mensal"; vt_valor: number; vt_dias: number; vt_linha: string;
+  va_ativo: boolean; va_periodicidade: "diario" | "mensal"; va_valor: number; va_dias: number; va_modalidade: string;
+};
+const BENEFICIOS_VAZIO: BeneficiosForm = { vt_ativo: false, vt_periodicidade: "diario", vt_valor: 0, vt_dias: 22, vt_linha: "", va_ativo: false, va_periodicidade: "diario", va_valor: 0, va_dias: 22, va_modalidade: "Alimentação" };
 
 const STATUS_INFO: Record<Status, { label: string; cor: string }> = {
   ativo: { label: "Ativo", cor: "#16a34a" },
@@ -77,6 +87,11 @@ const FORM_VAZIO: Funcionario = {
   salario: 0,
   status: "ativo",
   user_email: "",
+  carga_horaria_mensal: 220,
+  jornada_inicio: "08:00",
+  intervalo_inicio: "12:00",
+  intervalo_fim: "13:00",
+  jornada_fim: "17:00",
 };
 
 export function FuncionariosSection() {
@@ -90,6 +105,7 @@ export function FuncionariosSection() {
   const [modalAberto, setModalAberto] = useState(false);
   const [form, setForm] = useState<Funcionario>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [beneficiosForm, setBeneficiosForm] = useState<BeneficiosForm>(BENEFICIOS_VAZIO);
   const editando = !!form.id;
 
   // logins do sistema (tabela usuarios) — pro select de vínculo do funcionário
@@ -177,22 +193,38 @@ export function FuncionariosSection() {
 
   const abrirNovo = () => {
     setForm(FORM_VAZIO);
+    setBeneficiosForm(BENEFICIOS_VAZIO);
     setModalAberto(true);
   };
-  const abrirEditar = (f: Funcionario) => {
-    setForm({ ...f, admissao: f.admissao || "", data_nascimento: f.data_nascimento || "" });
+  const abrirEditar = async (f: Funcionario) => {
+    setForm({ ...FORM_VAZIO, ...f, admissao: f.admissao || "", data_nascimento: f.data_nascimento || "" });
+    const [{ data: vt }, { data: va }] = await Promise.all([
+      supabase.from("vale_transporte").select("*").or(`funcionario_id.eq.${f.id},nome.ilike.${f.nome}`).limit(1).maybeSingle(),
+      supabase.from("vale_refeicao").select("*").or(`funcionario_id.eq.${f.id},nome.ilike.${f.nome}`).limit(1).maybeSingle(),
+    ]);
+    setBeneficiosForm({
+      vt_ativo: !!vt, vt_periodicidade: vt?.periodicidade === "mensal" ? "mensal" : "diario",
+      vt_valor: Number(vt?.periodicidade === "mensal" ? vt?.valor_mensal : vt?.valor_diario) || 0,
+      vt_dias: Number(vt?.dias_uteis) || 22, vt_linha: vt?.linha || "",
+      va_ativo: !!va, va_periodicidade: va?.periodicidade === "mensal" ? "mensal" : "diario",
+      va_valor: Number(va?.periodicidade === "mensal" ? va?.valor_mensal : va?.valor_diario) || 0,
+      va_dias: Number(va?.dias) || 22, va_modalidade: va?.modalidade || "Alimentação",
+    });
     setModalAberto(true);
   };
   const fechar = () => {
     setModalAberto(false);
     setForm(FORM_VAZIO);
+    setBeneficiosForm(BENEFICIOS_VAZIO);
   };
 
   // 🔌 insert / update
   const salvar = async () => {
-    if (!form.nome.trim()) {
-      alert("Informe o nome do funcionário.");
-      return;
+    const obrigatorios: [string, unknown][] = [["nome",form.nome],["CPF",form.cpf],["telefone",form.telefone],["e-mail",form.email],["cargo",form.cargo],["departamento",form.departamento],["equipe/empresa",form.equipe_id],["data de admissão",form.admissao],["data de nascimento",form.data_nascimento],["salário",form.salario],["login do sistema",form.user_email],["carga horária mensal",form.carga_horaria_mensal]];
+    const faltando = obrigatorios.find(([,valor]) => !String(valor ?? "").trim() || (typeof valor === "number" && valor <= 0));
+    if (faltando) { alert(`Preencha o campo obrigatório: ${faltando[0]}.`); return; }
+    if ((beneficiosForm.vt_ativo && beneficiosForm.vt_valor <= 0) || (beneficiosForm.va_ativo && beneficiosForm.va_valor <= 0)) {
+      alert("Informe um valor válido para cada benefício ativado."); return;
     }
     setSalvando(true);
     const payload = {
@@ -208,15 +240,31 @@ export function FuncionariosSection() {
       salario: form.salario || 0,
       status: form.status,
       user_email: form.user_email || null,
+      carga_horaria_mensal: form.carga_horaria_mensal,
+      jornada_inicio: form.jornada_inicio,
+      intervalo_inicio: form.intervalo_inicio,
+      intervalo_fim: form.intervalo_fim,
+      jornada_fim: form.jornada_fim,
     };
     const resp = editando
-      ? await supabase.from("funcionarios").update(payload).eq("id", form.id)
-      : await supabase.from("funcionarios").insert(payload);
-    setSalvando(false);
+      ? await supabase.from("funcionarios").update(payload).eq("id", form.id).select("id").single()
+      : await supabase.from("funcionarios").insert(payload).select("id").single();
     if (resp.error) {
+      setSalvando(false);
       alert("Erro ao salvar: " + resp.error.message);
       return;
     }
+    const funcionarioId = editando ? form.id : resp.data?.id;
+    const { error: beneficioErro } = await supabase.rpc("salvar_beneficios_funcionario", {
+      p_funcionario_id: funcionarioId, p_vt_ativo: beneficiosForm.vt_ativo,
+      p_vt_periodicidade: beneficiosForm.vt_periodicidade, p_vt_valor: beneficiosForm.vt_valor,
+      p_vt_dias: beneficiosForm.vt_dias, p_vt_linha: beneficiosForm.vt_linha,
+      p_va_ativo: beneficiosForm.va_ativo, p_va_periodicidade: beneficiosForm.va_periodicidade,
+      p_va_valor: beneficiosForm.va_valor, p_va_dias: beneficiosForm.va_dias,
+      p_va_modalidade: beneficiosForm.va_modalidade,
+    });
+    setSalvando(false);
+    if (beneficioErro) { alert("Funcionário salvo, mas houve erro nos benefícios: " + beneficioErro.message); return; }
     fechar();
     carregar();
   };
@@ -642,7 +690,7 @@ export function FuncionariosSection() {
                 gap: 14,
               }}
             >
-              <Campo label="Nome completo" full>
+              <Campo label="Nome completo" full obrigatorio>
                 <input
                   value={form.nome}
                   onChange={(e) => set("nome", e.target.value)}
@@ -650,7 +698,7 @@ export function FuncionariosSection() {
                   placeholder="Nome do funcionário"
                 />
               </Campo>
-              <Campo label="CPF">
+              <Campo label="CPF" obrigatorio>
                 <input
                   value={form.cpf}
                   onChange={(e) => set("cpf", e.target.value)}
@@ -658,7 +706,7 @@ export function FuncionariosSection() {
                   placeholder="000.000.000-00"
                 />
               </Campo>
-              <Campo label="Telefone">
+              <Campo label="Telefone" obrigatorio>
                 <input
                   value={form.telefone}
                   onChange={(e) => set("telefone", e.target.value)}
@@ -666,7 +714,7 @@ export function FuncionariosSection() {
                   placeholder="(00) 00000-0000"
                 />
               </Campo>
-              <Campo label="E-mail" full>
+              <Campo label="E-mail" full obrigatorio>
                 <input
                   value={form.email}
                   onChange={(e) => set("email", e.target.value)}
@@ -674,7 +722,7 @@ export function FuncionariosSection() {
                   placeholder="email@grupounita.net.br"
                 />
               </Campo>
-              <Campo label="Cargo">
+              <Campo label="Cargo" obrigatorio>
                 <input
                   value={form.cargo}
                   onChange={(e) => set("cargo", e.target.value)}
@@ -682,7 +730,7 @@ export function FuncionariosSection() {
                   placeholder="Ex: Analista"
                 />
               </Campo>
-              <Campo label="Departamento">
+              <Campo label="Departamento" obrigatorio>
                 <select
                   value={form.departamento}
                   onChange={(e) => set("departamento", e.target.value)}
@@ -701,7 +749,7 @@ export function FuncionariosSection() {
                   </p>
                 )}
               </Campo>
-              <Campo label="Equipe / Empresa">
+              <Campo label="Equipe / Empresa" obrigatorio>
                 <select
                   value={form.equipe_id}
                   onChange={(e) => set("equipe_id", e.target.value)}
@@ -720,7 +768,7 @@ export function FuncionariosSection() {
                   </p>
                 )}
               </Campo>
-              <Campo label="Data de admissão">
+              <Campo label="Data de admissão" obrigatorio>
                 <input
                   type="date"
                   value={form.admissao}
@@ -728,7 +776,7 @@ export function FuncionariosSection() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="Data de nascimento">
+              <Campo label="Data de nascimento" obrigatorio>
                 <input
                   type="date"
                   value={form.data_nascimento}
@@ -736,7 +784,7 @@ export function FuncionariosSection() {
                   style={inputStyle}
                 />
               </Campo>
-              <Campo label="Salário (R$)">
+              <Campo label="Salário (R$)" obrigatorio>
                 <input
                   type="number"
                   value={form.salario || ""}
@@ -745,6 +793,32 @@ export function FuncionariosSection() {
                   placeholder="0,00"
                 />
               </Campo>
+              <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #e5e7eb", paddingTop: 16 }}>
+                <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#1f2937" }}>Jornada e banco de horas</p>
+                <p style={{ margin: "0 0 12px", fontSize: 11, color: "#6b7280" }}>Usados no cálculo automático da folha. O dia atual é calculado somente até o horário transcorrido.</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+                  <Campo label="Carga mensal" obrigatorio><input type="number" value={form.carga_horaria_mensal || ""} onChange={(e)=>set("carga_horaria_mensal",Number(e.target.value))} style={inputStyle}/></Campo>
+                  <Campo label="Entrada"><input type="time" value={form.jornada_inicio} onChange={(e)=>set("jornada_inicio",e.target.value)} style={inputStyle}/></Campo>
+                  <Campo label="Intervalo"><input type="time" value={form.intervalo_inicio} onChange={(e)=>set("intervalo_inicio",e.target.value)} style={inputStyle}/></Campo>
+                  <Campo label="Retorno"><input type="time" value={form.intervalo_fim} onChange={(e)=>set("intervalo_fim",e.target.value)} style={inputStyle}/></Campo>
+                  <Campo label="Saída"><input type="time" value={form.jornada_fim} onChange={(e)=>set("jornada_fim",e.target.value)} style={inputStyle}/></Campo>
+                </div>
+              </div>
+              <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #e5e7eb", paddingTop: 16 }}>
+                <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 800, color: "#1f2937" }}>Benefícios lançados automaticamente</p>
+                {[{tipo:"VT",ativo:"vt_ativo",periodicidade:"vt_periodicidade",valor:"vt_valor",dias:"vt_dias"},{tipo:"VA / VR",ativo:"va_ativo",periodicidade:"va_periodicidade",valor:"va_valor",dias:"va_dias"}].map((b:any)=>(
+                  <div key={b.tipo} style={{ display:"grid", gridTemplateColumns:"110px 1fr 1fr 1fr", gap:10, alignItems:"end", background:"#f8fafc", padding:12, borderRadius:10, marginBottom:10 }}>
+                    <label style={{display:"flex",gap:7,alignItems:"center",fontSize:12,fontWeight:800}}><input type="checkbox" checked={(beneficiosForm as any)[b.ativo]} onChange={(e)=>setBeneficiosForm(v=>({...v,[b.ativo]:e.target.checked}))}/>{b.tipo}</label>
+                    <Campo label="Periodicidade"><select disabled={!(beneficiosForm as any)[b.ativo]} value={(beneficiosForm as any)[b.periodicidade]} onChange={(e)=>setBeneficiosForm(v=>({...v,[b.periodicidade]:e.target.value}))} style={inputStyle}><option value="diario">Valor diário</option><option value="mensal">Valor mensal</option></select></Campo>
+                    <Campo label="Valor (R$)"><input disabled={!(beneficiosForm as any)[b.ativo]} type="number" min="0" step="0.01" value={(beneficiosForm as any)[b.valor] || ""} onChange={(e)=>setBeneficiosForm(v=>({...v,[b.valor]:Number(e.target.value)}))} style={inputStyle}/></Campo>
+                    <Campo label="Dias úteis"><input disabled={!(beneficiosForm as any)[b.ativo] || (beneficiosForm as any)[b.periodicidade]==="mensal"} type="number" min="1" value={(beneficiosForm as any)[b.dias]} onChange={(e)=>setBeneficiosForm(v=>({...v,[b.dias]:Number(e.target.value)}))} style={inputStyle}/></Campo>
+                  </div>
+                ))}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <Campo label="Linha / trajeto do VT"><input disabled={!beneficiosForm.vt_ativo} value={beneficiosForm.vt_linha} onChange={(e)=>setBeneficiosForm(v=>({...v,vt_linha:e.target.value}))} style={inputStyle}/></Campo>
+                  <Campo label="Tipo do benefício alimentar"><select disabled={!beneficiosForm.va_ativo} value={beneficiosForm.va_modalidade} onChange={(e)=>setBeneficiosForm(v=>({...v,va_modalidade:e.target.value}))} style={inputStyle}><option>Alimentação</option><option>Refeição</option></select></Campo>
+                </div>
+              </div>
               <Campo label="Status" full>
                 <select
                   value={form.status}
@@ -758,7 +832,7 @@ export function FuncionariosSection() {
                   ))}
                 </select>
               </Campo>
-              <Campo label="Usuário do sistema (login para bater ponto)" full>
+              <Campo label="Usuário do sistema (login para bater ponto)" full obrigatorio>
                 <select
                   value={form.user_email}
                   onChange={(e) => set("user_email", e.target.value)}
@@ -849,7 +923,7 @@ function Avatar({ nome }: { nome: string }) {
   );
 }
 
-function Campo({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+function Campo({ label, full, obrigatorio, children }: { label: string; full?: boolean; obrigatorio?: boolean; children: React.ReactNode }) {
   return (
     <div style={{ gridColumn: full ? "1 / -1" : "auto" }}>
       <label
@@ -863,7 +937,7 @@ function Campo({ label, full, children }: { label: string; full?: boolean; child
           marginBottom: 6,
         }}
       >
-        {label}
+        {label}{obrigatorio && <span style={{ color: "#dc2626" }}> *</span>}
       </label>
       {children}
     </div>

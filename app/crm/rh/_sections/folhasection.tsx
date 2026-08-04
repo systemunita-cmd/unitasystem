@@ -23,15 +23,11 @@ const card = {
 };
 const real = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// ── Tabelas de cálculo (referência 2025 — ajustáveis se mudarem) ──────────
+// Faixas progressivas oficiais vigentes desde janeiro/2026.
 function calcINSS(base: number): number {
-  const b = Math.min(base, 8157.41); // teto
-  let v: number;
-  if (b <= 1518.0) v = b * 0.075;
-  else if (b <= 2793.88) v = b * 0.09 - 22.77;
-  else if (b <= 4190.83) v = b * 0.12 - 106.59;
-  else v = b * 0.14 - 190.4;
-  return Math.max(0, Math.round(v * 100) / 100);
+  const b = Math.min(Math.max(base, 0), 8475.55);
+  const v = Math.min(b,1621)*.075 + Math.max(Math.min(b,2902.84)-1621,0)*.09 + Math.max(Math.min(b,4354.27)-2902.84,0)*.12 + Math.max(b-4354.27,0)*.14;
+  return Math.round(v * 100) / 100;
 }
 function calcIRRF(baseCalc: number): number {
   let v: number;
@@ -92,11 +88,26 @@ type Item = {
   inss: number;
   irrf: number;
   outros: number;
+  proventos: number;
+  vale_transporte: number;
+  vale_alimentacao: number;
+  beneficios: number;
+  desconto_horas: number;
+  desconto_beneficios: number;
+  desconto_vale_transporte: number;
+  horas_previstas_min: number;
+  horas_trabalhadas_min: number;
+  saldo_banco_min: number;
+  base_inss: number;
+  base_fgts: number;
+  fgts: number;
+  memoria_calculo: Record<string, any>;
+  bonus_meta: number;
   status: string;
 };
 
-const bruto = (i: Item) => i.base + i.comissao;
-const descontos = (i: Item) => i.inss + i.irrf + i.outros;
+const bruto = (i: Item) => i.base + i.comissao + i.proventos + i.vale_transporte + i.vale_alimentacao + i.beneficios + i.bonus_meta;
+const descontos = (i: Item) => i.inss + i.irrf + i.outros + i.desconto_horas + i.desconto_vale_transporte;
 const liquido = (i: Item) => bruto(i) - descontos(i);
 
 export function FolhaSection() {
@@ -129,6 +140,21 @@ export function FolhaSection() {
       inss: Number(r.inss) || 0,
       irrf: Number(r.irrf) || 0,
       outros: Number(r.outros) || 0,
+      proventos: Number(r.proventos) || 0,
+      vale_transporte: Number(r.vale_transporte) || 0,
+      vale_alimentacao: Number(r.vale_alimentacao) || 0,
+      beneficios: Number(r.beneficios) || 0,
+      desconto_horas: Number(r.desconto_horas) || 0,
+      desconto_beneficios: Number(r.desconto_beneficios) || 0,
+      desconto_vale_transporte: Number(r.desconto_vale_transporte) || 0,
+      horas_previstas_min: Number(r.horas_previstas_min) || 0,
+      horas_trabalhadas_min: Number(r.horas_trabalhadas_min) || 0,
+      saldo_banco_min: Number(r.saldo_banco_min) || 0,
+      base_inss: Number(r.base_inss) || 0,
+      base_fgts: Number(r.base_fgts) || 0,
+      fgts: Number(r.fgts) || 0,
+      memoria_calculo: r.memoria_calculo || {},
+      bonus_meta: Number(r.bonus_meta) || 0,
       status: r.status || "pendente",
     })) as Item[];
     setTodos(items);
@@ -144,41 +170,10 @@ export function FolhaSection() {
     carregar();
   }, []);
 
-  // Saldo de horas do mês (do ponto) — informativo, pra saber quem deve hora / tem folga.
-  // NÃO mexe em nenhum cálculo financeiro.
+  // O saldo é o mesmo já calculado e gravado na folha pelo banco.
   useEffect(() => {
-    if (!comp) {
-      setSaldoHoras({});
-      return;
-    }
-    (async () => {
-      const [ano, mm] = comp.split("-").map(Number);
-      const inicio = new Date(ano, mm - 1, 1, 0, 0, 0);
-      const fim = new Date(ano, mm, 1, 0, 0, 0);
-      const { data } = await supabase
-        .from("ponto_registros")
-        .select("funcionario, data_hora")
-        .gte("data_hora", inicio.toISOString())
-        .lt("data_hora", fim.toISOString())
-        .order("data_hora", { ascending: true });
-      const porFunc: Record<string, Record<string, { data_hora: string }[]>> = {};
-      (data || []).forEach((r: any) => {
-        const dia = diaChave(r.data_hora);
-        if (!porFunc[r.funcionario]) porFunc[r.funcionario] = {};
-        if (!porFunc[r.funcionario][dia]) porFunc[r.funcionario][dia] = [];
-        porFunc[r.funcionario][dia].push({ data_hora: r.data_hora });
-      });
-      const saldos: Record<string, number> = {};
-      Object.entries(porFunc).forEach(([nome, dias]) => {
-        let s = 0;
-        Object.values(dias).forEach((batidas) => {
-          s += horasDoDia(batidas) - JORNADA_DIA;
-        });
-        saldos[nome] = s;
-      });
-      setSaldoHoras(saldos);
-    })();
-  }, [comp]);
+    setSaldoHoras(Object.fromEntries(itens.map(i => [i.nome, i.saldo_banco_min / 60])));
+  }, [itens]);
 
   const competencias = useMemo(
     () =>
@@ -203,55 +198,16 @@ export function FolhaSection() {
   );
   const todosPagos = itens.length > 0 && itens.every((i) => i.status === "pago");
 
-  // 🔌 gerar folha a partir dos funcionários ativos
+  // Gera/recalcula pelo banco: salário, ponto até agora, benefícios, INSS, VT e FGTS.
   const gerarFolha = async () => {
-    if (!novaComp) {
-      alert("Escolha o mês da folha.");
-      return;
-    }
-    if (competencias.includes(novaComp)) {
-      alert(`A folha de ${fmtComp(novaComp)} já existe. Selecione-a na lista acima para editar.`);
-      return;
-    }
+    if (!novaComp) { alert("Escolha o mês da folha."); return; }
+    if (competencias.includes(novaComp)) { alert(`A folha de ${fmtComp(novaComp)} já existe. Use Salvar para ajustes ou recalcule antes do pagamento.`); return; }
     setGerando(true);
-    const { data, error } = await supabase
-      .from("funcionarios")
-      .select("nome, cargo, salario, status")
-      .neq("status", "desligado");
-    if (error) {
-      setGerando(false);
-      alert("Erro ao buscar funcionários: " + error.message);
-      return;
-    }
-    if (!data || data.length === 0) {
-      setGerando(false);
-      alert("Nenhum funcionário ativo para gerar a folha. Cadastre funcionários primeiro.");
-      return;
-    }
-    const novos = data.map((f: any) => {
-      const base = Number(f.salario) || 0;
-      const inss = calcINSS(base);
-      const irrf = calcIRRF(base - inss);
-      return {
-        competencia: novaComp,
-        nome: f.nome,
-        cargo: f.cargo || "",
-        base,
-        comissao: 0,
-        proventos: 0,
-        inss,
-        irrf,
-        outros: 0,
-        status: "pendente",
-      };
-    });
-    const ins = await supabase.from("folha_itens").insert(novos);
+    const { data, error } = await supabase.rpc("gerar_folha_integrada", { p_competencia: novaComp });
     setGerando(false);
-    if (ins.error) {
-      alert("Erro ao gerar a folha: " + ins.error.message);
-      return;
-    }
-    carregar(novaComp);
+    if (error) { alert("Erro ao gerar a folha: " + error.message); return; }
+    await carregar(novaComp);
+    alert(`Folha gerada com ${data || 0} colaborador(es), incluindo banco de horas e benefícios.`);
   };
 
   // edição inline — recalcula INSS/IRRF quando muda base ou comissão
@@ -261,8 +217,12 @@ export function FolhaSection() {
         if (it.id !== id) return it;
         const novo = { ...it, [campo]: valor };
         if (campo === "base" || campo === "comissao") {
-          novo.inss = calcINSS(novo.base + novo.comissao);
-          novo.irrf = calcIRRF(novo.base + novo.comissao - novo.inss);
+          const baseContribuicao = Math.max(0, novo.base + novo.comissao - novo.desconto_horas);
+          novo.inss = calcINSS(baseContribuicao);
+          novo.irrf = calcIRRF(baseContribuicao - novo.inss);
+          novo.base_inss = baseContribuicao;
+          novo.base_fgts = baseContribuicao;
+          novo.fgts = Math.round(baseContribuicao * 8) / 100;
         }
         return novo;
       })
@@ -292,6 +252,8 @@ export function FolhaSection() {
     if (!comp || itens.length === 0) return;
     if (!confirm(`Marcar a folha de ${fmtComp(comp)} como paga?`)) return;
     setProcessando(true);
+    const { error: recalculoErro } = await supabase.rpc("gerar_folha_integrada", { p_competencia: comp });
+    if (recalculoErro) { setProcessando(false); alert("Erro ao atualizar banco de horas antes do fechamento: " + recalculoErro.message); return; }
     const { error } = await supabase.from("folha_itens").update({ status: "pago" }).eq("competencia", comp);
     setProcessando(false);
     if (error) {
@@ -567,6 +529,10 @@ export function FolhaSection() {
                             {it.nome}
                           </p>
                           <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{it.cargo}</p>
+                          <p style={{ color: "#64748b", fontSize: 10, margin: "4px 0 0", lineHeight: 1.45 }}>
+                            Benefícios {real(it.proventos)} · Horas pendentes {real(it.desconto_horas)} · VT 6% {real(it.desconto_vale_transporte)}<br/>
+                            INSS base {real(it.base_inss)} · FGTS 8% {real(it.fgts)} (empresa)
+                          </p>
                         </td>
                         <td style={{ padding: "10px 16px", textAlign: "right" }}>
                           {editavel ? (
@@ -702,8 +668,7 @@ export function FolhaSection() {
             mudar a base ou a comissão.
           </p>
           <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0", textAlign: "center" }}>
-            🕐 <b>Saldo Horas</b> vem do ponto eletrônico (jornada {JORNADA_DIA}h/dia) e é só informativo —
-            verde = pode folgar, vermelho = está devendo. Não afeta o valor a pagar.
+            🕐 <b>Saldo Horas</b> considera somente a jornada vencida até agora. Débitos reduzem salário e benefícios proporcionalmente; FGTS é encargo da empresa e não reduz o líquido.
           </p>
         </>
       )}

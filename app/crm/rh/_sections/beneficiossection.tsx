@@ -39,6 +39,7 @@ export function BeneficiosSection() {
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Beneficio>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
+  const [impactos, setImpactos] = useState<any[]>([]);
   const editando = !!form.id;
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -71,6 +72,21 @@ export function BeneficiosSection() {
   };
   useEffect(() => {
     carregar();
+    (async()=>{
+      const agora=new Date(), competencia=`${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}`;
+      const [{data:funcs},{data:vt},{data:va},{data:banco}]=await Promise.all([
+        supabase.from("funcionarios").select("id,nome,salario,carga_horaria_mensal").neq("status","desligado"),
+        supabase.from("vale_transporte").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias_uteis"),
+        supabase.from("vale_refeicao").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias"),
+        supabase.rpc("calcular_banco_horas",{p_competencia:competencia,p_funcionario_id:null,p_ate:agora.toISOString()}),
+      ]);
+      setImpactos((funcs||[]).map((f:any)=>{
+        const bh=(banco||[]).find((x:any)=>x.funcionario_id===f.id)||{};
+        const nominal=(vt||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome)).reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias_uteis||22)),0)+(va||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome)).reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias||22)),0);
+        const debito=Math.max(0,-Number(bh.saldo_min||0)), previsto=Number(bh.horas_previstas_min||0);
+        return {nome:f.nome,previsto,trabalhado:Number(bh.horas_trabalhadas_min||0),saldo:Number(bh.saldo_min||0),descontoSalario:debito*(Number(f.salario)||0)/(Math.max(Number(f.carga_horaria_mensal)||220,1)*60),beneficioNominal:nominal,descontoBeneficio:previsto?nominal*debito/previsto:0};
+      }));
+    })();
   }, []);
 
   const custoMensal = useMemo(() => lista.reduce((s, b) => s + b.custoEmpresa * b.aderentes, 0), [lista]);
@@ -207,6 +223,10 @@ export function BeneficiosSection() {
             </p>
           </div>
         ))}
+      </div>
+      <div style={{ ...card, padding: 18 }}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",marginBottom:12}}><div><h3 style={{margin:0,fontSize:15,color:"#1f2937"}}>Banco de horas e impacto nos benefícios</h3><p style={{margin:"3px 0 0",fontSize:11,color:"#64748b"}}>Prévia até este momento. Dias futuros não são tratados como débito; a folha grava o cálculo final.</p></div><span style={{fontSize:11,fontWeight:800,color:"#4338ca",background:"#eef2ff",padding:"6px 10px",borderRadius:12}}>ATUALIZAÇÃO AUTOMÁTICA</span></div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8fafc"}}>{["Colaborador","Trabalhado / vencido","Saldo","Benefício cheio","Redução benefício","Desconto salário"].map(h=><th key={h} style={{padding:"9px 10px",textAlign:h==="Colaborador"?"left":"right",color:"#64748b"}}>{h}</th>)}</tr></thead><tbody>{impactos.map(x=><tr key={x.nome} style={{borderTop:"1px solid #e5e7eb"}}><td style={{padding:"9px 10px",fontWeight:700}}>{x.nome}</td><td style={{padding:"9px 10px",textAlign:"right"}}>{(x.trabalhado/60).toFixed(1)}h / {(x.previsto/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:x.saldo<0?"#dc2626":"#16a34a"}}>{x.saldo>=0?"+":""}{(x.saldo/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right"}}>{real(x.beneficioNominal)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoBeneficio)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoSalario)}</td></tr>)}</tbody></table></div>
       </div>
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>

@@ -84,9 +84,23 @@ function horasDoDia(batidas: Registro[]): number {
 // ── Jornada esperada (regra CLT 44h): seg-sex 8h, sábado 4h, domingo 0 ──
 //    getDay(): 0=domingo, 1=seg ... 6=sábado.
 function jornadaEsperadaDoDia(diaSemana: number): number {
-  if (diaSemana === 0) return 0;   // domingo
-  if (diaSemana === 6) return 4;   // sábado
-  return 8;                         // seg-sex
+  if (diaSemana === 0) return 0;
+  if (diaSemana === 6) return 4;
+  return 8;
+}
+// No dia atual só vence a parcela da jornada já transcorrida (08–12 e 13–17).
+// Dias futuros nunca viram débito antecipado.
+function jornadaVencidaNoDia(dt: Date, agora = new Date()): number {
+  const inicioHoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
+  const dia = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  if (dia.getTime() > inicioHoje.getTime()) return 0;
+  const total = jornadaEsperadaDoDia(dt.getDay());
+  if (dia.getTime() < inicioHoje.getTime() || total === 0) return total;
+  const minutos = agora.getHours() * 60 + agora.getMinutes();
+  if (dt.getDay() === 6) return Math.max(0, Math.min(4, (minutos - 8 * 60) / 60));
+  const manha = Math.max(0, Math.min(4, (minutos - 8 * 60) / 60));
+  const tarde = Math.max(0, Math.min(4, (minutos - 13 * 60) / 60));
+  return manha + tarde;
 }
 // parse "dd/mm/aaaa" (formato pt-BR usado em diaChave) → Date local
 function parseDiaBR(s: string): Date {
@@ -328,9 +342,10 @@ export function PontoSection() {
       const dow = dt.getDay();
       const chave = dt.toLocaleDateString("pt-BR");
       const nomeDow = dt.toLocaleDateString("pt-BR", { weekday: "short" });
-      const esperada = jornadaEsperadaDoDia(dow);
+      let esperada = jornadaVencidaNoDia(dt);
       const todasDoDia = (porDia[chave] || []).slice().sort((a, b) => a.data_hora.localeCompare(b.data_hora));
       const ausenciaDoDia = todasDoDia.find((b) => ehAusencia(b.tipo));
+      if (ausenciaDoDia && ausenciaDoDia.tipo !== "Falta") esperada = 0;
       const batidas = todasDoDia.filter((b) => !ehAusencia(b.tipo));
       const trabalhada = batidas.length ? horasDoDia(batidas) : 0;
 
@@ -425,7 +440,7 @@ export function PontoSection() {
         <div>Assinatura do funcionário</div>
         <div>Responsável / RH</div>
       </div>
-      <p class="sub" style="margin-top:20px;font-size:9px;color:#9ca3af;">Documento gerado em ${new Date().toLocaleString("pt-BR")} · Jornada base: 8h seg–sex, 4h sáb (44h/semana). As horas a mais ou a menos entram no banco de horas. Conferir antes de assinar.</p>
+      <p class="sub" style="margin-top:20px;font-size:9px;color:#9ca3af;">Documento gerado em ${new Date().toLocaleString("pt-BR")} · Dias futuros não entram no débito e o dia atual é calculado somente até o horário transcorrido. Jornada base: 8h seg–sex, 4h sáb. Conferir antes de assinar.</p>
       <div class="noprint" style="margin-top:24px;text-align:center;">
         <button onclick="window.print()" style="background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer;">🖨️ Imprimir / Salvar PDF</button>
       </div>
