@@ -69,7 +69,7 @@ returns table(
 language sql stable security definer set search_path=public as $$
 with params as (
   select to_date(p_competencia||'-01','YYYY-MM-DD') inicio,
-         (to_date(p_competencia||'-01','YYYY-MM-DD')+interval '1 month-1 day')::date fim,
+         (to_date(p_competencia||'-01','YYYY-MM-DD')+interval '1 month' - interval '1 day')::date fim,
          (p_ate at time zone 'America/Sao_Paulo') local_ate
 ), funcs as (
   select f.*, coalesce(f.jornada_inicio,'08:00'::time) ini,
