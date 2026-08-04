@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import { supabase } from "../../../lib/supabase";
 import { LeitorFinanceiroIA } from "./LeitorFinanceiroIA";
 import { MetasInadimplencia } from "./MetasInadimplencia";
@@ -9,6 +8,7 @@ import { CadastrosFinanceiros } from "./CadastrosFinanceiros";
 import { IntegracaoBancaria } from "./IntegracaoBancaria";
 import { RelatoriosFinanceiros } from "./RelatoriosFinanceiros";
 import { ConciliacaoAvancada } from "./ConciliacaoAvancada";
+import { ImportacaoFinanceira } from "./ImportacaoFinanceira";
 
 const moeda = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const compAtual = () => new Date().toISOString().slice(0, 7);
@@ -130,36 +130,6 @@ export function GestaoFinanceiraRH() {
     else setMsg(error.message);
   };
 
-  const importarArquivo = async (arquivo?: File) => {
-    if (!arquivo) return;
-    setOcupado(true);
-    let registros: any[] = [];
-    const ext = arquivo.name.split(".").pop()?.toLowerCase();
-    if (ext === "xlsx" || ext === "xls") {
-      const wb = XLSX.read(await arquivo.arrayBuffer(), { type: "array", cellDates: true });
-      registros = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-    } else if (ext === "ofx") {
-      const texto = await arquivo.text();
-      registros = (texto.match(/<STMTTRN>[\s\S]*?<\/STMTTRN>/gi) || []).map(bloco => ({
-        data: bloco.match(/<DTPOSTED>([^<\r\n]+)/i)?.[1]?.slice(0,8).replace(/(\d{4})(\d{2})(\d{2})/,"$1-$2-$3"),
-        descricao: bloco.match(/<(?:MEMO|NAME)>([^<\r\n]+)/i)?.[1] || "Movimento bancário",
-        valor: bloco.match(/<TRNAMT>([^<\r\n]+)/i)?.[1] || "0",
-        tipo: bloco.match(/<TRNTYPE>([^<\r\n]+)/i)?.[1] || "",
-      }));
-    } else {
-      const texto = await arquivo.text();
-      const linhas = texto.split(/\r?\n/).filter(Boolean), sep = linhas[0]?.includes(";") ? ";" : ",";
-      const cab = (linhas.shift() || "").split(sep);
-      registros = linhas.map(l => Object.fromEntries(l.split(sep).map((v,i)=>[cab[i],v])));
-    }
-    const achar=(r:any,...nomes:string[])=>{const k=Object.keys(r).find(x=>nomes.includes(x.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim()));return k?r[k]:""};
-    const itens=registros.map(r=>{const bruto=String(achar(r,"valor","amount")||0);const n=Number(bruto.replace(/\./g,"").replace(",","."))||0;const tipoRaw=String(achar(r,"tipo","type")||"").toLowerCase();return {data:achar(r,"data","date"),descricao:achar(r,"descricao","historico","memo","name")||"Movimento bancário",valor:Math.abs(n),tipo:tipoRaw.includes("deb")||n<0?"debito":"credito"}}).filter(x=>x.data&&x.descricao);
-    const { data: auth } = await supabase.auth.getUser();
-    const imp=await supabase.from("fin_importacoes").insert({nome_arquivo:arquivo.name,formato:ext||"arquivo",total_linhas:itens.length,importado_por:auth.user?.email}).select("id").single();
-    if(imp.error){setMsg(imp.error.message);setOcupado(false);return}
-    const {error}=await supabase.from("fin_extratos").insert(itens.map(x=>({...x,importacao_id:imp.data.id})));
-    setMsg(error?error.message:`${itens.length} movimentos importados de ${ext?.toUpperCase()}.`);setOcupado(false);carregar();
-  };
   const conciliarAutomatico = async () => {
     setOcupado(true);
     let n = 0;
@@ -295,7 +265,7 @@ export function GestaoFinanceiraRH() {
           </div>;
         })}
       </div>}
-      {aba === "importacao" && <div style={card}><h3>Importar extrato/planilha</h3><p style={{ fontSize: 12, color: "#64748b" }}>CSV com data, descrição, valor e tipo. A importação não altera lançamentos existentes.</p><input type="file" accept=".csv,.xls,.xlsx,.ofx,text/csv" onChange={e => importarArquivo(e.target.files?.[0])}/></div>}
+      {aba === "importacao" && <ImportacaoFinanceira competenciaPadrao={comp} fechado={fechado} onImportado={mensagem => { setMsg(mensagem); carregar(); }} />}
       {aba === "conciliacao" && <ConciliacaoAvancada extratos={extratos} titulos={titulos} fechado={fechado} onAtualizar={carregar} />}
       {aba === "projecao" && <div style={card}><h3>Fluxo de caixa projetado</h3>{meses.slice(0,12).map(m=><div key={m.competencia} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",fontSize:12,padding:8,borderBottom:"1px solid #eee"}}><span>{mesNome(m.competencia)}</span><span>{moeda(m.entradas)}</span><span>{moeda(m.saidas)}</span><b>{moeda(m.saldo)}</b></div>)}</div>}
       {aba === "alertas" && <div style={card}><button onClick={gerarAlertas} disabled={ocupado} style={botao}>Atualizar alertas</button>{alertas.map(a=><div key={a.id} style={{padding:9,borderBottom:"1px solid #eee"}}><b style={{fontSize:12}}>{a.titulo}</b><p style={{margin:3,fontSize:11}}>{a.mensagem} · {a.vencimento}</p></div>)}</div>}
