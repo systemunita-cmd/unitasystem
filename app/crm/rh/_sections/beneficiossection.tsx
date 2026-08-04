@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
+import { usePermissao } from "../../../hooks/usePermissao";
 
 // 🧑‍💼 RH · Benefícios (CONECTADO — tabela 'beneficios'; custoEmpresa↔custo_empresa)
 const COR = "#4f46e5";
@@ -32,6 +33,8 @@ const TIPOS: Record<string, { cor: string; icon: string }> = {
 };
 type Beneficio = { id: string; nome: string; tipo: string; custoEmpresa: number; aderentes: number };
 const FORM_VAZIO: Beneficio = { id: "", nome: "", tipo: "Transporte", custoEmpresa: 0, aderentes: 0 };
+type RegrasCalculo = { limite_dia_util_horas:number; limite_sabado_horas:number; descontar_vt_dia_util:boolean; descontar_va_dia_util:boolean; descontar_vt_sabado:boolean; descontar_va_sabado:boolean };
+const REGRAS_PADRAO: RegrasCalculo = { limite_dia_util_horas:24, limite_sabado_horas:12, descontar_vt_dia_util:true, descontar_va_dia_util:true, descontar_vt_sabado:true, descontar_va_sabado:false };
 
 export function BeneficiosSection() {
   const [lista, setLista] = useState<Beneficio[]>([]);
@@ -40,6 +43,10 @@ export function BeneficiosSection() {
   const [form, setForm] = useState<Beneficio>(FORM_VAZIO);
   const [salvando, setSalvando] = useState(false);
   const [impactos, setImpactos] = useState<any[]>([]);
+  const [regras, setRegras] = useState<RegrasCalculo>(REGRAS_PADRAO);
+  const [modalRegras, setModalRegras] = useState(false);
+  const [salvandoRegras, setSalvandoRegras] = useState(false);
+  const { isSuperAdmin } = usePermissao();
   const editando = !!form.id;
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
@@ -70,24 +77,42 @@ export function BeneficiosSection() {
       );
     setCarregando(false);
   };
-  useEffect(() => {
-    carregar();
-    (async()=>{
-      const agora=new Date(), competencia=`${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}`;
-      const [{data:funcs},{data:vt},{data:va},{data:banco}]=await Promise.all([
-        supabase.from("funcionarios").select("id,nome,salario,carga_horaria_mensal").neq("status","desligado"),
-        supabase.from("vale_transporte").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias_uteis"),
-        supabase.from("vale_refeicao").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias"),
-        supabase.rpc("calcular_banco_horas",{p_competencia:competencia,p_funcionario_id:null,p_ate:agora.toISOString()}),
-      ]);
-      setImpactos((funcs||[]).map((f:any)=>{
-        const bh=(banco||[]).find((x:any)=>x.funcionario_id===f.id)||{};
-        const nominal=(vt||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome)).reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias_uteis||22)),0)+(va||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome)).reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias||22)),0);
-        const debito=Math.max(0,-Number(bh.saldo_min||0)), previsto=Number(bh.horas_previstas_min||0);
-        return {nome:f.nome,previsto,trabalhado:Number(bh.horas_trabalhadas_min||0),saldo:Number(bh.saldo_min||0),descontoSalario:debito*(Number(f.salario)||0)/(Math.max(Number(f.carga_horaria_mensal)||220,1)*60),beneficioNominal:nominal,descontoBeneficio:previsto?nominal*debito/previsto:0};
-      }));
-    })();
-  }, []);
+  const carregarImpactos = async () => {
+    const agora=new Date(), competencia=`${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}`;
+    const [{data:funcs},{data:vt},{data:va},{data:banco},{data:dias},{data:config}]=await Promise.all([
+      supabase.from("funcionarios").select("id,nome,salario,carga_horaria_mensal").neq("status","desligado"),
+      supabase.from("vale_transporte").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias_uteis"),
+      supabase.from("vale_refeicao").select("funcionario_id,nome,periodicidade,valor_diario,valor_mensal,dias"),
+      supabase.rpc("calcular_banco_horas",{p_competencia:competencia,p_funcionario_id:null,p_ate:agora.toISOString()}),
+      supabase.rpc("calcular_dias_desconto_beneficio",{p_competencia:competencia,p_funcionario_id:null,p_ate:agora.toISOString()}),
+      supabase.from("rh_regras_calculo").select("*").eq("id",1).maybeSingle(),
+    ]);
+    const cfg={...REGRAS_PADRAO,...(config||{})}; setRegras(cfg);
+    setImpactos((funcs||[]).map((f:any)=>{
+      const bh=(banco||[]).find((x:any)=>x.funcionario_id===f.id)||{}, dg=(dias||[]).find((x:any)=>x.funcionario_id===f.id)||{};
+      const vtFunc=(vt||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome));
+      const vaFunc=(va||[]).filter((x:any)=>x.funcionario_id===f.id||(!x.funcionario_id&&x.nome===f.nome));
+      const du=Number(dg.dias_desconto_dia_util||0), ds=Number(dg.dias_desconto_sabado||0);
+      const nominalVt=vtFunc.reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias_uteis||22)),0);
+      const nominalVa=vaFunc.reduce((n:number,x:any)=>n+Number(x.periodicidade==="mensal"?x.valor_mensal:Number(x.valor_diario)*Number(x.dias||22)),0);
+      const descontoVt=vtFunc.reduce((n:number,x:any)=>{const dia=Number(x.periodicidade==="mensal"?Number(x.valor_mensal)/Math.max(Number(x.dias_uteis||22),1):x.valor_diario);return n+dia*((cfg.descontar_vt_dia_util?du:0)+(cfg.descontar_vt_sabado?ds:0));},0);
+      const descontoVa=vaFunc.reduce((n:number,x:any)=>{const dia=Number(x.periodicidade==="mensal"?Number(x.valor_mensal)/Math.max(Number(x.dias||22),1):x.valor_diario);return n+dia*((cfg.descontar_va_dia_util?du:0)+(cfg.descontar_va_sabado?ds:0));},0);
+      const debito=Math.max(0,-Number(bh.saldo_min||0));
+      return {nome:f.nome,previsto:Number(bh.horas_previstas_min||0),trabalhado:Number(bh.horas_trabalhadas_min||0),saldo:Number(bh.saldo_min||0),descontoSalario:debito*(Number(f.salario)||0)/(Math.max(Number(f.carga_horaria_mensal)||220,1)*60),beneficioNominal:nominalVt+nominalVa,descontoVt,descontoVa,faltasUtil:Number(dg.faltas_integrais_dia_util||0),faltasSabado:Number(dg.faltas_integrais_sabado||0),diasUtil:du,diasSabado:ds};
+    }));
+  };
+  useEffect(() => { carregar(); carregarImpactos(); }, []);
+
+  const salvarRegras = async () => {
+    setSalvandoRegras(true);
+    const { error } = await supabase.rpc("salvar_regras_calculo_rh",{
+      p_limite_dia_util_horas:regras.limite_dia_util_horas,p_limite_sabado_horas:regras.limite_sabado_horas,
+      p_descontar_vt_dia_util:regras.descontar_vt_dia_util,p_descontar_va_dia_util:regras.descontar_va_dia_util,
+      p_descontar_vt_sabado:regras.descontar_vt_sabado,p_descontar_va_sabado:regras.descontar_va_sabado,
+    });
+    setSalvandoRegras(false);
+    if(error){alert("Erro ao salvar regras: "+error.message);return;} setModalRegras(false); await carregarImpactos(); alert("Regras de cálculo atualizadas.");
+  };
 
   const custoMensal = useMemo(() => lista.reduce((s, b) => s + b.custoEmpresa * b.aderentes, 0), [lista]);
   const totalAdesoes = useMemo(() => lista.reduce((s, b) => s + b.aderentes, 0), [lista]);
@@ -225,8 +250,8 @@ export function BeneficiosSection() {
         ))}
       </div>
       <div style={{ ...card, padding: 18 }}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",marginBottom:12}}><div><h3 style={{margin:0,fontSize:15,color:"#1f2937"}}>Banco de horas e impacto nos benefícios</h3><p style={{margin:"3px 0 0",fontSize:11,color:"#64748b"}}>Prévia até este momento. Dias futuros não são tratados como débito; a folha grava o cálculo final.</p></div><span style={{fontSize:11,fontWeight:800,color:"#4338ca",background:"#eef2ff",padding:"6px 10px",borderRadius:12}}>ATUALIZAÇÃO AUTOMÁTICA</span></div>
-        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8fafc"}}>{["Colaborador","Trabalhado / vencido","Saldo","Benefício cheio","Redução benefício","Desconto salário"].map(h=><th key={h} style={{padding:"9px 10px",textAlign:h==="Colaborador"?"left":"right",color:"#64748b"}}>{h}</th>)}</tr></thead><tbody>{impactos.map(x=><tr key={x.nome} style={{borderTop:"1px solid #e5e7eb"}}><td style={{padding:"9px 10px",fontWeight:700}}>{x.nome}</td><td style={{padding:"9px 10px",textAlign:"right"}}>{(x.trabalhado/60).toFixed(1)}h / {(x.previsto/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:x.saldo<0?"#dc2626":"#16a34a"}}>{x.saldo>=0?"+":""}{(x.saldo/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right"}}>{real(x.beneficioNominal)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoBeneficio)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoSalario)}</td></tr>)}</tbody></table></div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}><div><h3 style={{margin:0,fontSize:15,color:"#1f2937"}}>Banco de horas e impacto nos benefícios</h3><p style={{margin:"3px 0 0",fontSize:11,color:"#64748b"}}>Salário desconta horas. VT e VA/VR só perdem dias completos conforme as regras abaixo.</p></div><div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}><span style={{fontSize:11,fontWeight:800,color:"#4338ca",background:"#eef2ff",padding:"6px 10px",borderRadius:12}}>DIA ÚTIL {regras.limite_dia_util_horas}H</span><span style={{fontSize:11,fontWeight:800,color:"#0369a1",background:"#e0f2fe",padding:"6px 10px",borderRadius:12}}>SÁBADO {regras.limite_sabado_horas}H · VT {regras.descontar_vt_sabado?"SIM":"NÃO"} · VA {regras.descontar_va_sabado?"SIM":"NÃO"}</span>{isSuperAdmin&&<button onClick={()=>setModalRegras(true)} style={{background:"#4f46e5",color:"white",border:0,borderRadius:9,padding:"7px 11px",fontSize:11,fontWeight:800,cursor:"pointer"}}>⚙️ Editar regras</button>}</div></div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#f8fafc"}}>{["Colaborador","Trabalhado / vencido","Saldo","Faltas integrais","VT por dia","VA/VR por dia","Salário por horas"].map(h=><th key={h} style={{padding:"9px 10px",textAlign:h==="Colaborador"?"left":"right",color:"#64748b"}}>{h}</th>)}</tr></thead><tbody>{impactos.map(x=><tr key={x.nome} style={{borderTop:"1px solid #e5e7eb"}}><td style={{padding:"9px 10px",fontWeight:700}}>{x.nome}</td><td style={{padding:"9px 10px",textAlign:"right"}}>{(x.trabalhado/60).toFixed(1)}h / {(x.previsto/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:x.saldo<0?"#dc2626":"#16a34a"}}>{x.saldo>=0?"+":""}{(x.saldo/60).toFixed(1)}h</td><td style={{padding:"9px 10px",textAlign:"right"}}>{x.faltasUtil} útil · {x.faltasSabado} sáb.</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoVt)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoVa)}</td><td style={{padding:"9px 10px",textAlign:"right",color:"#dc2626"}}>{real(x.descontoSalario)}</td></tr>)}</tbody></table></div>
       </div>
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
@@ -381,6 +406,15 @@ export function BeneficiosSection() {
             );
           })}
         </div>
+      )}
+      {modalRegras && isSuperAdmin && (
+        <div onClick={()=>setModalRegras(false)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:2100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}><div onClick={e=>e.stopPropagation()} style={{...card,width:"100%",maxWidth:620,overflow:"hidden"}}>
+          <div style={{padding:"18px 22px",borderBottom:"1px solid #e5e7eb"}}><h3 style={{margin:0,fontSize:17,color:"#1f2937"}}>Editor das regras de cálculo</h3><p style={{margin:"4px 0 0",fontSize:12,color:"#64748b"}}>Exclusivo do super administrador. Alterações valem no próximo cálculo/reprocessamento da folha.</p></div>
+          <div style={{padding:22,display:"grid",gap:16}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Campo label="Limite de falta — dia útil (h)"><input type="number" min="1" value={regras.limite_dia_util_horas} onChange={e=>setRegras(v=>({...v,limite_dia_util_horas:Number(e.target.value)}))} style={inputStyle}/></Campo><Campo label="Limite de falta — sábado (h)"><input type="number" min="1" value={regras.limite_sabado_horas} onChange={e=>setRegras(v=>({...v,limite_sabado_horas:Number(e.target.value)}))} style={inputStyle}/></Campo></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>{[["VT em dia útil","descontar_vt_dia_util"],["VA/VR em dia útil","descontar_va_dia_util"],["VT no sábado","descontar_vt_sabado"],["VA/VR no sábado","descontar_va_sabado"]].map(([label,key])=><label key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"11px 13px",border:"1px solid #e5e7eb",borderRadius:10,fontSize:12,fontWeight:700,color:"#334155"}}>{label}<input type="checkbox" checked={!!(regras as any)[key]} onChange={e=>setRegras(v=>({...v,[key]:e.target.checked}))}/></label>)}</div>
+          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:11,fontSize:11,color:"#166534"}}>Atrasos e saídas antecipadas afetam somente o salário. Benefícios só são reduzidos quando houver falta integral já encerrada.</div></div>
+          <div style={{padding:"14px 22px",borderTop:"1px solid #e5e7eb",display:"flex",justifyContent:"flex-end",gap:9}}><button onClick={()=>setModalRegras(false)} style={{background:"white",border:"1px solid #e5e7eb",borderRadius:9,padding:"9px 15px",fontWeight:700,cursor:"pointer"}}>Cancelar</button><button onClick={salvarRegras} disabled={salvandoRegras} style={{background:"#4f46e5",color:"white",border:0,borderRadius:9,padding:"9px 16px",fontWeight:800,cursor:"pointer"}}>{salvandoRegras?"Salvando...":"Salvar regras"}</button></div>
+        </div></div>
       )}
       {modal && (
         <div

@@ -530,7 +530,8 @@ export function FolhaSection() {
                           </p>
                           <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{it.cargo}</p>
                           <p style={{ color: "#64748b", fontSize: 10, margin: "4px 0 0", lineHeight: 1.45 }}>
-                            Benefícios {real(it.proventos)} · Horas pendentes {real(it.desconto_horas)} · VT 6% {real(it.desconto_vale_transporte)}<br/>
+                            Benefícios pagos {real(it.vale_transporte + it.vale_alimentacao + it.beneficios)} · Redução por faltas integrais {real(it.desconto_beneficios)}<br/>
+                            Horas pendentes no salário {real(it.desconto_horas)} · VT 6% {real(it.desconto_vale_transporte)}<br/>
                             INSS base {real(it.base_inss)} · FGTS 8% {real(it.fgts)} (empresa)
                           </p>
                         </td>

@@ -156,7 +156,7 @@ export function HoleritesSection() {
           pago: f.status === "pago",
           proventos,
           descontos,
-          informacoes: { salario_bruto: base, horas_previstas_min: Number(f.horas_previstas_min)||0, horas_trabalhadas_min: Number(f.horas_trabalhadas_min)||0, saldo_banco_min: Number(f.saldo_banco_min)||0, base_inss: Number(f.base_inss)||0, base_fgts: Number(f.base_fgts)||0, fgts: Number(f.fgts)||0, calculado_ate: f.memoria_calculo?.calculado_ate },
+          informacoes: { salario_bruto: base, horas_previstas_min: Number(f.horas_previstas_min)||0, horas_trabalhadas_min: Number(f.horas_trabalhadas_min)||0, saldo_banco_min: Number(f.saldo_banco_min)||0, base_inss: Number(f.base_inss)||0, base_fgts: Number(f.base_fgts)||0, fgts: Number(f.fgts)||0, desconto_beneficios: Number(f.desconto_beneficios)||0, calculado_ate: f.memoria_calculo?.calculado_ate },
         };
       });
     let insErr: any = null;

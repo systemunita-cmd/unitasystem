@@ -107,7 +107,7 @@ function paginaHolerite(h: HoleriteParaPdf, pagina: number, totalPaginas: number
   c += "0.96 0.97 0.98 rg 52 310 490 54 re f\n";
   c += texto("F1", 7.5, 62, 346, `SALÁRIO BRUTO R$ ${moeda(info.salario_bruto || 0)}   |   BASE INSS R$ ${moeda(info.base_inss || 0)}   |   INSS NO QUADRO DE DESCONTOS`, "0.30 0.35 0.43");
   c += texto("F1", 7.5, 62, 332, `BASE FGTS R$ ${moeda(info.base_fgts || 0)}   |   FGTS DO MÊS R$ ${moeda(info.fgts || 0)} (DEPÓSITO DA EMPRESA)`, "0.30 0.35 0.43");
-  c += texto("F1", 7.5, 62, 318, `BANCO: ${Math.round(Number(info.horas_trabalhadas_min || 0)/60*100)/100}h TRABALHADAS / ${Math.round(Number(info.horas_previstas_min || 0)/60*100)/100}h VENCIDAS`, "0.30 0.35 0.43");
+  c += texto("F1", 7.5, 62, 318, `BANCO: ${Math.round(Number(info.horas_trabalhadas_min || 0)/60*100)/100}h TRABALHADAS / ${Math.round(Number(info.horas_previstas_min || 0)/60*100)/100}h VENCIDAS | BENEFÍCIOS REDUZIDOS R$ ${moeda(info.desconto_beneficios || 0)}`, "0.30 0.35 0.43");
 
   c += texto("F1", 8.5, 52, 280, "Declaro ter recebido o valor líquido indicado neste demonstrativo, referente à competência acima,");
   c += texto("F1", 8.5, 52, 266, "dando plena quitação dos valores discriminados neste documento.");

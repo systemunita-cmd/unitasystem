@@ -45,6 +45,73 @@ alter table public.folha_itens
   add column if not exists fgts numeric not null default 0,
   add column if not exists memoria_calculo jsonb not null default '{}'::jsonb;
 
+create table if not exists public.rh_regras_calculo (
+  id smallint primary key default 1 check (id=1),
+  limite_dia_util_horas numeric not null default 24 check (limite_dia_util_horas>0),
+  limite_sabado_horas numeric not null default 12 check (limite_sabado_horas>0),
+  descontar_vt_dia_util boolean not null default true,
+  descontar_va_dia_util boolean not null default true,
+  descontar_vt_sabado boolean not null default true,
+  descontar_va_sabado boolean not null default false,
+  atualizado_por text,
+  updated_at timestamptz not null default now()
+);
+insert into public.rh_regras_calculo(id) values(1) on conflict(id) do nothing;
+revoke insert,update,delete on public.rh_regras_calculo from anon,authenticated;
+grant select on public.rh_regras_calculo to authenticated;
+
+create or replace function public.salvar_regras_calculo_rh(
+  p_limite_dia_util_horas numeric,p_limite_sabado_horas numeric,
+  p_descontar_vt_dia_util boolean,p_descontar_va_dia_util boolean,
+  p_descontar_vt_sabado boolean,p_descontar_va_sabado boolean
+)
+returns public.rh_regras_calculo language plpgsql security definer set search_path=public as $regras$
+declare v_email text:=lower(coalesce(auth.jwt()->>'email','')); v_ok boolean:=false; v_row public.rh_regras_calculo%rowtype;
+begin
+  v_ok := v_email='admin@grupounita.net.br' or exists(
+    select 1 from public.usuarios u left join public.grupos_permissao g on g.id=u.grupo_id
+    where lower(u.email)=v_email and (lower(coalesce(u.role,''))='admin' or lower(coalesce(g.nome,'')) in ('administração geral','administracao geral','administrador geral'))
+  );
+  if not v_ok then raise exception 'Somente o super administrador pode alterar as regras de cálculo.'; end if;
+  if coalesce(p_limite_dia_util_horas,0)<=0 or coalesce(p_limite_sabado_horas,0)<=0 then raise exception 'Os limites devem ser maiores que zero.'; end if;
+  update public.rh_regras_calculo set limite_dia_util_horas=p_limite_dia_util_horas,limite_sabado_horas=p_limite_sabado_horas,
+    descontar_vt_dia_util=p_descontar_vt_dia_util,descontar_va_dia_util=p_descontar_va_dia_util,
+    descontar_vt_sabado=p_descontar_vt_sabado,descontar_va_sabado=p_descontar_va_sabado,
+    atualizado_por=v_email,updated_at=now() where id=1 returning * into v_row;
+  return v_row;
+end $regras$;
+
+create or replace function public.calcular_dias_desconto_beneficio(
+  p_competencia text,p_funcionario_id uuid default null,p_ate timestamptz default now()
+)
+returns table(funcionario_id uuid,nome text,faltas_integrais_dia_util integer,faltas_integrais_sabado integer,dias_desconto_dia_util integer,dias_desconto_sabado integer)
+language sql stable security definer set search_path=public as $dias$
+with p as (select to_date(p_competencia||'-01','YYYY-MM-DD') inicio,(to_date(p_competencia||'-01','YYYY-MM-DD')+interval '1 month'-interval '1 day')::date fim,(p_ate at time zone 'America/Sao_Paulo') agora),
+cfg as (select * from public.rh_regras_calculo where id=1),
+dias as (
+ select f.id funcionario_id,f.nome,d::date dia,extract(dow from d)::int dow,p.agora,
+   case when extract(dow from d)=6 then '12:00'::time else coalesce(f.jornada_fim,'17:00'::time) end hora_fim
+ from public.funcionarios f cross join p
+ cross join lateral generate_series(greatest(p.inicio,coalesce(f.admissao,p.inicio)),least(p.fim,p.agora::date),interval '1 day') d
+ where coalesce(lower(f.status),'ativo')<>'desligado' and (p_funcionario_id is null or f.id=p_funcionario_id) and extract(dow from d)<>0
+), situacao as (
+ select d.*,
+  exists(select 1 from public.ponto_registros pr where lower(trim(pr.funcionario))=lower(trim(d.nome)) and (pr.data_hora at time zone 'America/Sao_Paulo')::date=d.dia and lower(coalesce(pr.tipo,'')) in ('folga','atestado','falta justificada','ferias','férias','licenca','licença')) abonado,
+  exists(select 1 from public.ponto_registros pr where lower(trim(pr.funcionario))=lower(trim(d.nome)) and (pr.data_hora at time zone 'America/Sao_Paulo')::date=d.dia and lower(coalesce(pr.tipo,'')) not in ('folga','falta','falta justificada','atestado','ferias','férias','licenca','licença')) teve_batida,
+  exists(select 1 from public.ponto_registros pr where lower(trim(pr.funcionario))=lower(trim(d.nome)) and (pr.data_hora at time zone 'America/Sao_Paulo')::date=d.dia and lower(coalesce(pr.tipo,''))='falta') falta_explicita
+ from dias d
+), totais as (
+ select funcionario_id,nome,
+  count(*) filter(where dow between 1 and 5 and not abonado and (falta_explicita or (not teve_batida and (dia<agora::date or agora::time>=hora_fim))))::int fu,
+  count(*) filter(where dow=6 and not abonado and (falta_explicita or (not teve_batida and (dia<agora::date or agora::time>=hora_fim))))::int fs
+ from situacao group by funcionario_id,nome
+)
+select t.funcionario_id,t.nome,t.fu,t.fs,
+ least(t.fu,floor((t.fu*24)/cfg.limite_dia_util_horas)::int),
+ least(t.fs,floor((t.fs*12)/cfg.limite_sabado_horas)::int)
+from totais t cross join cfg
+$dias$;
+
 create or replace function public.calcular_inss_2026(p_base numeric)
 returns numeric language sql immutable as $$
   select round(greatest(0,
@@ -176,34 +243,37 @@ begin
   select p_competencia,f.id,f.nome,coalesce(f.cargo,''),coalesce(f.salario,0),
     coalesce(fi.proventos,0),
     coalesce(fi.comissao,0),calc.inss,coalesce(fi.irrf,0),coalesce(fi.outros,0),'pendente',
-    round(greatest(vt.nominal-coalesce(prop.desc_vt,0),0),2),round(greatest(va.nominal-coalesce(prop.desc_va,0),0),2),b.total,
+    round(greatest(vt.nominal-vt.desconto,0),2),round(greatest(va.nominal-va.desconto,0),2),b.total,
     round(calc.base_contribuicao*0.08,2), 'rh_automatico',now(),coalesce(bh.horas_previstas_min,0),
     coalesce(bh.horas_trabalhadas_min,0),coalesce(bh.saldo_min,0),calc.desconto_horas,
-    round(coalesce(prop.desc_vt,0)+coalesce(prop.desc_va,0),2),calc.desconto_vt,
+    round(vt.desconto+va.desconto,2),calc.desconto_vt,
     calc.base_contribuicao,calc.base_contribuicao,round(calc.base_contribuicao*0.08,2),
     jsonb_build_object('calculado_ate',coalesce(bh.calculado_ate,now()),'carga_horaria_mensal',coalesce(f.carga_horaria_mensal,220),
       'salario_bruto',coalesce(f.salario,0),'horas_previstas_min',coalesce(bh.horas_previstas_min,0),
       'horas_trabalhadas_min',coalesce(bh.horas_trabalhadas_min,0),'saldo_banco_min',coalesce(bh.saldo_min,0),
-      'desconto_horas',calc.desconto_horas,'vt_nominal',vt.nominal,'vt_reduzido',coalesce(prop.desc_vt,0),
-      'va_nominal',va.nominal,'va_reduzido',coalesce(prop.desc_va,0),'desconto_vt_6pct',calc.desconto_vt,
+      'desconto_horas',calc.desconto_horas,'vt_nominal',vt.nominal,'vt_dias_descontados',coalesce(db.dias_desconto_dia_util,0)+coalesce(db.dias_desconto_sabado,0),'vt_desconto_dias',vt.desconto,
+      'va_nominal',va.nominal,'va_dias_descontados',coalesce(db.dias_desconto_dia_util,0)+(case when cfg.descontar_va_sabado then coalesce(db.dias_desconto_sabado,0) else 0 end),'va_desconto_dias',va.desconto,'desconto_vt_6pct',calc.desconto_vt,
       'base_inss',calc.base_contribuicao,'inss',calc.inss,'base_fgts',calc.base_contribuicao,'fgts',round(calc.base_contribuicao*0.08,2))
   from public.funcionarios f
+  cross join public.rh_regras_calculo cfg
   left join public.folha_itens fi on fi.competencia=p_competencia and fi.funcionario_id=f.id
   left join lateral (select * from public.calcular_banco_horas(p_competencia,f.id,now()) limit 1) bh on true
-  left join lateral (select coalesce(sum(case when periodicidade='mensal' then valor_mensal else valor_diario*dias_uteis end),0) nominal
+  left join lateral (select * from public.calcular_dias_desconto_beneficio(p_competencia,f.id,now()) limit 1) db on true
+  left join lateral (select coalesce(sum(case when periodicidade='mensal' then valor_mensal else valor_diario*dias_uteis end),0) nominal,
+    coalesce(sum((case when periodicidade='mensal' then valor_mensal/greatest(dias_uteis,1) else valor_diario end)*
+      ((case when cfg.descontar_vt_dia_util then coalesce(db.dias_desconto_dia_util,0) else 0 end)+(case when cfg.descontar_vt_sabado then coalesce(db.dias_desconto_sabado,0) else 0 end))),0) desconto
     from public.vale_transporte x where x.funcionario_id=f.id or (x.funcionario_id is null and lower(trim(x.nome))=lower(trim(f.nome)))) vt on true
-  left join lateral (select coalesce(sum(case when periodicidade='mensal' then valor_mensal else valor_diario*dias end),0) nominal
+  left join lateral (select coalesce(sum(case when periodicidade='mensal' then valor_mensal else valor_diario*dias end),0) nominal,
+    coalesce(sum((case when periodicidade='mensal' then valor_mensal/greatest(dias,1) else valor_diario end)*
+      ((case when cfg.descontar_va_dia_util then coalesce(db.dias_desconto_dia_util,0) else 0 end)+(case when cfg.descontar_va_sabado then coalesce(db.dias_desconto_sabado,0) else 0 end))),0) desconto
     from public.vale_refeicao x where x.funcionario_id=f.id or (x.funcionario_id is null and lower(trim(x.nome))=lower(trim(f.nome)))) va on true
   left join lateral (select coalesce(sum(coalesce(rbf.valor_empresa,bn.custo_empresa,0)),0) total
     from public.rh_beneficio_funcionarios rbf join public.beneficios bn on bn.id=rbf.beneficio_id
     where rbf.funcionario_id=f.id and rbf.ativo) b on true
   left join lateral (select
-    case when coalesce(bh.horas_previstas_min,0)>0 then round(vt.nominal*greatest(-coalesce(bh.saldo_min,0),0)/bh.horas_previstas_min,2) else 0 end desc_vt,
-    case when coalesce(bh.horas_previstas_min,0)>0 then round(va.nominal*greatest(-coalesce(bh.saldo_min,0),0)/bh.horas_previstas_min,2) else 0 end desc_va) prop on true
-  left join lateral (select
     round(least(coalesce(f.salario,0),greatest(-coalesce(bh.saldo_min,0),0)*(coalesce(f.salario,0)/(greatest(coalesce(f.carga_horaria_mensal,220),1)*60))),2) desconto_horas,
     round(greatest(0,coalesce(f.salario,0)-least(coalesce(f.salario,0),greatest(-coalesce(bh.saldo_min,0),0)*(coalesce(f.salario,0)/(greatest(coalesce(f.carga_horaria_mensal,220),1)*60)))+coalesce(fi.comissao,0)+coalesce(fi.bonus_meta,0)),2) base_contribuicao,
-    round(least(vt.nominal*greatest(1-case when coalesce(bh.horas_previstas_min,0)>0 then greatest(-coalesce(bh.saldo_min,0),0)::numeric/bh.horas_previstas_min else 0 end,0),coalesce(f.salario,0)*0.06),2) desconto_vt,
+    round(least(greatest(vt.nominal-vt.desconto,0),coalesce(f.salario,0)*0.06),2) desconto_vt,
     public.calcular_inss_2026(round(greatest(0,coalesce(f.salario,0)-least(coalesce(f.salario,0),greatest(-coalesce(bh.saldo_min,0),0)*(coalesce(f.salario,0)/(greatest(coalesce(f.carga_horaria_mensal,220),1)*60)))+coalesce(fi.comissao,0)+coalesce(fi.bonus_meta,0)),2)) inss) calc on true
   where coalesce(lower(f.status),'ativo')<>'desligado'
   on conflict (competencia,funcionario_id) where funcionario_id is not null do update set
@@ -221,6 +291,8 @@ begin
 end $$;
 
 grant execute on function public.calcular_banco_horas(text,uuid,timestamptz) to authenticated;
+grant execute on function public.calcular_dias_desconto_beneficio(text,uuid,timestamptz) to authenticated;
+grant execute on function public.salvar_regras_calculo_rh(numeric,numeric,boolean,boolean,boolean,boolean) to authenticated;
 grant execute on function public.salvar_beneficios_funcionario(uuid,boolean,text,numeric,integer,text,boolean,text,numeric,integer,text) to authenticated;
 grant execute on function public.calcular_inss_2026(numeric) to authenticated;
 grant execute on function public.gerar_folha_integrada(text) to authenticated;
