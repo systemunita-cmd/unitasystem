@@ -36,7 +36,7 @@ type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; venc
 type IdentidadeVendedor = { id?: number | string; email: string; nome: string; fila: string; filaId?: number | string | null; filasAcesso?: (number | string)[] };
 type EquipeSupervisor = { id: number | string; nome: string; responsavel_usuario_id?: number | string | null };
 type FaixaComissao = { de: number; ate: number | null; valor: number };
-type RegraComissao = { id?: string; competencia: string; vendedor: string; modo: "por_plano" | "por_venda" | "faixas" | "valor_unico"; valor_por_venda: number; valor_unico: number; faixas: FaixaComissao[] };
+type RegraComissao = { id?: string; competencia: string; vendedor: string; modo: "por_plano" | "por_venda" | "faixas" | "valor_unico"; valor_por_venda: number; valor_unico: number; faixas: FaixaComissao[]; valores_por_plano: Record<string, number> };
 type PlanoComissao = { plano: string; valor_comissao: number; ativo: boolean };
 const normalizarPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
 const planoResolvido = (item: Venda) => String(item.plano || item.dados_customizados?.plano_escolhido || item.dados_customizados?.plano || "").trim();
@@ -96,7 +96,7 @@ export function GestaoFinanceiraRH() {
     setVendas((v.data || []).map((x: any) => ({ ...x, plano: planoResolvido(x), comissao_manual: Number(x.comissao_manual) || 0 })) as Venda[]);
     setExtratos((e.data || []).map((x: any) => ({ ...x, valor: Number(x.valor) || 0 })) as Extrato[]);
     setAlertas((a.data || []) as Alerta[]);
-    setRegrasComissao((r.data || []).map((x: any) => ({ ...x, valor_por_venda: Number(x.valor_por_venda) || 0, valor_unico: Number(x.valor_unico) || 0, faixas: Array.isArray(x.faixas) ? x.faixas.map((f: any) => ({ de: Number(f.de) || 0, ate: f.ate === null || f.ate === "" ? null : Number(f.ate), valor: Number(f.valor) || 0 })) : [] })) as RegraComissao[]);
+    setRegrasComissao((r.data || []).map((x: any) => ({ ...x, valor_por_venda: Number(x.valor_por_venda) || 0, valor_unico: Number(x.valor_unico) || 0, faixas: Array.isArray(x.faixas) ? x.faixas.map((f: any) => ({ de: Number(f.de) || 0, ate: f.ate === null || f.ate === "" ? null : Number(f.ate), valor: Number(f.valor) || 0 })) : [], valores_por_plano: Object.fromEntries(Object.entries(x.valores_por_plano || {}).map(([k,v]) => [k, Number(v) || 0])) })) as RegraComissao[]);
     setPlanosComissao((pc.data || []).map((x: any) => ({ ...x, valor_comissao: Number(x.valor_comissao) || 0 })) as PlanoComissao[]);
   };
   useEffect(() => { carregar(); supabase.rpc("gerar_alertas_financeiros"); }, [comp]);
@@ -195,20 +195,20 @@ export function GestaoFinanceiraRH() {
     return Array.from(grupos.values()).map(item=>{const bruto=item.quantidade*regraSupervisor.valor;const desconto=bruto*regraSupervisor.desconto/100;return{...item,responsavel:usuarioPorId.get(String(item.equipe.responsavel_usuario_id)),bruto,desconto,total:bruto-desconto};}).sort((a,b)=>b.total-a.total);
   },[vendas,identidades,equipesSupervisor,regraSupervisor]);
 
-  const regraDoVendedor = (vendedor: string): RegraComissao => regrasComissao.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase()) || { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [] };
+  const regraDoVendedor = (vendedor: string): RegraComissao => regrasComissao.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase()) || { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {} };
 
   const atualizarRegra = (vendedor: string, patch: Partial<RegraComissao>) => {
     setRegrasComissao(xs => {
       const atual = xs.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase());
       if (atual) return xs.map(r => r === atual ? { ...r, ...patch } : r);
-      return [...xs, { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], ...patch }];
+      return [...xs, { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {}, ...patch }];
     });
   };
 
   const salvarRegraComissao = async (vendedor: string) => {
     const regra = regraDoVendedor(vendedor);
     setSalvandoRegra(vendedor);
-    const payload = { competencia: comp, vendedor, modo: regra.modo, valor_por_venda: regra.valor_por_venda || 0, valor_unico: regra.valor_unico || 0, faixas: regra.faixas };
+    const payload = { competencia: comp, vendedor, modo: regra.modo, valor_por_venda: regra.valor_por_venda || 0, valor_unico: regra.valor_unico || 0, faixas: regra.faixas, valores_por_plano: regra.valores_por_plano || {} };
     const resposta = regra.id ? await supabase.from("fin_comissao_regras").update(payload).eq("id", regra.id).select("*").single() : await supabase.from("fin_comissao_regras").insert(payload).select("*").single();
     if (resposta.error) setMsg(resposta.error.message);
     else {
@@ -226,47 +226,38 @@ export function GestaoFinanceiraRH() {
     return Number(correspondentes.at(-1)?.valor_comissao || 0);
   };
 
-  const editarValorPlano = (nomePlano: string, valor: number) => {
+  const valorPlanoVendedor = (vendedor: string, nomePlano: string) => {
+    const regra = regraDoVendedor(vendedor);
     const chave = normalizarPlano(nomePlano);
-    setPlanosComissao(atuais => {
-      const correspondentes = atuais.filter(item => normalizarPlano(item.plano) === chave);
-      if (!correspondentes.length) return [...atuais, { plano: nomePlano, valor_comissao: valor, ativo: true }];
-      const preferido = [...correspondentes].sort((a, b) => Number(a.ativo) - Number(b.ativo)).at(-1)!;
-      return atuais.map(item => item === preferido ? { ...item, valor_comissao: valor } : item);
-    });
+    return Object.prototype.hasOwnProperty.call(regra.valores_por_plano || {}, chave)
+      ? Number(regra.valores_por_plano[chave]) || 0
+      : valorPlano(nomePlano);
   };
 
-  const salvarPlanosInline = async (vendedor: string, nomesPlanos: string[]) => {
+  const editarValorPlanoVendedor = (vendedor: string, nomePlano: string, valor: number) => {
+    const regra=regraDoVendedor(vendedor);
+    atualizarRegra(vendedor,{ valores_por_plano: { ...(regra.valores_por_plano || {}), [normalizarPlano(nomePlano)]: valor } });
+  };
+
+  const salvarPlanosInline = async (vendedor: string) => {
     if (!podeEditarComissao) return;
     setSalvandoPlanosInline(vendedor);
-    const chavesSalvas = new Set<string>();
-    for (const nomePlano of nomesPlanos) {
-      const chave = normalizarPlano(nomePlano);
-      if (!chave || chave === normalizarPlano("Plano não informado") || chavesSalvas.has(chave)) continue;
-      chavesSalvas.add(chave);
-      const configurado = [...planosComissao]
-        .sort((a, b) => Number(a.ativo) - Number(b.ativo))
-        .filter(item => normalizarPlano(item.plano) === chave)
-        .at(-1);
-      const { error } = await supabase.rpc("salvar_fin_comissao_plano", {
-        p_plano: configurado?.plano || nomePlano,
-        p_valor: Number(configurado?.valor_comissao || 0),
-        p_ativo: configurado?.ativo ?? true,
-      });
-      if (error) {
-        setMsg(error.message);
-        setSalvandoPlanosInline(null);
-        await carregar();
-        return;
-      }
+    const regra=regraDoVendedor(vendedor);
+    const payload={ competencia:comp, vendedor, modo:"por_plano", valor_por_venda:regra.valor_por_venda||0, valor_unico:regra.valor_unico||0, faixas:regra.faixas, valores_por_plano:regra.valores_por_plano||{} };
+    const resposta=regra.id
+      ? await supabase.from("fin_comissao_regras").update(payload).eq("id",regra.id).select("*").single()
+      : await supabase.from("fin_comissao_regras").insert(payload).select("*").single();
+    if(resposta.error) setMsg(resposta.error.message);
+    else {
+      setRegrasComissao(xs=>xs.map(r=>r.vendedor.trim().toLowerCase()===vendedor.trim().toLowerCase()?{...r,id:resposta.data.id}:r));
+      const sync=await supabase.rpc("sincronizar_financeiro_rh",{p_competencia:comp});
+      setMsg(sync.error?sync.error.message:"Valores exclusivos deste vendedor salvos e folha recalculada.");
     }
-    const sincronizacao = await supabase.rpc("sincronizar_financeiro_rh", { p_competencia: comp });
-    setMsg(sincronizacao.error ? sincronizacao.error.message : "Valores dos planos salvos e comissões recalculadas.");
     setSalvandoPlanosInline(null);
     await carregar();
   };
 
-  const valorCalculado = (grupo: { qtd: number; valor: number; valorPlano: number }, regra: RegraComissao) => {
+  const valorCalculado = (grupo: { qtd: number; valor: number; valorPlano: number; vendas: Venda[] }, regra: RegraComissao, vendedor: string) => {
     if (grupo.qtd < 20) return 0;
     if (regra.modo === "por_venda") return grupo.qtd * regra.valor_por_venda;
     if (regra.modo === "valor_unico") return regra.valor_unico;
@@ -274,7 +265,7 @@ export function GestaoFinanceiraRH() {
       const faixa = [...regra.faixas].sort((a,b) => b.de-a.de).find(f => grupo.qtd >= f.de && (f.ate == null || grupo.qtd <= f.ate));
       return grupo.qtd * Number(faixa?.valor || 0);
     }
-    return grupo.valorPlano;
+    return grupo.vendas.reduce((total,venda)=>total+valorPlanoVendedor(vendedor,venda.plano),0);
   };
   const editarComissaoLocal = (id: number, valor: number) => {
     setVendas(xs => xs.map(x => x.id === id ? { ...x, comissao_manual: valor } : x));
@@ -334,7 +325,7 @@ export function GestaoFinanceiraRH() {
           const aberta = vendedorAberto === vendedor;
           const percentual = Math.min(100, (x.qtd / 20) * 100);
           const regra = regraDoVendedor(vendedor);
-          const totalComissao = valorCalculado(x, regra);
+          const totalComissao = valorCalculado(x, regra, vendedor);
           return <div key={vendedor} style={{ background: "#fff", border: `1px solid ${liberada ? "#bbf7d0" : "#e2e8f0"}`, borderRadius: 18, overflow: "hidden", boxShadow: liberada ? "0 8px 24px rgba(22,163,74,.08)" : "0 4px 16px rgba(15,23,42,.04)" }}>
             <div style={{ padding: "18px 20px", display: "grid", gridTemplateColumns: "minmax(220px,1.4fr) minmax(220px,1fr) auto", gap: 18, alignItems: "center" }}>
               <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0 }}>
@@ -357,17 +348,17 @@ export function GestaoFinanceiraRH() {
                 const nomesPlanos = Array.from(new Set(x.vendas.map(v => v.plano || "Plano não informado")));
                 return <div style={{ background: "#fff", border: "1px solid #dcebe2", borderRadius: 14, padding: 16, marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                    <div><b style={{ color: "#294c3b", fontSize: 12 }}>Cálculo automático por plano instalado</b><p style={{ color: "#64748b", fontSize: 10, margin: "4px 0 0" }}>O valor é global por plano. Ao salvar, o CRM recalcula todos os vendedores elegíveis desta competência.</p></div>
-                    {podeEditarComissao && <button type="button" disabled={salvandoPlanosInline === vendedor} onClick={() => salvarPlanosInline(vendedor, nomesPlanos)} style={{ ...botao, minHeight: 36, padding: "8px 12px", fontSize: 10 }}>{salvandoPlanosInline === vendedor ? "Salvando..." : "Salvar valores dos planos"}</button>}
+                    <div><b style={{ color: "#294c3b", fontSize: 12 }}>Valores exclusivos de {pessoa?.nome || vendedor}</b><p style={{ color: "#64748b", fontSize: 10, margin: "4px 0 0" }}>As alterações abaixo valem somente para este vendedor e esta competência. A tabela padrão não será modificada.</p></div>
+                    {podeEditarComissao && <button type="button" disabled={salvandoPlanosInline === vendedor} onClick={() => salvarPlanosInline(vendedor)} style={{ ...botao, minHeight: 36, padding: "8px 12px", fontSize: 10 }}>{salvandoPlanosInline === vendedor ? "Salvando..." : "Salvar valores deste vendedor"}</button>}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 8, marginTop: 12 }}>
                     {nomesPlanos.map(nomePlano => {
                       const quantidade = x.vendas.filter(item => (item.plano || "Plano não informado") === nomePlano).length;
                       const semPlano = nomePlano === "Plano não informado";
-                      const valor = valorPlano(nomePlano);
+                      const valor = valorPlanoVendedor(vendedor, nomePlano);
                       return <div key={nomePlano} style={{ padding: 10, border: `1px solid ${semPlano ? "#fde68a" : "#dcebe2"}`, borderRadius: 11, background: semPlano ? "#fffbeb" : "#f8fbf9", fontSize: 10 }}>
                         <b style={{ display: "block", color: "#1e293b", marginBottom: 7 }}>{nomePlano}</b>
-                        {podeEditarComissao && !semPlano ? <label style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}><span style={{ color: "#365f4b", fontWeight: 900 }}>R$</span><input type="number" min="0" step="0.01" value={valor} onChange={evento => editarValorPlano(nomePlano, Number(evento.target.value))} aria-label={`Valor de comissão do plano ${nomePlano}`} style={{ ...input, width: "100%", minHeight: 35, padding: "7px 9px", fontSize: 11, fontWeight: 800 }} /></label> : <span style={{ display: "block", color: semPlano ? "#a16207" : "#64748b", marginBottom: 7 }}>{semPlano ? "Corrija o plano no cadastro da venda" : `Comissão: ${moeda(valor)}`}</span>}
+                        {podeEditarComissao && !semPlano ? <label style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}><span style={{ color: "#365f4b", fontWeight: 900 }}>R$</span><input type="number" min="0" step="0.01" value={valor} onChange={evento => editarValorPlanoVendedor(vendedor, nomePlano, Number(evento.target.value))} aria-label={`Valor de comissão do plano ${nomePlano}`} style={{ ...input, width: "100%", minHeight: 35, padding: "7px 9px", fontSize: 11, fontWeight: 800 }} /></label> : <span style={{ display: "block", color: semPlano ? "#a16207" : "#64748b", marginBottom: 7 }}>{semPlano ? "Corrija o plano no cadastro da venda" : `Comissão: ${moeda(valor)}`}</span>}
                         <span style={{ color: "#64748b" }}>{quantidade} × {moeda(valor)} = <b style={{ color: "#294c3b" }}>{moeda(quantidade * valor)}</b></span>
                       </div>;
                     })}
