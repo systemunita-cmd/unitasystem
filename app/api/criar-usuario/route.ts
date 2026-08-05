@@ -26,10 +26,11 @@ type Role = "admin" | "supervisor" | "atendente";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { email, senha, nome, role, equipe_id, grupo_id, equipes_acesso } = body as {
+  const { email, senha, nome, role, equipe_id, fila_id, fila_operacional_id, grupo_id, equipes_acesso, filas_acesso, canais_acesso, ramal, telefone, exige_selfie, exige_ponto } = body as {
     email?: string; senha?: string; nome?: string;
-    role?: Role; equipe_id?: number | null; grupo_id?: number | null;
-    equipes_acesso?: number[] | null;
+    role?: Role; equipe_id?: number | null; fila_id?: number | null; fila_operacional_id?: number | null; grupo_id?: number | null;
+    equipes_acesso?: number[] | null; filas_acesso?: number[] | null; canais_acesso?: number[] | null;
+    ramal?: string | null; telefone?: string | null; exige_selfie?: boolean; exige_ponto?: boolean;
   };
 
   // ═══ Validações básicas ═══
@@ -161,8 +162,16 @@ export async function POST(req: NextRequest) {
       email,
       role: roleFinal,
       equipe_id: equipe_id || null,
+      fila_id: fila_id || null,
+      fila_operacional_id: fila_operacional_id || null,
       grupo_id: grupo_id || null,
       equipes_acesso: equipes_acesso || [],
+      filas_acesso: filas_acesso || [],
+      canais_acesso: canais_acesso || [],
+      ramal: ramal || null,
+      telefone: telefone || null,
+      exige_selfie: exige_selfie !== false,
+      exige_ponto: exige_ponto !== false,
       ativo: true,
     }], { onConflict: "auth_user_id" });
 

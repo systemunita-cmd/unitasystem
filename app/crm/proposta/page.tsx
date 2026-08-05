@@ -28,6 +28,7 @@ const chaveStatusPlano = (valor: string) => String(valor || "").trim().replace(/
 type UsuarioOpt = { id: string | number; email: string; nome: string; role?: string; equipe_id?: number | string | null; fila_id?: number | string | null };
 type EquipeOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type FilaOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id?: number | null };
+type FilaOperacionalOpt = { id: string | number; nome: string; cor?: string; icone?: string; equipe_id: number | string };
 type EtiquetaOpt = { id: string | number; nome: string; cor?: string; icone?: string };
 type AnexoMeta = { url: string; nome: string; tipo: string; tamanho: number; enviado_em: string };
 type InadimplenciaCliente = { id:string; cliente:string; valor:number; vencimento?:string; status:string; origem:string };
@@ -168,6 +169,7 @@ function PropostaForm() {
 
   const [equipesAuto, setEquipesAuto] = useState<EquipeOpt[]>([]);
   const [filasAuto, setFilasAuto] = useState<FilaOpt[]>([]);
+  const [filasOperacionaisAuto, setFilasOperacionaisAuto] = useState<FilaOperacionalOpt[]>([]);
   const [etiquetasAuto, setEtiquetasAuto] = useState<EtiquetaOpt[]>([]);
 
   const [camposUnificados, setCamposUnificados] = useState<CampoUnificado[]>([]);
@@ -316,6 +318,12 @@ function PropostaForm() {
           promises.push(
             supabase.from("filas").select("id, nome, cor, icone, equipe_id").order("nome")
               .then(r => { if (r.error?.code === "PGRST205") faltando.push("filas"); setFilasAuto(r.data || []); })
+          );
+        }
+        if (tiposPresentes.has("fila_operacional")) {
+          promises.push(
+            supabase.from("filas_operacionais").select("id, nome, cor, icone, equipe_id").eq("ativo", true).order("nome")
+              .then(r => { if (r.error?.code === "PGRST205") faltando.push("filas_operacionais"); setFilasOperacionaisAuto(r.data || []); })
           );
         }
         if (tiposPresentes.has("etiqueta")) {
@@ -583,9 +591,23 @@ function PropostaForm() {
         delete dadosCustomFinal[s];
       }
     }
+    const valorCustomPorTipo = (tipo: string) => {
+      const campo = camposUnificados.find(c => c.origem === "custom" && String(c.tipo) === tipo);
+      return campo ? dadosCustomFinal[campo.slug] || null : null;
+    };
+    const vendedorSelecionado = usuarios.find(u => String(u.email).toLowerCase() === String(form.vendedor).toLowerCase() || String(u.nome).toLowerCase() === String(form.vendedor).toLowerCase());
+    const pdvId = valorCustomPorTipo("equipe") || vendedorSelecionado?.equipe_id || perm.equipeId || null;
+    const equipeComercialId = valorCustomPorTipo("fila") || vendedorSelecionado?.fila_id || minhaFilaId || null;
+    const filaOperacionalId = valorCustomPorTipo("fila_operacional") || null;
+    dadosCustomFinal.pdv_id = pdvId;
+    dadosCustomFinal.equipe_comercial_id = equipeComercialId;
+    dadosCustomFinal.fila_operacional_id = filaOperacionalId;
     const payload: any = {
       criado_por: perm.userEmail || null,
       equipe_id_criador: perm.equipeId || null,
+      pdv_id: pdvId,
+      equipe_comercial_id: equipeComercialId,
+      fila_operacional_id: filaOperacionalId,
       data_proposta: form.data_proposta || null,
       nome: up(form.nome || ""),
       cpf: form.cpf || "",
@@ -615,7 +637,12 @@ function PropostaForm() {
       dados_customizados: dadosCustomFinal,
     };
 
-    const { error } = await supabase.from("proposta").insert([payload]);
+    let { error } = await supabase.from("proposta").insert([payload]);
+    if (error && /pdv_id|equipe_comercial_id|fila_operacional_id/i.test(error.message || "")) {
+      const legado = { ...payload };
+      delete legado.pdv_id; delete legado.equipe_comercial_id; delete legado.fila_operacional_id;
+      ({ error } = await supabase.from("proposta").insert([legado]));
+    }
     setLoading(false);
 
     if (error) {
@@ -835,6 +862,10 @@ function PropostaForm() {
   })();
 
   // 🔖 A EQUIPE (fila) escolhida é a de "indicador"? (detecta pelo nome da fila conter "indicador")
+  const filasOperacionaisVisiveis = filaSelecionada
+    ? filasOperacionaisAuto.filter(f => String(f.equipe_id) === String(filaSelecionada))
+    : filasOperacionaisAuto;
+
   const ehFilaIndicador = (() => {
     if (!filaSelecionada) return false;
     const f = filasAuto.find(x => String(x.id) === String(filaSelecionada));
@@ -1252,6 +1283,14 @@ function PropostaForm() {
         <div style={{ display: "flex", flexDirection: "column" as const }}>
           <label style={labelStyle}>{labelComObr}</label>
           {renderCampoAuto(c, filasParaFila)}
+        </div>
+      );
+    }
+    if (tipo === "fila_operacional") {
+      return (
+        <div style={{ display: "flex", flexDirection: "column" as const }}>
+          <label style={labelStyle}>{labelComObr}</label>
+          {renderCampoAuto(c, filasOperacionaisVisiveis)}
         </div>
       );
     }

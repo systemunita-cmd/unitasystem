@@ -8,7 +8,7 @@ import { ConciliacaoAvancada } from "./ConciliacaoAvancada";
 type Aba = "pessoal" | "empresa" | "manual" | "conciliacao" | "salarios" | "ajuda" | "vendas" | "vendedores" | "comissao" | "colagem" | "supervisor";
 type Titulo = { id: string; competencia: string; tipo: string; descricao: string; valor: number; valor_conciliado: number; juros_multa: number; status: string; vencimento?: string; pago_em?: string; observacao?: string; categoria?: string; centro_custo?: string; planilha_grupo: "pessoal" | "empresa" };
 type Folha = { id: string; funcionario_id?: string; nome: string; cargo?: string; salario_cadastrado: number; salario_proporcional: number; base: number; proventos: number; comissao: number; bonus_meta: number; inss: number; irrf: number; outros: number; fgts: number; encargos_empresa: number; vale_transporte: number; vale_alimentacao: number; beneficios: number; desconto_horas: number; desconto_dsr: number; desconto_beneficios: number; desconto_vale_transporte: number; horas_previstas_min: number; horas_trabalhadas_min: number; saldo_banco_min: number; memoria_calculo?: Record<string, any>; status: string };
-type Venda = { id: number; nome: string; cpf?: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; valor_plano: number; equipe_id?: number | string; equipe_id_criador?: number | string; fila_id?: number | string };
+type Venda = { id: number; nome: string; cpf?: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; valor_plano: number; equipe_id?: number | string; equipe_id_criador?: number | string };
 type Plano = { id: string; plano: string; valor_comissao: number; ativo: boolean };
 type Funcionario = { id: string; nome: string; email?: string; user_email?: string; cargo?: string; status?: string; equipe_id?: number | string };
 type Equipe = { id: number | string; nome: string };
@@ -87,7 +87,7 @@ export function FinanceiroGeralPlanilhas() {
     const resultados = await Promise.all([
       supabase.from("fin_titulos").select("id,competencia,tipo,descricao,valor,valor_conciliado,juros_multa,status,vencimento,pago_em,observacao,categoria,centro_custo,planilha_grupo").eq("competencia", competencia).order("vencimento"),
       supabase.from("folha_itens").select("id,funcionario_id,nome,cargo,salario_cadastrado,salario_proporcional,base,proventos,comissao,bonus_meta,inss,irrf,outros,fgts,encargos_empresa,vale_transporte,vale_alimentacao,beneficios,desconto_horas,desconto_dsr,desconto_beneficios,desconto_vale_transporte,horas_previstas_min,horas_trabalhadas_min,saldo_banco_min,memoria_calculo,status").eq("competencia", competencia).order("nome"),
-      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador,fila_id").eq("status_venda", "INSTALADA").gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
+      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador").eq("status_venda", "INSTALADA").gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
       supabase.from("fin_comissao_planos").select("id,plano,valor_comissao,ativo").order("plano"),
       supabase.from("funcionarios").select("id,nome,email,user_email,cargo,status,equipe_id").order("nome"),
       supabase.from("equipes").select("id,nome").order("nome"),
@@ -232,7 +232,7 @@ export function FinanceiroGeralPlanilhas() {
     const grupos = new Map<string, { equipe: EquipeComercial | null; vendas: Venda[] }>();
     vendas.forEach(venda => {
       const usuario = usuarioPorVendedor.get(chave(venda.vendedor));
-      const filaId = venda.fila_id || usuario?.fila_id || usuario?.filas_acesso?.[0];
+      const filaId = venda.dados_customizados?.equipe_comercial_id || venda.dados_customizados?.fila_id || usuario?.fila_id || usuario?.filas_acesso?.[0];
       const equipe = filaId != null ? equipePorId.get(String(filaId)) || null : null;
       const fallbackPdv = mapaEquipes.get(String(venda.equipe_id || venda.equipe_id_criador || "")) || "Sem equipe vinculada";
       const grupoId = equipe ? String(equipe.id) : `pdv:${fallbackPdv}`;

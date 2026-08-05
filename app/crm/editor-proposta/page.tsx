@@ -24,7 +24,7 @@ import {
 // Reflete EXATAMENTE na Nova Proposta
 // ═══════════════════════════════════════════════════════════════════════
 
-type TipoCustom = "texto" | "textarea" | "numero" | "moeda" | "data" | "dropdown" | "checkbox" | "arquivo" | "equipe" | "fila" | "usuario" | "etiqueta";
+type TipoCustom = "texto" | "textarea" | "numero" | "moeda" | "data" | "dropdown" | "checkbox" | "arquivo" | "equipe" | "fila" | "fila_operacional" | "usuario" | "etiqueta";
 
 const TIPOS_CUSTOM: { valor: TipoCustom; label: string; icone: string; categoria: "basico" | "arquivo" | "auto" }[] = [
   { valor: "texto",    label: "Texto curto",    icone: "📝", categoria: "basico" },
@@ -37,6 +37,7 @@ const TIPOS_CUSTOM: { valor: TipoCustom; label: string; icone: string; categoria
   { valor: "arquivo",  label: "Anexar arquivo", icone: "📎", categoria: "arquivo" },
   { valor: "equipe",   label: "Empresa/PDV (auto)",  icone: "🏢", categoria: "auto" },
   { valor: "fila",     label: "Equipe (auto)",    icone: "🎯", categoria: "auto" },
+  { valor: "fila_operacional", label: "Fila (auto)", icone: "📥", categoria: "auto" },
   { valor: "usuario",  label: "Usuário (auto)", icone: "👤", categoria: "auto" },
   { valor: "etiqueta", label: "Etiqueta (auto)", icone: "🏷️", categoria: "auto" },
 ];
@@ -52,6 +53,7 @@ const TIPO_INFO: Record<string, { icone: string; cor: string; bg: string; descri
   arquivo:  { icone: "📎", cor: "#8b5cf6", bg: "#f5f3ff", descricao: "Upload de arquivos (máx 20MB cada)" },
   equipe:   { icone: "🏢", cor: "#a855f7", bg: "#faf5ff", descricao: "Lê automaticamente os Empresas/PDVs cadastrados" },
   fila:     { icone: "🎯", cor: "#06b6d4", bg: "#ecfeff", descricao: "Lê automaticamente as equipes cadastradas" },
+  fila_operacional: { icone: "📥", cor: "#0ea5e9", bg: "#f0f9ff", descricao: "Lê automaticamente as filas vinculadas à equipe" },
   usuario:  { icone: "👤", cor: "#2563eb", bg: "#eff6ff", descricao: "Lê automaticamente os usuários do sistema" },
   etiqueta: { icone: "🏷️", cor: "#ec4899", bg: "#fdf2f8", descricao: "Lê automaticamente as etiquetas cadastradas" },
 };

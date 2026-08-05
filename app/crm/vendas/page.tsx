@@ -42,6 +42,9 @@ type Proposta = {
   equipe_id?: string | null;
   criado_por?: string | null;
   equipe_id_criador?: number | string | null;
+  pdv_id?: number | string | null;
+  equipe_comercial_id?: number | string | null;
+  fila_operacional_id?: number | string | null;
   updated_at?: string | null;
   atualizado_por?: string | null;
 };
@@ -258,8 +261,10 @@ export default function Vendas() {
   }>({ equipeId: null, filaId: null, equipesAcesso: [], filasAcesso: [], carregado: false });
   // 🎚️ Filtro de FILA escolhido no segundo seletor (quando um PDV está ativo)
   const [filaFiltro, setFilaFiltro] = useState<string>("");
+  const [filaOperacionalFiltro, setFilaOperacionalFiltro] = useState<string>("");
   // 🏷️ Filas carregadas (id, nome, equipe_id) pra montar o seletor PDV→fila
   const [filasLista, setFilasLista] = useState<{ id: number; nome: string; equipe_id: number | null; ativo: boolean }[]>([]);
+  const [filasOperacionaisLista, setFilasOperacionaisLista] = useState<{ id:number; nome:string; equipe_id:number; ativo:boolean }[]>([]);
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [filas, setFilas] = useState<{ id: any; nome: string }[]>([]);
   const [etiquetas, setEtiquetas] = useState<{ id: any; nome: string }[]>([]);
@@ -604,7 +609,9 @@ export default function Vendas() {
       if (v !== null && v !== undefined && String(v).trim() !== "") ids.add(String(v).trim());
     };
     const dc = p.dados_customizados || {};
+    add(p.pdv_id);
     add(p.equipe_id_criador);
+    add(dc.pdv_id);
     add(p.equipe_id);
     add((p as any).equipe);
     add((p as any).pdv);
@@ -626,6 +633,8 @@ export default function Vendas() {
       if (v !== null && v !== undefined && String(v).trim() !== "") ids.add(String(v).trim());
     };
     const dc = p.dados_customizados || {};
+    add(p.equipe_comercial_id);
+    add(dc.equipe_comercial_id);
     add((p as any).fila_id);
     add((p as any).fila);
     add(dc.fila_id);
@@ -635,6 +644,14 @@ export default function Vendas() {
     const vendedor = regDoVendedor(p.vendedor);
     add(vendedor?.fila_id);
     for (const id of vendedor?.filas_acesso || []) add(id);
+    return Array.from(ids);
+  };
+
+  const idsFilaOperacionalDaProposta = (p: Proposta): string[] => {
+    const ids = new Set<string>();
+    const add = (v:any) => { if (v !== null && v !== undefined && String(v).trim()) ids.add(String(v).trim()); };
+    const dc=p.dados_customizados||{};
+    add(p.fila_operacional_id); add(dc.fila_operacional_id); add(dc.fila_operacional);
     return Array.from(ids);
   };
 
@@ -1210,6 +1227,9 @@ export default function Vendas() {
         const { data: fl } = await supabase.from("filas")
           .select("id, nome, equipe_id, ativo").eq("ativo", true).order("nome");
         setFilasLista((fl || []) as any);
+        const { data: fo } = await supabase.from("filas_operacionais")
+          .select("id, nome, equipe_id, ativo").eq("ativo", true).order("nome");
+        setFilasOperacionaisLista((fo || []) as any);
       } catch { /* sem filas */ }
 
       const usouMock = await fetchPropostas();
@@ -1651,6 +1671,7 @@ export default function Vendas() {
     .filter(p => !equipeId || idsEquipeDaProposta(p).includes(String(equipeId)))
     // 🎚️ Seletor de FILA: considera a fila gravada e, principalmente, a fila do vendedor atribuído.
     .filter(p => !filaFiltro || idsFilaDaProposta(p).includes(String(filaFiltro)))
+    .filter(p => !filaOperacionalFiltro || idsFilaOperacionalDaProposta(p).includes(String(filaOperacionalFiltro)))
     .filter(p => filtroStatus === "todos" || p.status_venda === filtroStatus)
     .filter(p => filtroSuporte === "todos" || suporteDaProposta(p).tipo === filtroSuporte)
     .filter(p => filtroDesconto === "todos" || descontoDaProposta(p).ativo === (filtroDesconto === "ativo"))
@@ -1717,7 +1738,7 @@ export default function Vendas() {
     })
     ,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filtroStatus, filtroSuporte, filtroDesconto, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados, chamadosSuportePorProposta]
+    [propostas, podeVerTudo, veTudo, veEquipe, veFila, minhaFila, minhaEquipe, minhasEquipesAcesso, meuPerfilVendas, userEmail, equipeId, filaFiltro, filaOperacionalFiltro, filtroStatus, filtroSuporte, filtroDesconto, buscaDebounced, filtroDataInicio, filtroDataFim, filtroModif, usuarios, camposUnificados, chamadosSuportePorProposta]
   );
 
   // 🔎 Lista FINAL = base no escopo + filtros de coluna (a linha "filtrar..." de cada coluna)
@@ -1805,7 +1826,7 @@ export default function Vendas() {
   }, [busca]);
 
   // Volta pra página 1 quando qualquer filtro muda
-  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtroSuporte, filtroDesconto, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro]);
+  useEffect(() => { setPagina(1); }, [buscaDebounced, filtroStatus, filtroSuporte, filtroDesconto, filtrosColuna, filtroDataInicio, filtroDataFim, filtroModif, equipeId, filaFiltro, filaOperacionalFiltro]);
 
   const totalVisivel = propostasFiltradas.length;
   const totalGeral = propostas.length;
@@ -2150,6 +2171,17 @@ export default function Vendas() {
                 </select>
               </div>
             );
+          })()}
+          {(() => {
+            if (!filaFiltro) return null;
+            const opcoes=filasOperacionaisLista.filter(f => String(f.equipe_id)===String(filaFiltro));
+            if (!opcoes.length) return null;
+            return <div style={{display:"flex",alignItems:"center",gap:8,background:filaOperacionalFiltro?"#f0f9ff":"#fff",border:"1px solid #bae6fd",borderRadius:12,padding:"6px 12px"}}>
+              <span>📥</span><span style={{fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Fila</span>
+              <select value={filaOperacionalFiltro} onChange={e=>setFilaOperacionalFiltro(e.target.value)} style={{border:"none",outline:"none",fontSize:13,fontWeight:700,background:"transparent"}}>
+                <option value="">Todas as filas</option>{opcoes.map(f=><option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+            </div>;
           })()}
           <button onClick={abrirExportacao} disabled={propostasFiltradas.length === 0}
             style={{

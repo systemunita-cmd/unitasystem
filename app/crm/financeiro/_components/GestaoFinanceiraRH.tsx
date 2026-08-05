@@ -30,7 +30,7 @@ const botao = { border: "1px solid #365f4b", borderRadius: 10, padding: "10px 15
 
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string; valor_conciliado?: number; origem_modulo?: string; origem_tipo?: string };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
-type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; comissao_manual: number; fila_id?: number | string | null };
+type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; comissao_manual: number };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string; status_conciliacao?: string; valor_alocado?: number };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
 type IdentidadeVendedor = { id?: number | string; email: string; nome: string; fila: string; filaId?: number | string | null; filasAcesso?: (number | string)[] };
@@ -85,7 +85,7 @@ export function GestaoFinanceiraRH() {
     const [t, f, v, e, a, r, pc] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo,valor_conciliado,origem_modulo,origem_tipo").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
-      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual,fila_id").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
       supabase.from("fin_alertas").select("*").neq("status", "resolvido").order("vencimento"),
       supabase.from("fin_comissao_regras").select("*").eq("competencia", comp),
@@ -187,7 +187,7 @@ export function GestaoFinanceiraRH() {
     const grupos = new Map<string,{ equipe:EquipeSupervisor; quantidade:number }>();
     vendas.forEach(venda => {
       const identidade=porIdentidade.get(String(venda.vendedor||"").trim().toLowerCase());
-      const filaId=venda.fila_id||identidade?.filaId||identidade?.filasAcesso?.[0];
+      const filaId=venda.dados_customizados?.equipe_comercial_id||venda.dados_customizados?.fila_id||identidade?.filaId||identidade?.filasAcesso?.[0];
       const equipe=filaId!=null?equipePorId.get(String(filaId)):undefined;
       if(!equipe?.responsavel_usuario_id)return;
       const chave=String(equipe.id); const atual=grupos.get(chave)||{equipe,quantidade:0}; atual.quantidade++; grupos.set(chave,atual);

@@ -25,7 +25,9 @@ type Usuario = {
   nome: string;
   role: "admin" | "supervisor" | "atendente";
   equipe_id?: number | null;
-  fila_id?: number | null; // fila de atendimento (1 por usuário, depende da equipe)
+  fila_id?: number | null; // equipe comercial (nome legado)
+  fila_operacional_id?: number | null; // nova fila operacional
+  // fila de atendimento (1 por usuário, depende da equipe)
   exige_selfie?: boolean | null; // 🤳 bater ponto com selfie (true) ou só GPS (false)
   exige_ponto?: boolean | null;  // 🕐 precisa bater ponto pra acessar o sistema (true) ou não (false)
   equipes_acesso?: number[] | null; // equipes que o usuário pode VER (BKO/gerente) + libera as filas
@@ -542,6 +544,7 @@ export default function Configuracoes() {
               usuarios={usuariosVisiveis}
               equipes={equipesVisiveis}
               filas={filasVisiveis}
+              filasOperacionais={filasOperacionais}
               canais={canais}
               gruposPermissao={gruposPermissao}
               equipeById={equipeById}
@@ -620,7 +623,7 @@ function deriveRoleFromGrupo(nomeGrupo: string): "admin" | "supervisor" | "atend
   return "atendente";
 }
 
-function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipeById, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
+function AbaUsuarios({ usuarios, equipes, filas, filasOperacionais, canais, gruposPermissao, equipeById, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
   const [busca, setBusca] = useState("");
   const [filtroRole, setFiltroRole] = useState<"todos" | "admin" | "supervisor" | "atendente">("todos");
   const [filtroEquipe, setFiltroEquipe] = useState<string>("todas");
@@ -632,6 +635,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
     role: "atendente" as "admin" | "supervisor" | "atendente",
     grupo_id: "", ramal: "", telefone: "",
     fila_id: "",
+    fila_operacional_id: "",
     ativo: true,
     exige_selfie: true,
     exige_ponto: true,
@@ -674,6 +678,12 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
   }, [filas, formUsuario.equipes_acesso]);
 
   // Deriva equipe_id pra gravar: equipe da 1ª fila marcada, senão a 1ª equipe marcada
+  const filasOperacionaisDisponiveis = useMemo(() => {
+    if (!formUsuario.filas_acesso.length) return [] as FilaOperacional[];
+    const equipesComerciais = new Set(formUsuario.filas_acesso.map(Number));
+    return (filasOperacionais || []).filter((f: FilaOperacional) => equipesComerciais.has(Number(f.equipe_id)));
+  }, [filasOperacionais, formUsuario.filas_acesso]);
+
   const derivarEquipeId = (): number | null => {
     const primeiraFila = formUsuario.filas_acesso[0];
     if (primeiraFila != null) {
@@ -686,7 +696,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
   const abrirNovo = () => {
     if (!podeGerenciar) { alert("Você não tem permissão pra gerenciar usuários."); return; }
     setEditandoUsuario(null);
-    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", ativo: true, exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [], canais_acesso: [] });
+    setFormUsuario({ nome: "", email: "", senha: "", role: "atendente", grupo_id: "", ramal: "", telefone: "", fila_id: "", fila_operacional_id: "", ativo: true, exige_selfie: true, exige_ponto: true, equipes_acesso: [], filas_acesso: [], canais_acesso: [] });
     setShowForm(true);
   };
 
@@ -712,6 +722,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
       grupo_id: u.grupo_id?.toString() || "",
       ramal: u.ramal || "", telefone: u.telefone || "",
       fila_id: u.fila_id?.toString() || "",
+      fila_operacional_id: u.fila_operacional_id?.toString() || "",
       ativo: u.ativo !== false,
       exige_selfie: u.exige_selfie !== false, // default true
       exige_ponto: u.exige_ponto !== false,   // default true
@@ -741,6 +752,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
         ramal: formUsuario.ramal.trim() || null,
         telefone: formUsuario.telefone.trim() || null,
         fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
+        fila_operacional_id: formUsuario.fila_operacional_id ? Number(formUsuario.fila_operacional_id) : null,
         exige_selfie: formUsuario.exige_selfie,
         exige_ponto: formUsuario.exige_ponto,
         equipes_acesso: formUsuario.equipes_acesso,
@@ -781,6 +793,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
           ramal: formUsuario.ramal.trim() || null,
           telefone: formUsuario.telefone.trim() || null,
           fila_id: formUsuario.filas_acesso.length ? formUsuario.filas_acesso[0] : null,
+          fila_operacional_id: formUsuario.fila_operacional_id ? Number(formUsuario.fila_operacional_id) : null,
           exige_selfie: formUsuario.exige_selfie,
           exige_ponto: formUsuario.exige_ponto,
           equipes_acesso: formUsuario.equipes_acesso,
@@ -1016,6 +1029,15 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
                     ? `✅ Usuário verá ${formUsuario.filas_acesso.length} fila(s) selecionada(s)`
                     : "👀 Usuário verá todas as filas das equipes marcadas"}
               </p>
+            </div>
+
+            <div style={{ gridColumn: isMobile ? "1" : "span 2" }}>
+              <label style={labelStyle}>📥 Fila operacional</label>
+              <select value={formUsuario.fila_operacional_id} onChange={e => setFormUsuario({ ...formUsuario, fila_operacional_id: e.target.value })} style={IS}>
+                <option value="">— Sem fila operacional específica —</option>
+                {filasOperacionaisDisponiveis.map((f: FilaOperacional) => <option key={f.id} value={f.id}>{f.nome}</option>)}
+              </select>
+              <p style={{ color: "#9ca3af", fontSize: 10, margin: "5px 0 0" }}>Selecione primeiro a Equipe comercial acima. Esta é a nova Fila usada nas vendas.</p>
             </div>
 
             <div>
