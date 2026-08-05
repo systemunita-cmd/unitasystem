@@ -41,6 +41,8 @@ type Funcionario = {
   equipe_id: string;
   admissao: string;
   data_nascimento: string;
+  desligamento: string;
+  dependentes_irrf: number;
   salario: number;
   status: Status;
   user_email: string; // login do sistema vinculado (tabela usuarios.email) — usado no ponto
@@ -84,6 +86,8 @@ const FORM_VAZIO: Funcionario = {
   equipe_id: "",
   admissao: "",
   data_nascimento: "",
+  desligamento: "",
+  dependentes_irrf: 0,
   salario: 0,
   status: "ativo",
   user_email: "",
@@ -223,6 +227,7 @@ export function FuncionariosSection() {
     const obrigatorios: [string, unknown][] = [["nome",form.nome],["CPF",form.cpf],["telefone",form.telefone],["e-mail",form.email],["cargo",form.cargo],["departamento",form.departamento],["equipe/empresa",form.equipe_id],["data de admissão",form.admissao],["data de nascimento",form.data_nascimento],["salário",form.salario],["login do sistema",form.user_email],["carga horária mensal",form.carga_horaria_mensal]];
     const faltando = obrigatorios.find(([,valor]) => !String(valor ?? "").trim() || (typeof valor === "number" && valor <= 0));
     if (faltando) { alert(`Preencha o campo obrigatório: ${faltando[0]}.`); return; }
+    if (form.status === "desligado" && !form.desligamento) { alert("Informe a data de desligamento."); return; }
     if ((beneficiosForm.vt_ativo && beneficiosForm.vt_valor <= 0) || (beneficiosForm.va_ativo && beneficiosForm.va_valor <= 0)) {
       alert("Informe um valor válido para cada benefício ativado."); return;
     }
@@ -237,6 +242,8 @@ export function FuncionariosSection() {
       equipe_id: form.equipe_id || null,
       admissao: form.admissao || null,
       data_nascimento: form.data_nascimento || null,
+      desligamento: form.status === "desligado" ? (form.desligamento || null) : null,
+      dependentes_irrf: form.dependentes_irrf || 0,
       salario: form.salario || 0,
       status: form.status,
       user_email: form.user_email || null,
@@ -784,6 +791,12 @@ export function FuncionariosSection() {
                   style={inputStyle}
                 />
               </Campo>
+              <Campo label="Dependentes para IRRF">
+                <input type="number" min="0" value={form.dependentes_irrf || ""} onChange={(e) => set("dependentes_irrf", Number(e.target.value))} style={inputStyle}/>
+              </Campo>
+              {form.status === "desligado" && <Campo label="Data de desligamento" obrigatorio>
+                <input type="date" value={form.desligamento} onChange={(e) => set("desligamento", e.target.value)} style={inputStyle}/>
+              </Campo>}
               <Campo label="Salário (R$)" obrigatorio>
                 <input
                   type="number"

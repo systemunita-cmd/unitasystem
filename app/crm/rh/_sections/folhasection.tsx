@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import { supabase } from "../../../lib/supabase";
+import { FolhaMotorContabil } from "./FolhaMotorContabil";
 
 // ═══════════════════════════════════════════════════════════════════════
 // 🧑‍💼 RH · Folha de Pagamento  (CONECTADO — 'folha_itens' por competência)
@@ -80,6 +81,7 @@ const hh = (h: number) => `${h >= 0 ? "+" : ""}${(h || 0).toFixed(1)}h`;
 
 type Item = {
   id: string;
+  funcionario_id: string;
   competencia: string;
   nome: string;
   cargo: string;
@@ -101,13 +103,22 @@ type Item = {
   base_inss: number;
   base_fgts: number;
   fgts: number;
+  desconto_dsr: number;
+  inss_patronal: number;
+  rat: number;
+  terceiros: number;
+  provisao_decimo: number;
+  provisao_ferias: number;
+  provisao_fgts: number;
+  encargos_empresa: number;
+  eventos_descontos: number;
   memoria_calculo: Record<string, any>;
   bonus_meta: number;
   status: string;
 };
 
 const bruto = (i: Item) => i.base + i.comissao + i.proventos + i.vale_transporte + i.vale_alimentacao + i.beneficios + i.bonus_meta;
-const descontos = (i: Item) => i.inss + i.irrf + i.outros + i.desconto_horas + i.desconto_vale_transporte;
+const descontos = (i: Item) => i.inss + i.irrf + i.outros + i.desconto_horas + i.desconto_dsr + i.desconto_vale_transporte;
 const liquido = (i: Item) => bruto(i) - descontos(i);
 
 export function FolhaSection() {
@@ -132,6 +143,7 @@ export function FolhaSection() {
     }
     const items = (data || []).map((r: any) => ({
       id: r.id,
+      funcionario_id: r.funcionario_id || "",
       competencia: r.competencia || "",
       nome: r.nome,
       cargo: r.cargo || "",
@@ -153,6 +165,15 @@ export function FolhaSection() {
       base_inss: Number(r.base_inss) || 0,
       base_fgts: Number(r.base_fgts) || 0,
       fgts: Number(r.fgts) || 0,
+      desconto_dsr: Number(r.desconto_dsr) || 0,
+      inss_patronal: Number(r.inss_patronal) || 0,
+      rat: Number(r.rat) || 0,
+      terceiros: Number(r.terceiros) || 0,
+      provisao_decimo: Number(r.provisao_decimo) || 0,
+      provisao_ferias: Number(r.provisao_ferias) || 0,
+      provisao_fgts: Number(r.provisao_fgts) || 0,
+      encargos_empresa: Number(r.encargos_empresa) || 0,
+      eventos_descontos: Number(r.eventos_descontos) || 0,
       memoria_calculo: r.memoria_calculo || {},
       bonus_meta: Number(r.bonus_meta) || 0,
       status: r.status || "pendente",
@@ -206,6 +227,8 @@ export function FolhaSection() {
     const { data, error } = await supabase.rpc("gerar_folha_integrada", { p_competencia: novaComp });
     setGerando(false);
     if (error) { alert("Erro ao gerar a folha: " + error.message); return; }
+    const { error: motorErro } = await supabase.rpc("aplicar_calculos_contabeis_folha", { p_competencia: novaComp });
+    if (motorErro) alert("Folha criada, mas o motor contábil precisa ser aplicado: " + motorErro.message);
     await carregar(novaComp);
     alert(`Folha gerada com ${data || 0} colaborador(es), incluindo banco de horas e benefícios.`);
   };
@@ -235,7 +258,7 @@ export function FolhaSection() {
     for (const it of itens) {
       const { error } = await supabase
         .from("folha_itens")
-        .update({ base: it.base, comissao: it.comissao, inss: it.inss, irrf: it.irrf, outros: it.outros })
+        .update({ base: it.base, comissao: it.comissao, inss: it.inss, irrf: it.irrf, outros: it.outros, outros_manuais: Math.max(0, it.outros - it.eventos_descontos) })
         .eq("id", it.id);
       if (error) {
         setSalvando(false);
@@ -244,6 +267,8 @@ export function FolhaSection() {
       }
     }
     setSalvando(false);
+    const { error: motorErro } = await supabase.rpc("aplicar_calculos_contabeis_folha", { p_competencia: comp });
+    if (motorErro) alert("Valores salvos, mas o recálculo contábil falhou: " + motorErro.message);
     carregar(comp);
   };
 
@@ -254,6 +279,8 @@ export function FolhaSection() {
     setProcessando(true);
     const { error: recalculoErro } = await supabase.rpc("gerar_folha_integrada", { p_competencia: comp });
     if (recalculoErro) { setProcessando(false); alert("Erro ao atualizar banco de horas antes do fechamento: " + recalculoErro.message); return; }
+    const { error: motorErro } = await supabase.rpc("aplicar_calculos_contabeis_folha", { p_competencia: comp });
+    if (motorErro) { setProcessando(false); alert("Erro no cálculo contábil antes do fechamento: " + motorErro.message); return; }
     const { error } = await supabase.from("folha_itens").update({ status: "pago" }).eq("competencia", comp);
     setProcessando(false);
     if (error) {
@@ -419,6 +446,8 @@ export function FolhaSection() {
         ))}
       </div>
 
+      {itens.length > 0 && <FolhaMotorContabil competencia={comp} itens={itens} onAtualizado={() => carregar(comp)} />}
+
       {carregando ? (
         <div style={{ ...card, padding: 40, textAlign: "center" }}>
           <p style={{ color: "#6b7280", fontSize: 13 }}>Carregando folha...</p>
@@ -531,8 +560,10 @@ export function FolhaSection() {
                           <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>{it.cargo}</p>
                           <p style={{ color: "#64748b", fontSize: 10, margin: "4px 0 0", lineHeight: 1.45 }}>
                             Benefícios pagos {real(it.vale_transporte + it.vale_alimentacao + it.beneficios)} · Redução por faltas integrais {real(it.desconto_beneficios)}<br/>
-                            Horas pendentes no salário {real(it.desconto_horas)} · VT 6% {real(it.desconto_vale_transporte)}<br/>
-                            INSS base {real(it.base_inss)} · FGTS 8% {real(it.fgts)} (empresa)
+                            Horas pendentes no salário {real(it.desconto_horas)} · DSR {real(it.desconto_dsr)} · VT {real(it.desconto_vale_transporte)}<br/>
+                            INSS base {real(it.base_inss)} · FGTS {real(it.fgts)} · INSS patronal {real(it.inss_patronal)}<br/>
+                            RAT {real(it.rat)} · Terceiros {real(it.terceiros)} · Provisões {real(it.provisao_decimo + it.provisao_ferias + it.provisao_fgts)}<br/>
+                            Custo empresa {real(it.encargos_empresa)}
                           </p>
                         </td>
                         <td style={{ padding: "10px 16px", textAlign: "right" }}>
