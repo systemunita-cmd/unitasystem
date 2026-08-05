@@ -39,6 +39,12 @@ type FaixaComissao = { de: number; ate: number | null; valor: number };
 type RegraComissao = { id?: string; competencia: string; vendedor: string; modo: "por_plano" | "por_venda" | "faixas" | "valor_unico"; valor_por_venda: number; valor_unico: number; faixas: FaixaComissao[]; valores_por_plano: Record<string, number> };
 type PlanoComissao = { plano: string; valor_comissao: number; ativo: boolean };
 const normalizarPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+const identidadeCanonicaVendedor = (valor: string) => {
+  const chave = String(valor || "").trim().toLowerCase();
+  return ["emerson", "emerson parceiro", "emerson@grupounita.net.br"].includes(chave)
+    ? "emerson@grupounita.net.br"
+    : chave;
+};
 const planoResolvido = (item: Venda) => String(item.plano || item.dados_customizados?.plano_escolhido || item.dados_customizados?.plano || "").trim();
 
 export function GestaoFinanceiraRH() {
@@ -78,8 +84,8 @@ export function GestaoFinanceiraRH() {
   }, []);
 
   const identidadeDoVendedor = (chave: string) => {
-    const normal = chave.trim().toLowerCase();
-    return identidades.find(x => x.email.trim().toLowerCase() === normal || x.nome.trim().toLowerCase() === normal);
+    const normal = identidadeCanonicaVendedor(chave);
+    return identidades.find(x => identidadeCanonicaVendedor(x.email) === normal || identidadeCanonicaVendedor(x.nome) === normal);
   };
   const carregar = async () => {
     const [t, f, v, e, a, r, pc] = await Promise.all([
@@ -169,7 +175,7 @@ export function GestaoFinanceiraRH() {
     [...planosComissao].sort((a,b) => Number(a.ativo) - Number(b.ativo)).forEach(x => mapaPlanos.set(normalizarPlano(x.plano), x.valor_comissao));
     const m: Record<string, { qtd: number; valor: number; valorPlano: number; vendas: Venda[] }> = {};
     vendas.forEach(v => {
-      const k = v.vendedor || "Sem vendedor";
+      const k = identidadeCanonicaVendedor(v.vendedor) || "Sem vendedor";
       m[k] ||= { qtd: 0, valor: 0, valorPlano: 0, vendas: [] };
       m[k].qtd++;
       m[k].valor += v.comissao_manual;
@@ -181,12 +187,12 @@ export function GestaoFinanceiraRH() {
 
   const comissoesSupervisor = useMemo(() => {
     const porIdentidade = new Map<string, IdentidadeVendedor>();
-    identidades.forEach(item => { porIdentidade.set(item.email.trim().toLowerCase(),item); porIdentidade.set(item.nome.trim().toLowerCase(),item); });
+    identidades.forEach(item => { porIdentidade.set(identidadeCanonicaVendedor(item.email),item); porIdentidade.set(identidadeCanonicaVendedor(item.nome),item); });
     const equipePorId = new Map(equipesSupervisor.map(item => [String(item.id),item]));
     const usuarioPorId = new Map(identidades.map(item => [String(item.id),item]));
     const grupos = new Map<string,{ equipe:EquipeSupervisor; quantidade:number }>();
     vendas.forEach(venda => {
-      const identidade=porIdentidade.get(String(venda.vendedor||"").trim().toLowerCase());
+      const identidade=porIdentidade.get(identidadeCanonicaVendedor(venda.vendedor));
       const filaId=venda.dados_customizados?.equipe_comercial_id||venda.dados_customizados?.fila_id||identidade?.filaId||identidade?.filasAcesso?.[0];
       const equipe=filaId!=null?equipePorId.get(String(filaId)):undefined;
       if(!equipe?.responsavel_usuario_id)return;
@@ -195,24 +201,24 @@ export function GestaoFinanceiraRH() {
     return Array.from(grupos.values()).map(item=>{const bruto=item.quantidade*regraSupervisor.valor;const desconto=bruto*regraSupervisor.desconto/100;return{...item,responsavel:usuarioPorId.get(String(item.equipe.responsavel_usuario_id)),bruto,desconto,total:bruto-desconto};}).sort((a,b)=>b.total-a.total);
   },[vendas,identidades,equipesSupervisor,regraSupervisor]);
 
-  const regraDoVendedor = (vendedor: string): RegraComissao => regrasComissao.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase()) || { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {} };
+  const regraDoVendedor = (vendedor: string): RegraComissao => regrasComissao.find(r => identidadeCanonicaVendedor(r.vendedor) === identidadeCanonicaVendedor(vendedor)) || { competencia: comp, vendedor: identidadeCanonicaVendedor(vendedor), modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {} };
 
   const atualizarRegra = (vendedor: string, patch: Partial<RegraComissao>) => {
     setRegrasComissao(xs => {
-      const atual = xs.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase());
+      const atual = xs.find(r => identidadeCanonicaVendedor(r.vendedor) === identidadeCanonicaVendedor(vendedor));
       if (atual) return xs.map(r => r === atual ? { ...r, ...patch } : r);
-      return [...xs, { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {}, ...patch }];
+      return [...xs, { competencia: comp, vendedor: identidadeCanonicaVendedor(vendedor), modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [], valores_por_plano: {}, ...patch }];
     });
   };
 
   const salvarRegraComissao = async (vendedor: string) => {
     const regra = regraDoVendedor(vendedor);
     setSalvandoRegra(vendedor);
-    const payload = { competencia: comp, vendedor, modo: regra.modo, valor_por_venda: regra.valor_por_venda || 0, valor_unico: regra.valor_unico || 0, faixas: regra.faixas, valores_por_plano: regra.valores_por_plano || {} };
+    const payload = { competencia: comp, vendedor: identidadeCanonicaVendedor(vendedor), modo: regra.modo, valor_por_venda: regra.valor_por_venda || 0, valor_unico: regra.valor_unico || 0, faixas: regra.faixas, valores_por_plano: regra.valores_por_plano || {} };
     const resposta = regra.id ? await supabase.from("fin_comissao_regras").update(payload).eq("id", regra.id).select("*").single() : await supabase.from("fin_comissao_regras").insert(payload).select("*").single();
     if (resposta.error) setMsg(resposta.error.message);
     else {
-      setRegrasComissao(xs => xs.map(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase() ? { ...r, id: resposta.data.id } : r));
+      setRegrasComissao(xs => xs.map(r => identidadeCanonicaVendedor(r.vendedor) === identidadeCanonicaVendedor(vendedor) ? { ...r, id: resposta.data.id } : r));
       const sync = await supabase.rpc("sincronizar_financeiro_rh", { p_competencia: comp });
       setMsg(sync.error ? sync.error.message : "Regra de comissão salva e folha recalculada.");
     }
@@ -243,13 +249,13 @@ export function GestaoFinanceiraRH() {
     if (!podeEditarComissao) return;
     setSalvandoPlanosInline(vendedor);
     const regra=regraDoVendedor(vendedor);
-    const payload={ competencia:comp, vendedor, modo:"por_plano", valor_por_venda:regra.valor_por_venda||0, valor_unico:regra.valor_unico||0, faixas:regra.faixas, valores_por_plano:regra.valores_por_plano||{} };
+    const payload={ competencia:comp, vendedor:identidadeCanonicaVendedor(vendedor), modo:"por_plano", valor_por_venda:regra.valor_por_venda||0, valor_unico:regra.valor_unico||0, faixas:regra.faixas, valores_por_plano:regra.valores_por_plano||{} };
     const resposta=regra.id
       ? await supabase.from("fin_comissao_regras").update(payload).eq("id",regra.id).select("*").single()
       : await supabase.from("fin_comissao_regras").insert(payload).select("*").single();
     if(resposta.error) setMsg(resposta.error.message);
     else {
-      setRegrasComissao(xs=>xs.map(r=>r.vendedor.trim().toLowerCase()===vendedor.trim().toLowerCase()?{...r,id:resposta.data.id}:r));
+      setRegrasComissao(xs=>xs.map(r=>identidadeCanonicaVendedor(r.vendedor)===identidadeCanonicaVendedor(vendedor)?{...r,id:resposta.data.id}:r));
       const sync=await supabase.rpc("sincronizar_financeiro_rh",{p_competencia:comp});
       setMsg(sync.error?sync.error.message:"Valores exclusivos deste vendedor salvos e folha recalculada.");
     }

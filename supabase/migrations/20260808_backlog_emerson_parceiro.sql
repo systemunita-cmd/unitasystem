@@ -1,31 +1,5 @@
--- BACKLOG conta como instalada para comissÃ£o, metas e supervisÃ£o, sem alterar o status.
--- Consolida aliases histÃ³ricos do Emerson no login canÃ´nico do usuÃ¡rio Emerson Parceiro.
-
-update public.proposta
-set vendedor='emerson@grupounita.net.br'
-where lower(trim(coalesce(vendedor,''))) in ('emerson','emerson parceiro','emerson@grupounita.net.br')
-  and vendedor is distinct from 'emerson@grupounita.net.br';
-
-update public.fin_comissao_regras
-set vendedor='emerson@grupounita.net.br', updated_at=now()
-where lower(trim(coalesce(vendedor,''))) in ('emerson','emerson parceiro')
-  and not exists (
-    select 1 from public.fin_comissao_regras atual
-    where atual.competencia=fin_comissao_regras.competencia
-      and lower(trim(atual.vendedor))='emerson@grupounita.net.br'
-  );
-
-delete from public.fin_comissao_regras antiga
-where lower(trim(coalesce(antiga.vendedor,''))) in ('emerson','emerson parceiro')
-  and exists (
-    select 1 from public.fin_comissao_regras atual
-    where atual.competencia=antiga.competencia
-      and lower(trim(atual.vendedor))='emerson@grupounita.net.br'
-  );
-
-update public.fin_metas
-set vendedor='emerson@grupounita.net.br'
-where lower(trim(coalesce(vendedor,''))) in ('emerson','emerson parceiro');
+-- BACKLOG conta como instalada para comissao, metas e supervisao, sem alterar o status.
+-- Os aliases historicos do Emerson sao consolidados durante o calculo, sem atualizar vendas em massa.
 
 create or replace function public.recalcular_comissoes(p_competencia text)
 returns integer language plpgsql security definer set search_path = public as $$
@@ -57,8 +31,13 @@ begin
         'plano_configurado',cp.id is not null
       ) order by p.data_instalacao,p.id) detalhes
     from public.funcionarios f
-    join public.proposta p on lower(trim(coalesce(p.vendedor,''))) in (
-      lower(trim(coalesce(f.nome,''))),lower(trim(coalesce(f.email,''))),lower(trim(coalesce(f.user_email,'')))
+    join public.proposta p on (
+      lower(trim(coalesce(p.vendedor,''))) in (
+        lower(trim(coalesce(f.nome,''))),lower(trim(coalesce(f.email,''))),lower(trim(coalesce(f.user_email,'')))
+      ) or (
+        lower(trim(coalesce(f.email,'')))='emerson@grupounita.net.br'
+        and lower(trim(coalesce(p.vendedor,''))) in ('emerson','emerson parceiro')
+      )
     )
     left join lateral (
       select tabela.* from public.fin_comissao_planos tabela
@@ -67,8 +46,13 @@ begin
     ) cp on true
     left join lateral (
       select regra.* from public.fin_comissao_regras regra
-      where regra.competencia=p_competencia and lower(trim(regra.vendedor)) in (
-        lower(trim(coalesce(f.nome,''))),lower(trim(coalesce(f.email,''))),lower(trim(coalesce(f.user_email,'')))
+      where regra.competencia=p_competencia and (
+        lower(trim(regra.vendedor)) in (
+          lower(trim(coalesce(f.nome,''))),lower(trim(coalesce(f.email,''))),lower(trim(coalesce(f.user_email,'')))
+        ) or (
+          lower(trim(coalesce(f.email,'')))='emerson@grupounita.net.br'
+          and lower(trim(coalesce(regra.vendedor,''))) in ('emerson','emerson parceiro')
+        )
       ) limit 1
     ) r on true
     where upper(trim(coalesce(p.status_venda,''))) in ('INSTALADA','BACKLOG')
@@ -109,7 +93,7 @@ returns integer language plpgsql security definer set search_path=public as $$
 declare v_total integer:=0;
 begin
   with realizado_vendedor as (
-    select lower(trim(coalesce(vendedor,''))) chave,count(*) qtd,sum(coalesce(valor_plano,0)) valor
+    select case when lower(trim(coalesce(vendedor,''))) in ('emerson','emerson parceiro','emerson@grupounita.net.br') then 'emerson@grupounita.net.br' else lower(trim(coalesce(vendedor,''))) end chave, count(*) qtd,sum(coalesce(valor_plano,0)) valor
     from public.proposta
     where upper(trim(coalesce(status_venda,''))) in ('INSTALADA','BACKLOG')
       and data_instalacao is not null and to_char(data_instalacao::date,'YYYY-MM')=p_competencia
@@ -140,8 +124,9 @@ begin
       'origem',case when mv.id is not null then 'vendedor' else 'equipe' end
     ),updated_at=now()
   from public.funcionarios fu
-  left join public.fin_metas mv on mv.competencia=p_competencia and lower(trim(mv.vendedor)) in (
-    lower(trim(fu.nome)),lower(trim(fu.email)),lower(trim(fu.user_email))
+  left join public.fin_metas mv on mv.competencia=p_competencia and (
+    lower(trim(mv.vendedor)) in (lower(trim(fu.nome)),lower(trim(fu.email)),lower(trim(fu.user_email)))
+    or (lower(trim(coalesce(fu.email,'')))='emerson@grupounita.net.br' and lower(trim(coalesce(mv.vendedor,''))) in ('emerson','emerson parceiro'))
   )
   left join realizado_vendedor rv on rv.chave in (
     lower(trim(fu.nome)),lower(trim(fu.email)),lower(trim(fu.user_email))
@@ -170,18 +155,11 @@ begin
 end;
 $$;
 
-create index if not exists proposta_instalada_backlog_competencia_idx
-  on public.proposta(data_instalacao,vendedor)
-  where status_venda in ('INSTALADA','BACKLOG') and data_instalacao is not null;
+-- O indice foi removido desta execucao para evitar espera de lock no CRM em producao.
 
--- O recálculo histórico não é executado aqui para evitar timeout no SQL Editor.
--- A tela recalcula a competência selecionada através de sincronizar_financeiro_rh.
--- Para recalcular um mês manualmente, execute separadamente:
+-- O recalculo historico nao e executado aqui para evitar timeout no SQL Editor.
+-- A tela recalcula a competencia selecionada atraves de sincronizar_financeiro_rh.
+-- Para recalcular um mes manualmente, execute separadamente:
 -- select public.sincronizar_financeiro_rh('2026-06');
 
-select jsonb_build_object(
-  'emerson_vendas_consolidadas',count(*) filter (where vendedor='emerson@grupounita.net.br'),
-  'backlog_total',count(*) filter (where upper(trim(coalesce(status_venda,'')))='BACKLOG'),
-  'backlog_com_data',count(*) filter (where upper(trim(coalesce(status_venda,'')))='BACKLOG' and data_instalacao is not null)
-) as resultado
-from public.proposta;
+select 'Configuracao de BACKLOG e consolidacao virtual do Emerson aplicadas.' as resultado;
