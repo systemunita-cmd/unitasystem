@@ -6,7 +6,7 @@ import { supabase } from "../../../lib/supabase";
 type Props = { competencia: string; fechado: boolean; onMensagem: (mensagem: string) => void };
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; vencimento?: string; categoria?: string; centro_custo?: string; origem_modulo?: string; origem_tipo?: string; valor_conciliado?: number };
 type Folha = { id: string; nome: string; cargo?: string; base: number; vale_transporte: number; vale_alimentacao: number; beneficios: number; encargos_empresa: number; comissao: number; bonus_meta: number; inss: number; irrf: number; outros: number; status: string };
-type Venda = { id: number; nome: string; vendedor: string; plano: string; data_instalacao: string };
+type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string };
 type Plano = { plano: string; valor_comissao: number; ativo: boolean };
 
 const dinheiro = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -14,6 +14,8 @@ const soma = <T,>(itens: T[], seletor: (item: T) => number) => itens.reduce((tot
 const proxima = (competencia: string) => { const [ano, mes] = competencia.split("-").map(Number); const data = new Date(ano, mes, 1); return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-01`; };
 const pago = (titulo: Titulo) => /pago|paga|quitado|conciliado/.test(String(titulo.status || "").toLowerCase()) || Number(titulo.valor_conciliado || 0) >= Number(titulo.valor || 0);
 const chave = (valor: string) => valor.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR");
+const chavePlano = (valor: string) => chave(valor).replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+const planoResolvido = (item: Venda) => String(item.plano || item.dados_customizados?.plano_escolhido || item.dados_customizados?.plano || "").trim();
 
 export function CaixaGeralAutomatico({ competencia, fechado, onMensagem }: Props) {
   const [titulos, setTitulos] = useState<Titulo[]>([]);
@@ -28,12 +30,12 @@ export function CaixaGeralAutomatico({ competencia, fechado, onMensagem }: Props
     const [t, f, v, p] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,vencimento,categoria,centro_custo,origem_modulo,origem_tipo,valor_conciliado").eq("competencia", competencia).order("vencimento"),
       supabase.from("folha_itens").select("id,nome,cargo,base,vale_transporte,vale_alimentacao,beneficios,encargos_empresa,comissao,bonus_meta,inss,irrf,outros,status").eq("competencia", competencia).order("nome"),
-      supabase.from("proposta").select("id,nome,vendedor,plano,data_instalacao").eq("status_venda", "INSTALADA").gte("data_instalacao", `${competencia}-01`).lt("data_instalacao", proxima(competencia)),
-      supabase.from("fin_comissao_planos").select("plano,valor_comissao,ativo").eq("ativo", true),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao").eq("status_venda", "INSTALADA").gte("data_instalacao", `${competencia}-01`).lt("data_instalacao", proxima(competencia)),
+      supabase.from("fin_comissao_planos").select("plano,valor_comissao,ativo"),
     ]);
     setTitulos((t.data || []).map((item: any) => ({ ...item, valor: Number(item.valor) || 0, valor_conciliado: Number(item.valor_conciliado) || 0 })));
     setFolha((f.data || []).map((item: any) => ({ ...item, base: Number(item.base) || 0, vale_transporte: Number(item.vale_transporte) || 0, vale_alimentacao: Number(item.vale_alimentacao) || 0, beneficios: Number(item.beneficios) || 0, encargos_empresa: Number(item.encargos_empresa) || 0, comissao: Number(item.comissao) || 0, bonus_meta: Number(item.bonus_meta) || 0, inss: Number(item.inss) || 0, irrf: Number(item.irrf) || 0, outros: Number(item.outros) || 0 })));
-    setVendas((v.data || []) as Venda[]);
+    setVendas(((v.data || []) as Venda[]).map(item => ({ ...item, plano: planoResolvido(item) })));
     setPlanos((p.data || []).map((item: any) => ({ ...item, valor_comissao: Number(item.valor_comissao) || 0 })));
     const erro = t.error || f.error || v.error || (p.error?.code === "PGRST205" ? null : p.error);
     if (erro) onMensagem(erro.message);
@@ -51,14 +53,14 @@ export function CaixaGeralAutomatico({ competencia, fechado, onMensagem }: Props
   const saidasPagas = soma(titulos.filter(item => item.tipo !== "receber" && pago(item)), item => item.valor);
   const pendente = soma(titulos.filter(item => !pago(item)), item => item.valor);
   const totalFolha = soma(folha, item => item.base + item.vale_transporte + item.vale_alimentacao + item.beneficios + item.encargos_empresa + item.comissao + item.bonus_meta);
-  const mapaPlanos = new Map(planos.map(item => [chave(item.plano), item.valor_comissao]));
+  const mapaPlanos = new Map<string, number>(); [...planos].sort((a,b) => Number(a.ativo) - Number(b.ativo)).forEach(item => mapaPlanos.set(chavePlano(item.plano), item.valor_comissao));
   const vendedores = new Map<string, number>();
   vendas.forEach(item => vendedores.set(chave(item.vendedor || "Sem vendedor"), (vendedores.get(chave(item.vendedor || "Sem vendedor")) || 0) + 1));
   const comissoesPlano = useMemo(() => {
     const mapa = new Map<string, { plano: string; instaladas: number; elegiveis: number; valorUnitario: number; total: number }>();
     vendas.forEach(venda => {
       const nomePlano = venda.plano || "Plano não informado";
-      const item = mapa.get(chave(nomePlano)) || { plano: nomePlano, instaladas: 0, elegiveis: 0, valorUnitario: mapaPlanos.get(chave(nomePlano)) || 0, total: 0 };
+      const item = mapa.get(chave(nomePlano)) || { plano: nomePlano, instaladas: 0, elegiveis: 0, valorUnitario: mapaPlanos.get(chavePlano(nomePlano)) || 0, total: 0 };
       item.instaladas += 1;
       if ((vendedores.get(chave(venda.vendedor || "Sem vendedor")) || 0) >= 20) { item.elegiveis += 1; item.total += item.valorUnitario; }
       mapa.set(chave(nomePlano), item);

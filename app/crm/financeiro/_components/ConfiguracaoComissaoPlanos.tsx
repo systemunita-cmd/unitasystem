@@ -6,7 +6,7 @@ import { supabase } from "../../../lib/supabase";
 type PlanoBanco = { id?: string; plano: string; plano_chave?: string; valor_comissao: number; ativo: boolean };
 type Props = { competencia: string; podeEditar: boolean; onMensagem: (mensagem: string) => void; onAtualizar: () => void };
 
-const normalizar = (valor: string) => valor.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR");
+const normalizar = (valor: string) => valor.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
 const dinheiro = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export function ConfiguracaoComissaoPlanos({ competencia, podeEditar, onMensagem, onAtualizar }: Props) {

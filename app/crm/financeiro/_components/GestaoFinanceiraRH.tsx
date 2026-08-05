@@ -30,13 +30,15 @@ const botao = { border: "1px solid #4d7c0f", borderRadius: 10, padding: "10px 15
 
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string; valor_conciliado?: number; origem_modulo?: string; origem_tipo?: string };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
-type Venda = { id: number; nome: string; vendedor: string; plano: string; data_instalacao: string; comissao_manual: number };
+type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; comissao_manual: number };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string; status_conciliacao?: string; valor_alocado?: number };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
 type IdentidadeVendedor = { email: string; nome: string; fila: string };
 type FaixaComissao = { de: number; ate: number | null; valor: number };
 type RegraComissao = { id?: string; competencia: string; vendedor: string; modo: "por_plano" | "por_venda" | "faixas" | "valor_unico"; valor_por_venda: number; valor_unico: number; faixas: FaixaComissao[] };
 type PlanoComissao = { plano: string; valor_comissao: number; ativo: boolean };
+const normalizarPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+const planoResolvido = (item: Venda) => String(item.plano || item.dados_customizados?.plano_escolhido || item.dados_customizados?.plano || "").trim();
 
 export function GestaoFinanceiraRH() {
   const { isDono, isSuperAdmin, perfil } = usePermissao();
@@ -80,15 +82,15 @@ export function GestaoFinanceiraRH() {
     const [t, f, v, e, a, r, pc] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo,valor_conciliado,origem_modulo,origem_tipo").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
-      supabase.from("proposta").select("id,nome,vendedor,plano,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
       supabase.from("fin_alertas").select("*").neq("status", "resolvido").order("vencimento"),
       supabase.from("fin_comissao_regras").select("*").eq("competencia", comp),
-      supabase.from("fin_comissao_planos").select("plano,valor_comissao,ativo").eq("ativo", true),
+      supabase.from("fin_comissao_planos").select("plano,valor_comissao,ativo"),
     ]);
     setTitulos((t.data || []).map((x: any) => ({ ...x, valor: Number(x.valor) || 0, competencia: x.competencia || (x.vencimento || "").slice(0, 7) })));
     setFechamentos((f.data || []) as Fechamento[]);
-    setVendas((v.data || []).map((x: any) => ({ ...x, comissao_manual: Number(x.comissao_manual) || 0 })) as Venda[]);
+    setVendas((v.data || []).map((x: any) => ({ ...x, plano: planoResolvido(x), comissao_manual: Number(x.comissao_manual) || 0 })) as Venda[]);
     setExtratos((e.data || []).map((x: any) => ({ ...x, valor: Number(x.valor) || 0 })) as Extrato[]);
     setAlertas((a.data || []) as Alerta[]);
     setRegrasComissao((r.data || []).map((x: any) => ({ ...x, valor_por_venda: Number(x.valor_por_venda) || 0, valor_unico: Number(x.valor_unico) || 0, faixas: Array.isArray(x.faixas) ? x.faixas.map((f: any) => ({ de: Number(f.de) || 0, ate: f.ate === null || f.ate === "" ? null : Number(f.ate), valor: Number(f.valor) || 0 })) : [] })) as RegraComissao[]);
@@ -160,8 +162,8 @@ export function GestaoFinanceiraRH() {
   };
 
   const porVendedor = useMemo(() => {
-    const normalizarPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR");
-    const mapaPlanos = new Map(planosComissao.map(x => [normalizarPlano(x.plano), x.valor_comissao]));
+    const mapaPlanos = new Map<string, number>();
+    [...planosComissao].sort((a,b) => Number(a.ativo) - Number(b.ativo)).forEach(x => mapaPlanos.set(normalizarPlano(x.plano), x.valor_comissao));
     const m: Record<string, { qtd: number; valor: number; valorPlano: number; vendas: Venda[] }> = {};
     vendas.forEach(v => {
       const k = v.vendedor || "Sem vendedor";
@@ -268,7 +270,7 @@ export function GestaoFinanceiraRH() {
                 ["valor_unico","Comissão única","Informe apenas o total a receber"],
               ] as const).map(([modo,titulo,descricao]) => <button key={modo} onClick={() => atualizarRegra(vendedor,{modo})} style={{ textAlign: "left", minHeight: 76, padding: "11px 12px", border: `1px solid ${regra.modo===modo?"#65a30d":"#dbe5cf"}`, background: regra.modo===modo?"linear-gradient(180deg,#ecfccb,#d9f99d)":"#fff", color: regra.modo===modo?"#365314":"#475569", boxShadow: regra.modo===modo?"0 2px 0 #65a30d,0 7px 16px rgba(101,163,13,.12)":"0 3px 10px rgba(15,23,42,.04)" }}><b style={{ display: "block", fontSize: 11 }}>{titulo}</b><span style={{ display: "block", marginTop: 4, fontSize: 9, lineHeight: 1.35, fontWeight: 500 }}>{descricao}</span></button>)}</div>
 
-              {regra.modo === "por_plano" && <div style={{ background: "#fff", border: "1px solid #d9f99d", borderRadius: 14, padding: 16, marginBottom: 14 }}><b style={{ color: "#3f6212", fontSize: 12 }}>Cálculo automático por plano instalado</b><p style={{ color: "#64748b", fontSize: 10 }}>O valor de cada cliente vem da tabela padrão acima. Administradores alteram uma vez e o CRM recalcula todos os vendedores elegíveis.</p><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 7, marginTop: 10 }}>{Array.from(new Set(x.vendas.map(v => v.plano || "Plano não informado"))).map(nomePlano => { const quantidade = x.vendas.filter(item => (item.plano || "Plano não informado") === nomePlano).length; const valor = planosComissao.find(p => p.plano.trim().toLocaleLowerCase("pt-BR") === nomePlano.trim().toLocaleLowerCase("pt-BR"))?.valor_comissao || 0; return <div key={nomePlano} style={{ padding: 9, border: "1px solid #ecfccb", borderRadius: 10, background: "#fbfff4", fontSize: 10 }}><b style={{ display: "block" }}>{nomePlano}</b><span style={{ color: "#64748b" }}>{quantidade} × {moeda(valor)} = <b>{moeda(quantidade * valor)}</b></span></div>; })}</div></div>}
+              {regra.modo === "por_plano" && <div style={{ background: "#fff", border: "1px solid #d9f99d", borderRadius: 14, padding: 16, marginBottom: 14 }}><b style={{ color: "#3f6212", fontSize: 12 }}>Cálculo automático por plano instalado</b><p style={{ color: "#64748b", fontSize: 10 }}>O valor de cada cliente vem da tabela padrão acima. Administradores alteram uma vez e o CRM recalcula todos os vendedores elegíveis.</p><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 7, marginTop: 10 }}>{Array.from(new Set(x.vendas.map(v => v.plano || "Plano não informado"))).map(nomePlano => { const quantidade = x.vendas.filter(item => (item.plano || "Plano não informado") === nomePlano).length; const mapa = new Map<string,number>(); [...planosComissao].sort((a,b)=>Number(a.ativo)-Number(b.ativo)).forEach(p=>mapa.set(normalizarPlano(p.plano),p.valor_comissao)); const valor = mapa.get(normalizarPlano(nomePlano)) || 0; return <div key={nomePlano} style={{ padding: 9, border: "1px solid #ecfccb", borderRadius: 10, background: "#fbfff4", fontSize: 10 }}><b style={{ display: "block" }}>{nomePlano}</b><span style={{ color: "#64748b" }}>{quantidade} × {moeda(valor)} = <b>{moeda(quantidade * valor)}</b></span></div>; })}</div></div>}
 
               {regra.modo === "por_venda" && <div style={{ background: "#fff", border: "1px solid #d9f99d", borderRadius: 14, padding: 16, marginBottom: 14 }}><label style={{ display: "block", color: "#3f6212", fontSize: 11, fontWeight: 900, marginBottom: 7 }}>VALOR PARA CADA VENDA INSTALADA</label><div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><div style={{ position: "relative", width: 220 }}><span style={{ position: "absolute", left: 12, top: 12, fontSize: 11, fontWeight: 800, color: "#4d7c0f" }}>R$</span><input type="number" min="0" step="0.01" value={regra.valor_por_venda} onChange={e=>atualizarRegra(vendedor,{valor_por_venda:Number(e.target.value)})} style={{...input,width:"100%",paddingLeft:36}}/></div><span style={{ color: "#64748b", fontSize: 11 }}>{x.qtd} vendas × {moeda(regra.valor_por_venda)} = <b>{moeda(x.qtd*regra.valor_por_venda)}</b></span></div></div>}
 
