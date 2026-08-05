@@ -31,7 +31,7 @@ export function CaixaGeralAutomatico({ competencia, fechado, onMensagem }: Props
     const [t, f, v, p] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,vencimento,pago_em,observacao,categoria,centro_custo,origem_modulo,origem_tipo,valor_conciliado,juros_multa,planilha_grupo").eq("competencia", competencia).order("vencimento"),
       supabase.from("folha_itens").select("id,nome,cargo,base,vale_transporte,vale_alimentacao,beneficios,encargos_empresa,comissao,bonus_meta,inss,irrf,outros,status").eq("competencia", competencia).order("nome"),
-      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao").eq("status_venda", "INSTALADA").gte("data_instalacao", `${competencia}-01`).lt("data_instalacao", proxima(competencia)),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao").in("status_venda", ["INSTALADA", "BACKLOG"]).gte("data_instalacao", `${competencia}-01`).lt("data_instalacao", proxima(competencia)),
       supabase.from("fin_comissao_planos").select("plano,valor_comissao,ativo"),
     ]);
     setTitulos((t.data || []).map((item: any) => ({ ...item, valor: Number(item.valor) || 0, valor_conciliado: Number(item.valor_conciliado) || 0, juros_multa: Number(item.juros_multa) || 0, planilha_grupo: item.planilha_grupo || "empresa" })));

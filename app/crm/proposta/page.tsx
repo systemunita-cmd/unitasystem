@@ -605,7 +605,7 @@ function PropostaForm() {
     const statusFinal = vendedorTravaStatus ? STATUS_PADRAO : (form.status_venda || STATUS_PADRAO);
     const agora = new Date();
     const hojeLocal = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}-${String(agora.getDate()).padStart(2,"0")}`;
-    const dataInstalacaoEfetiva = String(statusFinal).trim().toUpperCase() === "INSTALADA" ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
+    const dataInstalacaoEfetiva = ["INSTALADA","BACKLOG"].includes(String(statusFinal).trim().toUpperCase()) ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
     const payload: any = {
       criado_por: perm.userEmail || null,
       equipe_id_criador: perm.equipeId || null,

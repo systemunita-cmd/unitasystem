@@ -87,7 +87,7 @@ export function FinanceiroGeralPlanilhas() {
     const resultados = await Promise.all([
       supabase.from("fin_titulos").select("id,competencia,tipo,descricao,valor,valor_conciliado,juros_multa,status,vencimento,pago_em,observacao,categoria,centro_custo,planilha_grupo").eq("competencia", competencia).order("vencimento"),
       supabase.from("folha_itens").select("id,funcionario_id,nome,cargo,salario_cadastrado,salario_proporcional,base,proventos,comissao,bonus_meta,inss,irrf,outros,fgts,encargos_empresa,vale_transporte,vale_alimentacao,beneficios,desconto_horas,desconto_dsr,desconto_beneficios,desconto_vale_transporte,horas_previstas_min,horas_trabalhadas_min,saldo_banco_min,memoria_calculo,status").eq("competencia", competencia).order("nome"),
-      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador").eq("status_venda", "INSTALADA").gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
+      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador").in("status_venda", ["INSTALADA", "BACKLOG"]).gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
       supabase.from("fin_comissao_planos").select("id,plano,valor_comissao,ativo").order("plano"),
       supabase.from("funcionarios").select("id,nome,email,user_email,cargo,status,equipe_id").order("nome"),
       supabase.from("equipes").select("id,nome").order("nome"),

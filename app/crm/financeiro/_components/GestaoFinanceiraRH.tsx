@@ -85,7 +85,7 @@ export function GestaoFinanceiraRH() {
     const [t, f, v, e, a, r, pc] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo,valor_conciliado,origem_modulo,origem_tipo").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
-      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual").in("status_venda", ["INSTALADA", "BACKLOG"]).gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
       supabase.from("fin_alertas").select("*").neq("status", "resolvido").order("vencimento"),
       supabase.from("fin_comissao_regras").select("*").eq("competencia", comp),

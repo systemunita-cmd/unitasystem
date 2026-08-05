@@ -1344,10 +1344,10 @@ export default function Vendas() {
           delete dcFinal[s];
         }
       }
-      const statusEhInstalada = String(form.status_venda || "").trim().toUpperCase() === "INSTALADA";
+      const statusContaComoInstalada = ["INSTALADA","BACKLOG"].includes(String(form.status_venda || "").trim().toUpperCase());
       const agora = new Date();
       const hojeLocal = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}-${String(agora.getDate()).padStart(2,"0")}`;
-      const dataInstalacaoEfetiva = statusEhInstalada ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
+      const dataInstalacaoEfetiva = statusContaComoInstalada ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
       const payload: Record<string, any> = {
         data_proposta: form.data_proposta, nome: up(form.nome), cpf: form.cpf, rg: up(form.rg),
         data_nascimento: form.data_nascimento, nome_mae: up(form.nome_mae), email: form.email,
@@ -1844,7 +1844,7 @@ export default function Vendas() {
       "REPROVADA", "CHURN", "CHURN VOLUNTÁRIO", "CHURN INVOLUNTÁRIO",
       "FRAUDE INST", "FR PREVENÇÃO",
     ];
-    const instaladasArr = propostasFiltradas.filter(p => norm(p.status_venda) === "INSTALADA");
+    const instaladasArr = propostasFiltradas.filter(p => ["INSTALADA","BACKLOG"].includes(norm(p.status_venda)));
     const aguardandoArr = propostasFiltradas.filter(p => norm(p.status_venda) === "AGUARDANDO INSTALAÇÃO");
     const instaladas = instaladasArr.length;
     const aguardando = aguardandoArr.length;
