@@ -220,11 +220,24 @@ export function GestaoFinanceiraRH() {
     setSalvandoVenda(null);
   };
 
-  const abas = [["caixa","Caixa geral"],["competencias","Competências"],["relatorios","Relatórios"],["rh","RH integrado"],["comissoes","Comissões"],["importacao","Importação"],["conciliacao","Conciliação"],["projecao","Fluxo projetado"],["alertas","Alertas"],["metas","Metas e inadimplência"],["cadastros","Cadastros"],["bancos","Open Finance"],["ia","Leitura por IA"]] as const;
+  const nomesAba: Record<string, string> = {
+    caixa: "Caixa geral", competencias: "Competências", relatorios: "Relatórios",
+    rh: "RH integrado", comissoes: "Comissões", importacao: "Importação",
+    conciliacao: "Conciliação", projecao: "Fluxo projetado", alertas: "Alertas",
+    metas: "Metas e inadimplência", cadastros: "Cadastros", bancos: "Open Finance", ia: "Leitura por IA",
+  };
   return (
     <div className="fin-gestao" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ background: "linear-gradient(135deg,#ffffff 0%,#f3f8f5 100%)", border: "1px solid #dcebe2", borderRadius: 18, padding: "20px 22px", boxShadow: "0 12px 32px rgba(63,98,18,.07)" }}><span style={{ display: "inline-block", background: "#e6f1eb", color: "#294c3b", borderRadius: 999, padding: "5px 9px", fontSize: 10, fontWeight: 900, letterSpacing: ".06em" }}>CENTRAL FINANCEIRA</span><h1 style={{ margin: "9px 0 0", fontSize: 25 }}>Gestão Financeira + RH</h1><p style={{ color: "#64748b", fontSize: 12, margin: "5px 0 0" }}>Competências, folha, comissões, conciliação e planejamento em um só lugar.</p></div>
-      <div className="fin-gestao-tabs">{abas.map(([k,l]) => <button key={k} onClick={() => setAba(k)} style={{ ...botao, background: aba === k ? "#5b8f74" : "#fff", color: aba === k ? "#fff" : "#294c3b", border: "1px solid #bfd9ca" }}>{l}</button>)}</div>
+      <div className="fin-gestao-nav">
+        <div className="fin-gestao-nav-identidade"><small>ÁREA ATUAL</small><b>{nomesAba[aba]}</b></div>
+        <label><span>Navegar para</span><select value={aba} onChange={e => setAba(e.target.value)}>
+          <optgroup label="Visão financeira"><option value="caixa">Caixa geral</option><option value="competencias">Competências</option><option value="relatorios">Relatórios</option></optgroup>
+          <optgroup label="Operação"><option value="rh">RH integrado</option><option value="comissoes">Comissões</option><option value="importacao">Importação</option><option value="conciliacao">Conciliação</option></optgroup>
+          <optgroup label="Planejamento"><option value="projecao">Fluxo projetado</option><option value="alertas">Alertas</option><option value="metas">Metas e inadimplência</option></optgroup>
+          <optgroup label="Configurações"><option value="cadastros">Cadastros</option><option value="bancos">Open Finance</option><option value="ia">Leitura por IA</option></optgroup>
+        </select></label>
+      </div>
       <div className="fin-gestao-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><span style={{ color: "#64748b", fontSize: 11, fontWeight: 800 }}>COMPETÊNCIA</span><input type="month" value={comp} onChange={e => setComp(e.target.value)} style={input}/>{msg && <span style={{ fontSize: 11, color: "#475569" }}>{msg}</span>}</div>
 
       {aba === "caixa" && <CaixaGeralAutomatico competencia={comp} fechado={fechado} onMensagem={setMsg} />}

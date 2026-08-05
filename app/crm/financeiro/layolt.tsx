@@ -2878,8 +2878,13 @@ export default function FinanceiroLayolt() {
         .financeiro-content tbody tr { transition:background .14s ease; }
         .financeiro-content tbody tr:hover { background:#f3f8f5!important; }
         .financeiro-content h1,.financeiro-content h2,.financeiro-content h3 { color:#0f172a; letter-spacing:-.025em; }
-        .fin-gestao-tabs { display:flex; gap:8px; overflow-x:auto; padding:5px 3px 11px; scrollbar-width:thin; }
-        .fin-gestao-tabs button { white-space:nowrap; min-height:42px; padding:10px 15px!important; }
+        .fin-gestao-nav { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:11px 13px; background:#fff; border:1px solid #dbe5df; border-radius:11px; box-shadow:0 4px 14px rgba(15,23,42,.035); }
+        .fin-gestao-nav-identidade { display:grid; gap:2px; }
+        .fin-gestao-nav-identidade small,.fin-gestao-nav label span { color:#718096; font-size:9px; font-weight:900; letter-spacing:.08em; }
+        .fin-gestao-nav-identidade b { color:#23372d; font-size:14px; }
+        .fin-gestao-nav label { display:grid; gap:4px; width:min(360px,100%); }
+        .fin-gestao-nav select { min-height:39px; width:100%; border:1px solid #cbd8d1; border-radius:8px; background:#f8faf9; color:#24372e; padding:0 10px; font-weight:800; font-size:11px; }
+        @media(max-width:640px){.fin-gestao-nav{align-items:stretch;flex-direction:column}.fin-gestao-nav label{width:100%}}
         .fin-gestao-toolbar { background:#fff; border:1px solid #e2e8f0; border-radius:14px; padding:12px 14px; box-shadow:0 8px 24px rgba(15,23,42,.045); }
         @media (max-width:767px) { .financeiro-content { padding-left:12px!important; padding-right:12px!important; } .financeiro-content button { min-height:42px; } }
       `}</style>
