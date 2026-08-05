@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 import { FinanceiroAnexos } from "./_components/FinanceiroAnexos";
 import { GestaoFinanceiraRH } from "./_components/GestaoFinanceiraRH";
+import { FinanceiroGeralPlanilhas } from "./_components/FinanceiroGeralPlanilhas";
 
 function useClassificacoesFinanceiras(tipo: "pagar" | "receber") {
   const [categorias, setCategorias] = useState<string[]>([]);
@@ -2798,7 +2799,10 @@ const GRUPOS: Grupo[] = [
     key: "geral",
     icon: "📊",
     label: "Visão",
-    itens: [{ key: "resumo", label: "Resumo" }],
+    itens: [
+      { key: "resumo", label: "Resumo" },
+      { key: "geral-planilhas", label: "Geral" },
+    ],
   },
   {
     key: "gestao-modulo",
@@ -3131,6 +3135,8 @@ export default function FinanceiroLayolt() {
       <div className="financeiro-content" style={{ flex: 1, overflowY: "auto", minWidth: 0, padding: isMobile ? "56px 12px 16px" : "28px 32px 40px" }}>
         {aba === "resumo" ? (
           <ResumoSection />
+        ) : aba === "geral-planilhas" ? (
+          <FinanceiroGeralPlanilhas />
         ) : aba === "gestao" ? (
           <GestaoFinanceiraRH />
         ) : aba === "receber" ? (
