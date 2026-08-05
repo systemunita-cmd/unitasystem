@@ -2818,7 +2818,6 @@ const GRUPOS: Grupo[] = [
     itens: [
       { key: "receber", label: "Receber (Operadoras)" },
       { key: "pagar", label: "Pagar (Despesas)" },
-      { key: "folha", label: "Folha do Mês" },
     ],
   },
 ];
