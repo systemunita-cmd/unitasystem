@@ -27,7 +27,17 @@ const TIPO_COR: Record<string, string> = {
   Marcação: "#6b7280",
 };
 
-type Func = { nome: string; cargo: string };
+type Func = { id: string; nome: string; cargo: string };
+async function inserirPonto(payload: Record<string, any>) {
+  let resultado = await supabase.from("ponto_registros").insert(payload);
+  if (resultado.error && /funcionario_id/i.test(resultado.error.message || "")) {
+    const legado = { ...payload };
+    delete legado.funcionario_id;
+    resultado = await supabase.from("ponto_registros").insert(legado);
+  }
+  return resultado.error;
+}
+
 type Batida = {
   id: string;
   tipo: string;
@@ -99,7 +109,7 @@ export default function BaterPontoPage() {
       // à prova de qualquer diferença. Casa por user_email OU pelo e-mail do cadastro.
       const { data: todos, error } = await supabase
         .from("funcionarios")
-        .select("nome, cargo, email, user_email");
+        .select("id, nome, cargo, email, user_email");
       if (error) console.error("[ponto] erro ao buscar funcionários:", error);
       const f = (todos || []).find(
         (x: any) =>
@@ -110,7 +120,7 @@ export default function BaterPontoPage() {
         setCarregando(false);
         return;
       }
-      setFunc({ nome: f.nome, cargo: f.cargo || "" });
+      setFunc({ id: f.id, nome: f.nome, cargo: f.cargo || "" });
       // 🤳 Lê a config de selfie do usuário (default = exige, se não achar/for null)
       try {
         const { data: u } = await supabase
@@ -228,7 +238,8 @@ export default function BaterPontoPage() {
     }
     const tipo = TIPOS[batidasHoje.length] || "Marcação";
     const agora = new Date();
-    const { error } = await supabase.from("ponto_registros").insert({
+    const error = await inserirPonto({
+      funcionario_id: func.id,
       funcionario: func.nome,
       cargo: func.cargo,
       tipo,
@@ -264,7 +275,8 @@ export default function BaterPontoPage() {
     }
     const tipo = TIPOS[batidasHoje.length] || "Marcação";
     const agora = new Date();
-    const { error } = await supabase.from("ponto_registros").insert({
+    const error = await inserirPonto({
+      funcionario_id: func.id,
       funcionario: func.nome,
       cargo: func.cargo,
       tipo,

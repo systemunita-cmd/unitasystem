@@ -43,41 +43,31 @@ function mesAtual() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-const diaChave = (iso: string) => new Date(iso).toLocaleDateString("pt-BR");
-
-// horas trabalhadas no dia = soma dos intervalos (entrada→saída em pares)
-function horasDoDia(batidas: { data_hora: string }[]): number {
-  const ord = [...batidas].sort((a, b) => a.data_hora.localeCompare(b.data_hora));
-  let ms = 0;
-  for (let i = 0; i + 1 < ord.length; i += 2) {
-    ms += new Date(ord[i + 1].data_hora).getTime() - new Date(ord[i].data_hora).getTime();
-  }
-  return ms / 3600000;
-}
-
-type Registro = { funcionario: string; cargo: string; data_hora: string };
-type Lanc = { id: string; funcionario: string; data: string; descricao: string; horas: number };
+type Lanc = { id: string; funcionario_id?: string; funcionario: string; data: string; descricao: string; horas: number };
 const FORM_VAZIO: Lanc = { id: "", funcionario: "", data: "", descricao: "", horas: 0 };
 
 type FuncSaldo = {
   funcionario: string;
   cargo: string;
-  diasTrabalhados: number;
   horasTrab: number;
   horasEsper: number;
   saldoPonto: number;
   ajuste: number;
   saldoFinal: number;
+  faltas: number;
+  incompletas: { dia: string; tipos: string }[];
   dias: { dia: string; trab: number; saldo: number }[];
   manuais: Lanc[];
 };
 
 export function BancoHorasSection() {
-  const [registros, setRegistros] = useState<Registro[]>([]);
+  const [oficiais, setOficiais] = useState<any[]>([]);
+  const [funcionarios, setFuncionarios] = useState<any[]>([]);
   const [manuais, setManuais] = useState<Lanc[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
+  const [pendencias, setPendencias] = useState<any[]>([]);
   const [mes, setMes] = useState(mesAtual());
-  const [jornada, setJornada] = useState(8); // horas/dia esperadas
   const [aberto, setAberto] = useState<string | null>(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<Lanc>(FORM_VAZIO);
@@ -85,84 +75,43 @@ export function BancoHorasSection() {
 
   const carregar = async (m: string) => {
     setCarregando(true);
-    const [ano, mm] = m.split("-").map(Number);
-    const inicio = new Date(ano, mm - 1, 1, 0, 0, 0);
-    const fim = new Date(ano, mm, 1, 0, 0, 0);
-
-    const [resPonto, resManual] = await Promise.all([
-      supabase
-        .from("ponto_registros")
-        .select("funcionario, cargo, data_hora")
-        .gte("data_hora", inicio.toISOString())
-        .lt("data_hora", fim.toISOString())
-        .order("data_hora", { ascending: true }),
+    setErro("");
+    const [resOficial, resManual, resFuncionarios, resPendencias] = await Promise.all([
+      supabase.rpc("calcular_banco_horas", { p_competencia: m, p_funcionario_id: null, p_ate: new Date().toISOString() }),
       supabase.from("banco_horas").select("*").order("data", { ascending: false }),
+      supabase.from("funcionarios").select("id,nome,cargo,status").neq("status", "desligado").order("nome"),
+      supabase.rpc("listar_batidas_incompletas", { p_competencia: m }),
     ]);
-
-    if (resPonto.error) console.error(resPonto.error);
-    setRegistros((resPonto.data || []) as Registro[]);
-
-    // lançamentos manuais do mês (data dentro da competência) + os sem data
-    const todosManuais = (resManual.data || []).map((r: any) => ({
-      id: r.id,
-      funcionario: r.funcionario,
-      data: r.data || "",
-      descricao: r.descricao || "",
-      horas: Number(r.horas) || 0,
+    if (resOficial.error) setErro(resOficial.error.message);
+    setOficiais(resOficial.data || []);
+    setFuncionarios(resFuncionarios.data || []);
+    setPendencias(resPendencias.data || []);
+    const todos = (resManual.data || []).map((r: any) => ({
+      id: r.id, funcionario_id: r.funcionario_id || undefined, funcionario: r.funcionario,
+      data: r.data || "", descricao: r.descricao || "", horas: Number(r.horas) || 0,
     })) as Lanc[];
-    const doMes = todosManuais.filter((l) => {
-      if (!l.data) return true; // sem data → considera no mês atual visualizado
-      return l.data >= `${m}-01` && l.data < `${m}-32`;
-    });
-    setManuais(doMes);
+    setManuais(todos.filter(l => !l.data || (l.data >= `${m}-01` && l.data < `${m}-32`)));
     setCarregando(false);
   };
-  useEffect(() => {
-    carregar(mes);
-  }, [mes]);
+  useEffect(() => { carregar(mes); }, [mes]);
 
-  // calcula saldo por funcionário: ponto (trabalhadas − jornada) + ajustes manuais
-  const saldos = useMemo<FuncSaldo[]>(() => {
-    const mapa: Record<string, { cargo: string; dias: Record<string, Registro[]> }> = {};
-    registros.forEach((r) => {
-      if (!mapa[r.funcionario]) mapa[r.funcionario] = { cargo: r.cargo || "", dias: {} };
-      const dia = diaChave(r.data_hora);
-      if (!mapa[r.funcionario].dias[dia]) mapa[r.funcionario].dias[dia] = [];
-      mapa[r.funcionario].dias[dia].push(r);
-    });
-
-    // garante que quem só tem lançamento manual também apareça
-    manuais.forEach((l) => {
-      if (!mapa[l.funcionario]) mapa[l.funcionario] = { cargo: "", dias: {} };
-    });
-
-    const lista: FuncSaldo[] = Object.entries(mapa).map(([funcionario, info]) => {
-      const dias = Object.entries(info.dias)
-        .map(([dia, batidas]) => {
-          const trab = horasDoDia(batidas);
-          return { dia, trab, saldo: trab - jornada };
-        })
-        .sort((a, b) => b.dia.localeCompare(a.dia));
-      const horasTrab = dias.reduce((s, d) => s + d.trab, 0);
-      const horasEsper = dias.length * jornada;
-      const saldoPonto = horasTrab - horasEsper;
-      const manuaisFunc = manuais.filter((l) => l.funcionario === funcionario);
-      const ajuste = manuaisFunc.reduce((s, l) => s + l.horas, 0);
-      return {
-        funcionario,
-        cargo: info.cargo,
-        diasTrabalhados: dias.length,
-        horasTrab,
-        horasEsper,
-        saldoPonto,
-        ajuste,
-        saldoFinal: saldoPonto + ajuste,
-        dias,
-        manuais: manuaisFunc,
-      };
-    });
-    return lista.sort((a, b) => b.saldoFinal - a.saldoFinal);
-  }, [registros, manuais, jornada]);
+  const saldos = useMemo<FuncSaldo[]>(() => oficiais.map((r: any) => {
+    const manuaisFunc = manuais.filter(l =>
+      (l.funcionario_id && l.funcionario_id === r.funcionario_id) ||
+      (!l.funcionario_id && l.funcionario.trim().toLowerCase() === String(r.nome || "").trim().toLowerCase()));
+    const ajuste = manuaisFunc.reduce((total,l) => total + Number(l.horas || 0), 0);
+    const saldoFinal = Number(r.saldo_min || 0) / 60;
+    const f = funcionarios.find(x => x.id === r.funcionario_id);
+    return {
+      funcionario: r.nome, cargo: f?.cargo || "",
+      horasTrab: Number(r.horas_trabalhadas_min || 0) / 60,
+      horasEsper: Number(r.horas_previstas_min || 0) / 60,
+      saldoPonto: saldoFinal - ajuste, ajuste, saldoFinal,
+      faltas: Number(r.dias_falta || 0),
+      incompletas: pendencias.filter(p => p.funcionario_id === r.funcionario_id),
+      dias: [], manuais: manuaisFunc,
+    };
+  }).sort((a,b) => b.saldoFinal - a.saldoFinal), [oficiais, manuais, funcionarios, pendencias]);
 
   const totalPos = useMemo(
     () => saldos.filter((s) => s.saldoFinal > 0).reduce((a, s) => a + s.saldoFinal, 0),
@@ -180,6 +129,7 @@ export function BancoHorasSection() {
     }
     setSalvando(true);
     const { error } = await supabase.from("banco_horas").insert({
+      funcionario_id: funcionarios.find(f => f.nome === form.funcionario)?.id || null,
       funcionario: form.funcionario,
       data: form.data || null,
       descricao: form.descricao,
@@ -245,37 +195,9 @@ export function BancoHorasSection() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#fff",
-              border: "1px solid #e5e7eb",
-              borderRadius: 10,
-              padding: "6px 10px",
-            }}
-          >
-            <span style={{ color: "#6b7280", fontSize: 11, fontWeight: 700 }}>Jornada/dia</span>
-            <input
-              type="number"
-              step="0.5"
-              value={jornada || ""}
-              onChange={(e) => setJornada(Number(e.target.value) || 0)}
-              style={{
-                width: 52,
-                border: "1px solid #e5e7eb",
-                borderRadius: 8,
-                padding: "4px 6px",
-                fontSize: 13,
-                fontWeight: 700,
-                color: "#1f2937",
-                textAlign: "center",
-                outline: "none",
-              }}
-            />
-            <span style={{ color: "#9ca3af", fontSize: 11 }}>h</span>
-          </div>
+          <span style={{ color: "#64748b", fontSize: 11, fontWeight: 700 }}>
+            Jornada individual do cadastro do funcionário
+          </span>
           <input
             type="month"
             value={mes}
@@ -313,6 +235,10 @@ export function BancoHorasSection() {
           </button>
         </div>
       </div>
+
+      {erro && <div style={{ ...card, padding: 12, color: "#b91c1c", fontSize: 12 }}>Erro no cálculo oficial: {erro}</div>}
+
+      {pendencias.length > 0 && <div style={{ ...card, padding: 12, color: "#b45309", background: "#fffbeb", fontSize: 12 }}><b>{pendencias.length} dia(s) com batida incompleta.</b> Abra o colaborador para conferir e corrija a marcacao na tela Ponto / Frequencia.</div>}
 
       {/* STATS */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
@@ -408,8 +334,7 @@ export function BancoHorasSection() {
                         {s.funcionario}
                       </p>
                       <p style={{ color: "#9ca3af", fontSize: 11, margin: "2px 0 0" }}>
-                        {s.diasTrabalhados} dia(s) · {s.horasTrab.toFixed(1)}h trabalhadas de{" "}
-                        {s.horasEsper.toFixed(1)}h
+                        {s.horasTrab.toFixed(1)}h trabalhadas de {s.horasEsper.toFixed(1)}h - {s.faltas} falta(s) integral(is){s.incompletas.length ? ` - ${s.incompletas.length} batida(s) incompleta(s)` : ""}
                       </p>
                     </div>
                   </div>
@@ -442,6 +367,11 @@ export function BancoHorasSection() {
                         label="Ajustes manuais"
                         valor={hh(s.ajuste)}
                         cor={s.ajuste >= 0 ? "#16a34a" : "#dc2626"}
+                      />
+                      <Pill
+                        label="Batidas incompletas"
+                        valor={String(s.incompletas.length)}
+                        cor={s.incompletas.length ? "#b45309" : "#16a34a"}
                       />
                       <Pill
                         label="Saldo final"
@@ -611,12 +541,10 @@ export function BancoHorasSection() {
             </div>
             <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
               <Campo label="Colaborador">
-                <input
-                  value={form.funcionario}
-                  onChange={(e) => set("funcionario", e.target.value)}
-                  style={inputStyle}
-                  placeholder="Nome (igual ao do ponto)"
-                />
+                <select value={form.funcionario} onChange={(e) => set("funcionario", e.target.value)} style={inputStyle}>
+                  <option value="">Selecione o colaborador</option>
+                  {funcionarios.map(f => <option key={f.id} value={f.nome}>{f.nome}</option>)}
+                </select>
               </Campo>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <Campo label="Data">
