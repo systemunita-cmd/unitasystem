@@ -174,20 +174,10 @@ create index if not exists proposta_instalada_backlog_competencia_idx
   on public.proposta(data_instalacao,vendedor)
   where status_venda in ('INSTALADA','BACKLOG') and data_instalacao is not null;
 
-do $$
-declare c record;
-begin
-  for c in
-    select distinct to_char(data_instalacao::date,'YYYY-MM') competencia
-    from public.proposta
-    where upper(trim(coalesce(status_venda,''))) in ('INSTALADA','BACKLOG') and data_instalacao is not null
-      and data_instalacao::date between date '2025-01-01' and current_date
-  loop
-    perform public.recalcular_comissoes(c.competencia);
-    perform public.recalcular_bonus_metas(c.competencia);
-  end loop;
-end;
-$$;
+-- O recálculo histórico não é executado aqui para evitar timeout no SQL Editor.
+-- A tela recalcula a competência selecionada através de sincronizar_financeiro_rh.
+-- Para recalcular um mês manualmente, execute separadamente:
+-- select public.sincronizar_financeiro_rh('2026-06');
 
 select jsonb_build_object(
   'emerson_vendas_consolidadas',count(*) filter (where vendedor='emerson@grupounita.net.br'),
