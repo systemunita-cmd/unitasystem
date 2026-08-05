@@ -18,7 +18,7 @@ type ItemNormalizado = {
 
 const vazio: Mapeamento = { data: "", descricao: "", valor: "", entrada: "", saida: "", tipo: "", categoria: "", centroCusto: "", competencia: "" };
 const campo = { border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 11px", minHeight: 42, background: "#fff", color: "#1e293b", fontSize: 12, width: "100%", boxSizing: "border-box" as const };
-const verde = { border: "1px solid #4d7c0f", borderRadius: 10, padding: "10px 16px", minHeight: 42, background: "linear-gradient(180deg,#84cc16,#65a30d)", color: "#fff", fontSize: 12, fontWeight: 900, cursor: "pointer", boxShadow: "0 2px 0 #3f6212,0 7px 14px rgba(101,163,13,.18)" } as const;
+const verde = { border: "1px solid #365f4b", borderRadius: 10, padding: "10px 16px", minHeight: 42, background: "linear-gradient(180deg,#7fb095,#5b8f74)", color: "#fff", fontSize: 12, fontWeight: 900, cursor: "pointer", boxShadow: "0 2px 0 #294c3b,0 7px 14px rgba(91,143,116,.18)" } as const;
 
 const normal = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 function numero(valor: unknown) {
@@ -89,13 +89,13 @@ async function lerArquivo(arquivo: File) {
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[primeira], { defval: "", raw: true });
 }
 
-export function ImportacaoFinanceira({ competenciaPadrao, fechado, onImportado }: { competenciaPadrao: string; fechado: boolean; onImportado: (mensagem: string) => void }) {
+export function ImportacaoFinanceira({ competenciaPadrao, fechado, onImportado, destinoInicial = "titulos" }: { competenciaPadrao: string; fechado: boolean; onImportado: (mensagem: string) => void; destinoInicial?: Destino }) {
   const arquivoRef = useRef<HTMLInputElement>(null);
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [linhas, setLinhas] = useState<Record<string, unknown>[]>([]);
   const [colunas, setColunas] = useState<string[]>([]);
   const [mapa, setMapa] = useState<Mapeamento>(vazio);
-  const [destino, setDestino] = useState<Destino>("titulos");
+  const [destino, setDestino] = useState<Destino>(destinoInicial);
   const [tipoPadrao, setTipoPadrao] = useState<TipoPadrao>("automatico");
   const [status, setStatus] = useState<"pago" | "pendente">("pago");
   const [lendo, setLendo] = useState(false);
@@ -197,13 +197,13 @@ export function ImportacaoFinanceira({ competenciaPadrao, fechado, onImportado }
   </label>;
 
   return <div style={{ display: "grid", gap: 16 }}>
-    <section style={{ border: "1px dashed #a3e635", background: "linear-gradient(135deg,#fbfff4,#f7fee7)", borderRadius: 16, padding: 20 }}>
+    <section style={{ border: "1px dashed #a8ccb8", background: "linear-gradient(135deg,#f8fbf9,#f3f8f5)", borderRadius: 16, padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
         <div><h3 style={{ margin: 0, color: "#1e293b", fontSize: 17 }}>1. Escolha o arquivo</h3><p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 11 }}>CSV, XLS, XLSX ou OFX. Nada é salvo antes da confirmação.</p></div>
         <input ref={arquivoRef} type="file" accept=".csv,.xls,.xlsx,.ofx,text/csv" hidden onChange={e => escolher(e.target.files?.[0])}/>
         <button onClick={() => arquivoRef.current?.click()} disabled={lendo} style={verde}>{lendo ? "Lendo arquivo..." : arquivo ? "Trocar arquivo" : "Selecionar arquivo"}</button>
       </div>
-      {arquivo && <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid #d9f99d", background: "#fff", borderRadius: 10, color: "#365314", fontSize: 12, fontWeight: 800 }}>{arquivo.name} · {linhas.length} linha(s)</div>}
+      {arquivo && <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid #dcebe2", background: "#fff", borderRadius: 10, color: "#365314", fontSize: 12, fontWeight: 800 }}>{arquivo.name} · {linhas.length} linha(s)</div>}
     </section>
 
     {!!linhas.length && <>
@@ -222,11 +222,11 @@ export function ImportacaoFinanceira({ competenciaPadrao, fechado, onImportado }
 
       <section style={{ border: "1px solid #e2e8f0", background: "#fff", borderRadius: 16, padding: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><div><h3 style={{ margin: 0, fontSize: 17, color: "#1e293b" }}>3. Confira e importe</h3><p style={{ margin: "5px 0 0", color: "#64748b", fontSize: 11 }}>{validos.length} válida(s) · {itens.length - validos.length} ignorada(s)</p></div><button onClick={importar} disabled={importando || !validos.length} style={{ ...verde, opacity: importando || !validos.length ? .55 : 1 }}>{importando ? "Importando..." : `Importar ${validos.length} registro(s)`}</button></div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(140px,1fr))", gap: 10, margin: "15px 0" }}><div style={{ background: "#eff6ff", color: "#1d4ed8", padding: 12, borderRadius: 11 }}><small>ENTRADAS</small><b style={{ display: "block", marginTop: 4 }}>R$ {entradas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div><div style={{ background: "#fff1f2", color: "#be123c", padding: 12, borderRadius: 11 }}><small>SAÍDAS</small><b style={{ display: "block", marginTop: 4 }}>R$ {saidas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div><div style={{ background: "#f7fee7", color: "#3f6212", padding: 12, borderRadius: 11 }}><small>SALDO</small><b style={{ display: "block", marginTop: 4 }}>R$ {(entradas - saidas).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(140px,1fr))", gap: 10, margin: "15px 0" }}><div style={{ background: "#eff6ff", color: "#1d4ed8", padding: 12, borderRadius: 11 }}><small>ENTRADAS</small><b style={{ display: "block", marginTop: 4 }}>R$ {entradas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div><div style={{ background: "#fff1f2", color: "#be123c", padding: 12, borderRadius: 11 }}><small>SAÍDAS</small><b style={{ display: "block", marginTop: 4 }}>R$ {saidas.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div><div style={{ background: "#f3f8f5", color: "#294c3b", padding: 12, borderRadius: 11 }}><small>SALDO</small><b style={{ display: "block", marginTop: 4 }}>R$ {(entradas - saidas).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</b></div></div>
         <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}><table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760, fontSize: 11 }}><thead><tr style={{ background: "#f8fafc" }}>{["Linha", "Data", "Descrição", "Tipo", "Valor", "Categoria", "Situação"].map(h => <th key={h} style={{ textAlign: "left", padding: 9, color: "#64748b" }}>{h}</th>)}</tr></thead><tbody>{itens.slice(0, 15).map((i, n) => <tr key={`${i.linha}-${n}`} style={{ borderTop: "1px solid #e2e8f0", opacity: i.valido ? 1 : .55 }}><td style={{ padding: 9 }}>{i.linha}</td><td style={{ padding: 9 }}>{i.data || "—"}</td><td style={{ padding: 9 }}>{i.descricao}</td><td style={{ padding: 9, color: i.tipo === "receber" ? "#15803d" : "#be123c", fontWeight: 800 }}>{i.tipo === "receber" ? "ENTRADA" : "SAÍDA"}</td><td style={{ padding: 9 }}>R$ {i.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td><td style={{ padding: 9 }}>{i.categoria}</td><td style={{ padding: 9, color: i.valido ? "#15803d" : "#be123c" }}>{i.valido ? "Pronta" : i.erro}</td></tr>)}</tbody></table></div>
         {itens.length > 15 && <p style={{ color: "#64748b", fontSize: 10 }}>Prévia das primeiras 15 linhas. Todas as {validos.length} linhas válidas serão importadas.</p>}
       </section>
     </>}
-    {mensagem && <div style={{ border: `1px solid ${mensagem.includes("não") || mensagem.includes("inválid") ? "#fecaca" : "#bef264"}`, background: "#fff", borderRadius: 12, padding: "11px 13px", color: "#475569", fontSize: 12, fontWeight: 700 }}>{mensagem}</div>}
+    {mensagem && <div style={{ border: `1px solid ${mensagem.includes("não") || mensagem.includes("inválid") ? "#fecaca" : "#bfd9ca"}`, background: "#fff", borderRadius: 12, padding: "11px 13px", color: "#475569", fontSize: 12, fontWeight: 700 }}>{mensagem}</div>}
   </div>;
 }

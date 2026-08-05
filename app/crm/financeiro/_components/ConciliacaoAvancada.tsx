@@ -8,7 +8,7 @@ type Titulo = { id:string; tipo:string; descricao:string; valor:number; status:s
 type Alocacao = { titulo_id:string; valor:number };
 
 const brl=(v:number)=>(v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const btn={border:"1px solid #4d7c0f",borderRadius:9,padding:"9px 12px",fontWeight:800,cursor:"pointer",background:"#65a30d",color:"#fff"} as const;
+const btn={border:"1px solid #365f4b",borderRadius:9,padding:"9px 12px",fontWeight:800,cursor:"pointer",background:"#5b8f74",color:"#fff"} as const;
 const inp={border:"1px solid #cbd5e1",borderRadius:9,padding:"9px 10px",background:"#fff"} as const;
 
 export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extratos:Extrato[];titulos:Titulo[];fechado:boolean;onAtualizar:()=>void}) {
@@ -91,9 +91,9 @@ export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extr
 
   return <div style={{display:"grid",gap:12}}>
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(140px,1fr))",gap:9}}>
-      {([["Conciliados",totais.conciliados,"#166534"],["Parciais",totais.parciais,"#b45309"],["Pendentes",totais.pendentes,"#475569"]] as const).map(x=><div key={x[0]} style={{background:"#fff",border:"1px solid #d9f99d",borderRadius:13,padding:14}}><small style={{color:"#64748b"}}>{x[0]}</small><b style={{display:"block",fontSize:23,color:x[2]}}>{x[1]}</b></div>)}
+      {([["Conciliados",totais.conciliados,"#166534"],["Parciais",totais.parciais,"#b45309"],["Pendentes",totais.pendentes,"#475569"]] as const).map(x=><div key={x[0]} style={{background:"#fff",border:"1px solid #dcebe2",borderRadius:13,padding:14}}><small style={{color:"#64748b"}}>{x[0]}</small><b style={{display:"block",fontSize:23,color:x[2]}}>{x[1]}</b></div>)}
     </div>
-    <div style={{background:"#f7fee7",border:"1px solid #bef264",borderRadius:13,padding:13,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+    <div style={{background:"#f3f8f5",border:"1px solid #bfd9ca",borderRadius:13,padding:13,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
       <div><b style={{color:"#365314"}}>Conciliacao automatica segura</b><small style={{display:"block",color:"#64748b",marginTop:3}}>Aplica apenas valor exato, tipo compativel, titulo unico e vencimento dentro da tolerancia. Ambiguidades nao sao alteradas.</small></div>
       <div style={{display:"flex",alignItems:"center",gap:8}}><label style={{fontSize:10,color:"#64748b"}}>Tolerancia em dias <input type="number" min="0" max="31" value={tolerancia} onChange={e=>setTolerancia(Math.max(0,Math.min(31,Number(e.target.value)||0)))} style={{...inp,width:72,marginLeft:5}}/></label><button disabled={fechado||automatico||!pendentes.length} onClick={conciliarAutomaticamente} style={{...btn,opacity:(fechado||automatico||!pendentes.length) ? .55 : 1}}>{automatico?"Processando...":"Conciliar seguros em lote"}</button></div>
     </div>
@@ -103,12 +103,12 @@ export function ConciliacaoAvancada({extratos,titulos,fechado,onAtualizar}:{extr
       const abertoAqui=aberto===e.id;
       const ja=Number(e.valor_alocado||0),restante=Math.max(0,e.valor-ja);
       const total=alocacoes.reduce((s,a)=>s+a.valor,0)+tarifa+ajuste;
-      return <div key={e.id} style={{background:"#fff",border:`1px solid ${e.status_conciliacao==="parcial"?"#fdba74":"#d9f99d"}`,borderRadius:15,overflow:"hidden"}}>
+      return <div key={e.id} style={{background:"#fff",border:`1px solid ${e.status_conciliacao==="parcial"?"#fdba74":"#dcebe2"}`,borderRadius:15,overflow:"hidden"}}>
         <div style={{display:"grid",gridTemplateColumns:"100px minmax(220px,1fr) 135px 110px 110px",gap:10,alignItems:"center",padding:14,fontSize:11}}>
           <span>{new Date(`${e.data}T00:00:00`).toLocaleDateString("pt-BR")}</span><div><b>{e.descricao}</b><small style={{display:"block",color:"#64748b",marginTop:3}}>{e.tipo==="credito"?"Entrada":"Saída"}</small></div><b>{brl(e.valor)}</b><span style={{color:e.status_conciliacao==="parcial"?"#b45309":"#64748b",fontWeight:800}}>{e.status_conciliacao==="parcial"?`Parcial ${brl(ja)}`:"Pendente"}</span><button disabled={fechado} style={{...btn,opacity:fechado ? .55 : 1}} onClick={()=>abertoAqui?setAberto(null):abrir(e)}>{abertoAqui?"Fechar":"Conciliar"}</button>
         </div>
-        {abertoAqui&&<div style={{borderTop:"1px solid #ecfccb",background:"#fbfff4",padding:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}><div><b>Distribuir {brl(restante)}</b><p style={{margin:"3px 0",fontSize:10,color:"#64748b"}}>Aceita um ou vários títulos, pagamento parcial, tarifa e ajuste.</p></div><b style={{color:total>restante+.01?"#dc2626":"#3f6212"}}>Alocado agora: {brl(total)} · sobra {brl(restante-total)}</b></div>
+        {abertoAqui&&<div style={{borderTop:"1px solid #e6f1eb",background:"#f8fbf9",padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:12}}><div><b>Distribuir {brl(restante)}</b><p style={{margin:"3px 0",fontSize:10,color:"#64748b"}}>Aceita um ou vários títulos, pagamento parcial, tarifa e ajuste.</p></div><b style={{color:total>restante+.01?"#dc2626":"#294c3b"}}>Alocado agora: {brl(total)} · sobra {brl(restante-total)}</b></div>
           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}><select defaultValue="" onChange={ev=>{adicionar(ev.target.value);ev.target.value=""}} style={{...inp,minWidth:340}}><option value="">+ Adicionar título sugerido</option>{candidatos(e).map(t=><option key={t.id} value={t.id}>{t.vencimento} · {t.descricao} · saldo {brl(t.valor-Number(t.valor_conciliado||0))}</option>)}</select></div>
           {alocacoes.map((a,i)=>{const t=titulo(a.titulo_id)!;return <div key={a.titulo_id} style={{display:"grid",gridTemplateColumns:"1fr 150px 90px",gap:8,alignItems:"center",padding:"8px 0",borderTop:"1px solid #e5e7eb"}}><span><b>{t?.descricao}</b><small style={{display:"block",color:"#64748b"}}>Venc. {t?.vencimento} · título {brl(t?.valor||0)}</small></span><input type="number" min="0" step=".01" value={a.valor} onChange={ev=>setAlocacoes(alocacoes.map((x,j)=>j===i?{...x,valor:Number(ev.target.value)}:x))} style={inp}/><button onClick={()=>setAlocacoes(alocacoes.filter((_,j)=>j!==i))} style={{...btn,background:"#fff",color:"#dc2626",borderColor:"#fecaca"}}>Remover</button></div>})}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:8,marginTop:12}}><label style={{fontSize:10,color:"#64748b"}}>Tarifa bancária<input type="number" min="0" step=".01" value={tarifa} onChange={ev=>setTarifa(Number(ev.target.value))} style={{...inp,width:"100%",display:"block",marginTop:4}}/></label><label style={{fontSize:10,color:"#64748b"}}>Ajuste<input type="number" min="0" step=".01" value={ajuste} onChange={ev=>setAjuste(Number(ev.target.value))} style={{...inp,width:"100%",display:"block",marginTop:4}}/></label><label style={{fontSize:10,color:"#64748b"}}>Observação<input value={observacao} onChange={ev=>setObservacao(ev.target.value)} style={{...inp,width:"100%",display:"block",marginTop:4}}/></label></div>

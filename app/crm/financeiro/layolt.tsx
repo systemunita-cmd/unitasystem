@@ -33,8 +33,8 @@ function useClassificacoesFinanceiras(tipo: "pagar" | "receber") {
 // entra das operadoras × sai (despesas, incluindo folha) = resultado.
 // ═══════════════════════════════════════════════════════════════════════
 
-const R_COR = "#65a30d";
-const R_COR_TEXTO = "#4d7c0f";
+const R_COR = "#5b8f74";
+const R_COR_TEXTO = "#365f4b";
 const R_card = {
   background: "#ffffff",
   borderRadius: 16,
@@ -153,7 +153,7 @@ export function ResumoSection() {
             width: 48,
             height: 48,
             borderRadius: 14,
-            background: `linear-gradient(135deg, ${R_COR} 0%, #84cc16 100%)`,
+            background: `linear-gradient(135deg, ${R_COR} 0%, #7fb095 100%)`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -332,9 +332,9 @@ export function ResumoSection() {
               ) : (
                 <span
                   style={{
-                    background: "#f7fee7",
+                    background: "#f3f8f5",
                     color: R_COR_TEXTO,
-                    border: "1px solid #bef264",
+                    border: "1px solid #bfd9ca",
                     padding: "5px 12px",
                     borderRadius: 10,
                     fontSize: 11,
@@ -445,8 +445,8 @@ export function ResumoSection() {
 // Erros em toast amigável (sem alert cru). Detalhe técnico só no console.
 // ═══════════════════════════════════════════════════════════════════════
 
-const O_COR = "#65a30d";
-const O_COR_TEXTO = "#4d7c0f";
+const O_COR = "#5b8f74";
+const O_COR_TEXTO = "#365f4b";
 const O_card = {
   background: "#ffffff",
   borderRadius: 16,
@@ -696,7 +696,7 @@ export function OperadorasSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${O_COR} 0%, #84cc16 100%)`,
+              background: `linear-gradient(135deg, ${O_COR} 0%, #7fb095 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -718,7 +718,7 @@ export function OperadorasSection() {
         <button
           onClick={abrirNovo}
           style={{
-            background: `linear-gradient(135deg, ${O_COR} 0%, #84cc16 100%)`,
+            background: `linear-gradient(135deg, ${O_COR} 0%, #7fb095 100%)`,
             color: "white",
             border: "none",
             borderRadius: 12,
@@ -945,9 +945,9 @@ export function OperadorasSection() {
                           <button
                             onClick={() => abrirEditar(t)}
                             style={{
-                              background: "#f7fee7",
+                              background: "#f3f8f5",
                               color: O_COR_TEXTO,
-                              border: "1px solid #bef264",
+                              border: "1px solid #bfd9ca",
                               borderRadius: 8,
                               padding: "5px 10px",
                               fontSize: 11,
@@ -1133,7 +1133,7 @@ export function OperadorasSection() {
                 onClick={salvar}
                 disabled={salvando}
                 style={{
-                  background: `linear-gradient(135deg, ${O_COR} 0%, #84cc16 100%)`,
+                  background: `linear-gradient(135deg, ${O_COR} 0%, #7fb095 100%)`,
                   color: "white",
                   border: "none",
                   borderRadius: 10,
@@ -1235,8 +1235,8 @@ function O_Campo({ label, children }: { label: string; children: React.ReactNode
 // de salários+comissão do mês (folha_itens) como uma despesa automática.
 // ═══════════════════════════════════════════════════════════════════════
 
-const D_COR = "#65a30d";
-const D_COR_TEXTO = "#4d7c0f";
+const D_COR = "#5b8f74";
+const D_COR_TEXTO = "#365f4b";
 const D_card = {
   background: "#ffffff",
   borderRadius: 16,
@@ -1579,7 +1579,7 @@ export function DespesasSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${D_COR} 0%, #84cc16 100%)`,
+              background: `linear-gradient(135deg, ${D_COR} 0%, #7fb095 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1601,7 +1601,7 @@ export function DespesasSection() {
         <button
           onClick={abrirNovo}
           style={{
-            background: `linear-gradient(135deg, ${D_COR} 0%, #84cc16 100%)`,
+            background: `linear-gradient(135deg, ${D_COR} 0%, #7fb095 100%)`,
             color: "white",
             border: "none",
             borderRadius: 12,
@@ -1668,8 +1668,8 @@ export function DespesasSection() {
             alignItems: "center",
             gap: 10,
             flexWrap: "wrap",
-            background: "#f7fee7",
-            borderColor: "#bef264",
+            background: "#f3f8f5",
+            borderColor: "#bfd9ca",
           }}
         >
           <span style={{ fontSize: 18 }}>👥</span>
@@ -1680,7 +1680,7 @@ export function DespesasSection() {
             value={compFolha}
             onChange={(e) => setCompFolha(e.target.value)}
             style={{
-              border: "1px solid #bef264",
+              border: "1px solid #bfd9ca",
               borderRadius: 8,
               padding: "6px 10px",
               fontSize: 13,
@@ -1895,9 +1895,9 @@ export function DespesasSection() {
                           <button
                             onClick={() => abrirEditar(d)}
                             style={{
-                              background: "#f7fee7",
+                              background: "#f3f8f5",
                               color: D_COR_TEXTO,
-                              border: "1px solid #bef264",
+                              border: "1px solid #bfd9ca",
                               borderRadius: 8,
                               padding: "5px 10px",
                               fontSize: 11,
@@ -2079,7 +2079,7 @@ export function DespesasSection() {
                 onClick={salvar}
                 disabled={salvando}
                 style={{
-                  background: `linear-gradient(135deg, ${D_COR} 0%, #84cc16 100%)`,
+                  background: `linear-gradient(135deg, ${D_COR} 0%, #7fb095 100%)`,
                   color: "white",
                   border: "none",
                   borderRadius: 10,
@@ -2181,8 +2181,8 @@ function D_Campo({ label, children }: { label: string; children: React.ReactNode
 // Cruza folha_itens (nome, base, comissao) com funcionarios (departamento).
 // ═══════════════════════════════════════════════════════════════════════
 
-const F_COR = "#65a30d";
-const F_COR_TEXTO = "#4d7c0f";
+const F_COR = "#5b8f74";
+const F_COR_TEXTO = "#365f4b";
 const F_card = {
   background: "#ffffff",
   borderRadius: 16,
@@ -2332,7 +2332,7 @@ export function FolhaSection() {
               width: 48,
               height: 48,
               borderRadius: 14,
-              background: `linear-gradient(135deg, ${F_COR} 0%, #84cc16 100%)`,
+              background: `linear-gradient(135deg, ${F_COR} 0%, #7fb095 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2467,8 +2467,8 @@ export function FolhaSection() {
                   <div
                     style={{
                       padding: "14px 18px",
-                      background: "#f7fee7",
-                      borderBottom: "1px solid #bef264",
+                      background: "#f3f8f5",
+                      borderBottom: "1px solid #bfd9ca",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
@@ -2666,7 +2666,7 @@ export function FolhaSection() {
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: "#f7fee7", borderTop: "2px solid #bef264" }}>
+                    <tr style={{ background: "#f3f8f5", borderTop: "2px solid #bfd9ca" }}>
                       <td
                         style={{ padding: "12px 16px", color: "#1f2937", fontSize: 13, fontWeight: 800 }}
                         colSpan={2}
@@ -2783,13 +2783,13 @@ export function FolhaSection() {
 // Só o Dashboard está implementado; as demais mostram um placeholder
 // estilizado "em construção" pronto pra receber cada section depois.
 //
-// Cor do módulo: ÂMBAR/DOURADO (#84cc16 / #4d7c0f) — alinhado ao atalho.
+// Cor do módulo: ÂMBAR/DOURADO (#7fb095 / #365f4b) — alinhado ao atalho.
 // ═══════════════════════════════════════════════════════════════════════
 
-const COR = "#65a30d"; // âmbar principal
-const COR_TEXTO = "#4d7c0f"; // âmbar escuro (texto)
-const COR_BG = "#f7fee7"; // âmbar bem claro (fundos)
-const COR_BORDA = "#bef264"; // âmbar borda
+const COR = "#5b8f74"; // âmbar principal
+const COR_TEXTO = "#365f4b"; // âmbar escuro (texto)
+const COR_BG = "#f3f8f5"; // âmbar bem claro (fundos)
+const COR_BORDA = "#bfd9ca"; // âmbar borda
 
 type SubItem = { key: string; label: string };
 type Grupo = { key: string; icon: string; label: string; itens: SubItem[]; abaDireta?: string };
@@ -2859,24 +2859,24 @@ export default function FinanceiroLayolt() {
       }}
     >
       <style>{`
-        .financeiro-shell { --fin-primary:#65a30d; --fin-primary-dark:#3f6212; --fin-soft:#f7fee7; --fin-line:#e2e8f0; color:#0f172a; }
+        .financeiro-shell { --fin-primary:#5b8f74; --fin-primary-dark:#294c3b; --fin-soft:#f3f8f5; --fin-line:#e2e8f0; color:#0f172a; }
         .financeiro-shell * { box-sizing:border-box; }
         .financeiro-sidebar { background:rgba(255,255,255,.96)!important; border-right:1px solid #e2e8f0!important; box-shadow:8px 0 28px rgba(15,23,42,.035)!important; }
-        .financeiro-content { background:radial-gradient(circle at 85% 0%,rgba(132,204,22,.08),transparent 28%),#f8fafc; }
+        .financeiro-content { background:radial-gradient(circle at 85% 0%,rgba(127,176,149,.08),transparent 28%),#f8fafc; }
         .financeiro-content button { min-height:38px; border-radius:10px!important; font-weight:750!important; letter-spacing:-.01em; transition:transform .16s ease,box-shadow .16s ease,filter .16s ease!important; box-shadow:0 2px 0 rgba(15,23,42,.10),0 5px 12px rgba(15,23,42,.07)!important; }
         .financeiro-content button:hover:not(:disabled) { transform:translateY(-1px); filter:saturate(1.05); box-shadow:0 3px 0 rgba(15,23,42,.09),0 9px 18px rgba(15,23,42,.10)!important; }
         .financeiro-content button:active:not(:disabled) { transform:translateY(1px); box-shadow:0 1px 0 rgba(15,23,42,.10),0 3px 8px rgba(15,23,42,.08)!important; }
         .financeiro-content button:disabled { opacity:.52; cursor:not-allowed!important; box-shadow:none!important; }
-        .financeiro-content button:not([style]) { background:linear-gradient(180deg,#84cc16 0%,#65a30d 100%); color:#fff; border:1px solid #4d7c0f; padding:9px 14px; }
+        .financeiro-content button:not([style]) { background:linear-gradient(180deg,#7fb095 0%,#5b8f74 100%); color:#fff; border:1px solid #365f4b; padding:9px 14px; }
         .financeiro-content input:not([type=checkbox]):not([type=radio]),.financeiro-content select,.financeiro-content textarea { min-height:42px; border:1px solid #cbd5e1!important; border-radius:10px!important; background:#fff!important; color:#0f172a!important; box-shadow:0 1px 2px rgba(15,23,42,.04),inset 0 1px 1px rgba(15,23,42,.025); transition:border-color .15s ease,box-shadow .15s ease!important; }
-        .financeiro-content input:focus,.financeiro-content select:focus,.financeiro-content textarea:focus { outline:none!important; border-color:#84cc16!important; box-shadow:0 0 0 3px rgba(132,204,22,.16)!important; }
+        .financeiro-content input:focus,.financeiro-content select:focus,.financeiro-content textarea:focus { outline:none!important; border-color:#7fb095!important; box-shadow:0 0 0 3px rgba(127,176,149,.16)!important; }
         .financeiro-content input[type=file] { padding:4px!important; color:#64748b!important; }
-        .financeiro-content input[type=file]::file-selector-button { height:32px; margin-right:10px; border:0; border-radius:8px; padding:0 12px; background:linear-gradient(180deg,#a3e635,#65a30d); color:#fff; font-weight:800; cursor:pointer; }
+        .financeiro-content input[type=file]::file-selector-button { height:32px; margin-right:10px; border:0; border-radius:8px; padding:0 12px; background:linear-gradient(180deg,#a8ccb8,#5b8f74); color:#fff; font-weight:800; cursor:pointer; }
         .financeiro-content table { border-collapse:separate!important; border-spacing:0; }
         .financeiro-content thead tr { background:#f8fafc!important; }
         .financeiro-content th { color:#64748b!important; font-size:10px!important; font-weight:850!important; letter-spacing:.055em!important; text-transform:uppercase; }
         .financeiro-content tbody tr { transition:background .14s ease; }
-        .financeiro-content tbody tr:hover { background:#f7fee7!important; }
+        .financeiro-content tbody tr:hover { background:#f3f8f5!important; }
         .financeiro-content h1,.financeiro-content h2,.financeiro-content h3 { color:#0f172a; letter-spacing:-.025em; }
         .fin-gestao-tabs { display:flex; gap:8px; overflow-x:auto; padding:5px 3px 11px; scrollbar-width:thin; }
         .fin-gestao-tabs button { white-space:nowrap; min-height:42px; padding:10px 15px!important; }
@@ -2894,8 +2894,8 @@ export default function FinanceiroLayolt() {
             right: 8,
             zIndex: 1095,
             background: "#ffffff",
-            border: "1px solid #bef264",
-            color: "#4d7c0f",
+            border: "1px solid #bfd9ca",
+            color: "#365f4b",
             borderRadius: 10,
             padding: "6px 12px",
             fontSize: 14,
@@ -2957,7 +2957,7 @@ export default function FinanceiroLayolt() {
               width: 36,
               height: 36,
               borderRadius: 10,
-              background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
+              background: `linear-gradient(135deg, ${COR} 0%, #7fb095 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -3171,7 +3171,7 @@ function EmConstrucao({ titulo }: { titulo: string }) {
           width: 84,
           height: 84,
           borderRadius: 22,
-          background: `linear-gradient(135deg, ${COR} 0%, #84cc16 100%)`,
+          background: `linear-gradient(135deg, ${COR} 0%, #7fb095 100%)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
