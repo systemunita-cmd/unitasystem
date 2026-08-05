@@ -38,18 +38,55 @@ type Registro = {
   selfie_url: string | null;
   ajuste_manual?: boolean | null;
   ajuste_por?: string | null;
+  observacao?: string | null;
 };
 
 // Tipos de batida (mesma ordem do app de bater ponto)
 const TIPOS_BATIDA = ["Entrada", "Saída p/ almoço", "Retorno do almoço", "Saída", "Marcação"];
 // 🏷️ Marcações de AUSÊNCIA (dia inteiro ou com hora). Não contam como batida de horário.
-const TIPOS_AUSENCIA = ["Folga", "Falta", "Falta justificada", "Atestado"];
-const ehAusencia = (tipo: string) => TIPOS_AUSENCIA.includes(tipo);
+const TIPOS_AUSENCIA = [
+  "Folga", "Folga Compensatória", "Férias", "Falta", "Falta Justificada",
+  "Atestado Médico", "Comparecimento Médico", "Licença Maternidade", "Licença Paternidade",
+  "Licença Casamento", "Licença Falecimento", "Suspensão Disciplinar", "Licença Remunerada",
+  "Licença Não Remunerada", "Afastamento INSS", "Acidente de Trabalho", "Treinamento Externo",
+  "Convocação Judicial", "Doação de Sangue", "Viagem a Trabalho", "Outros",
+];
+const TIPOS_AUSENCIA_BANCO = ["Folga", "Falta", "Falta justificada", "Atestado", "Férias", "Ferias", "Licença", "Licenca"];
+const ehAusencia = (tipo: string) => TIPOS_AUSENCIA_BANCO.some(item => item.toLocaleLowerCase("pt-BR") === String(tipo || "").toLocaleLowerCase("pt-BR"));
+const tipoBancoAusencia = (tipo: string) => {
+  if (tipo === "Férias") return "Férias";
+  if (tipo === "Falta" || tipo === "Suspensão Disciplinar") return "Falta";
+  if (tipo === "Folga" || tipo === "Folga Compensatória") return "Folga";
+  if (tipo === "Atestado Médico" || tipo === "Comparecimento Médico") return "Atestado";
+  if (tipo.startsWith("Licença") || tipo === "Afastamento INSS" || tipo === "Acidente de Trabalho") return "Licença";
+  return "Falta justificada";
+};
+const motivoSalvo = (observacao?: string | null) => String(observacao || "").match(/^Motivo RH:\s*([^\n]+)/)?.[1] || "";
+const detalheSalvo = (observacao?: string | null) => String(observacao || "").replace(/^Motivo RH:\s*[^\n]+\n?/, "").trim();
+const tipoVisual = (registro: Pick<Registro, "tipo" | "observacao">) => motivoSalvo(registro.observacao) || ({ "Falta justificada": "Falta Justificada", Atestado: "Atestado Médico", Licença: "Licença Remunerada", Licenca: "Licença Remunerada" } as Record<string,string>)[registro.tipo] || registro.tipo;
 const AUSENCIA_COR: Record<string, { cor: string; bg: string }> = {
   "Folga":             { cor: "#0369a1", bg: "#e0f2fe" },
   "Falta":             { cor: "#b91c1c", bg: "#fee2e2" },
   "Falta justificada": { cor: "#a16207", bg: "#fef9c3" },
   "Atestado":          { cor: "#7c3aed", bg: "#ede9fe" },
+  "Férias":            { cor: "#047857", bg: "#d1fae5" },
+  "Outros":                 { cor: "#475569", bg: "#e2e8f0" },
+  "Folga Compensatória":      { cor: "#0369a1", bg: "#e0f2fe" },
+  "Atestado Médico":          { cor: "#7c3aed", bg: "#ede9fe" },
+  "Comparecimento Médico":    { cor: "#6d28d9", bg: "#f3e8ff" },
+  "Licença Maternidade":      { cor: "#be185d", bg: "#fce7f3" },
+  "Licença Paternidade":      { cor: "#1d4ed8", bg: "#dbeafe" },
+  "Licença Casamento":        { cor: "#be123c", bg: "#ffe4e6" },
+  "Licença Falecimento":      { cor: "#334155", bg: "#e2e8f0" },
+  "Suspensão Disciplinar":    { cor: "#b91c1c", bg: "#fee2e2" },
+  "Licença Remunerada":       { cor: "#047857", bg: "#d1fae5" },
+  "Licença Não Remunerada":   { cor: "#92400e", bg: "#fef3c7" },
+  "Afastamento INSS":         { cor: "#075985", bg: "#e0f2fe" },
+  "Acidente de Trabalho":     { cor: "#c2410c", bg: "#ffedd5" },
+  "Treinamento Externo":      { cor: "#0f766e", bg: "#ccfbf1" },
+  "Convocação Judicial":      { cor: "#4f46e5", bg: "#e0e7ff" },
+  "Doação de Sangue":         { cor: "#be123c", bg: "#ffe4e6" },
+  "Viagem a Trabalho":        { cor: "#0369a1", bg: "#e0f2fe" },
 };
 
 function mesAtual() {
@@ -142,6 +179,8 @@ export function PontoSection() {
     data: string;   // YYYY-MM-DD
     hora: string;    // HH:MM
     tipo: string;
+    dataFim?: string;
+    observacao?: string;
   }>(null);
   const [salvandoEdit, setSalvandoEdit] = useState(false);
 
@@ -162,14 +201,21 @@ export function PontoSection() {
     // O Supabase limita cada resposta a 1.000 linhas. Busca todas as páginas
     // para que as batidas novas não desapareçam quando o mês ultrapassar esse limite.
     while (true) {
-      const { data, error } = await supabase
+      let resposta: any = await supabase
         .from("ponto_registros")
-        .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por")
+        .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por, observacao")
         .gte("data_hora", inicio.toISOString())
         .lt("data_hora", fim.toISOString())
         .order("data_hora", { ascending: true })
         .order("id", { ascending: true })
         .range(de, de + pagina - 1);
+      if (resposta.error && /observacao/i.test(String(resposta.error.message || ""))) {
+        resposta = await supabase.from("ponto_registros")
+          .select("id, funcionario, cargo, tipo, data_hora, latitude, longitude, selfie_url, ajuste_manual, ajuste_por")
+          .gte("data_hora", inicio.toISOString()).lt("data_hora", fim.toISOString())
+          .order("data_hora", { ascending: true }).order("id", { ascending: true }).range(de, de + pagina - 1);
+      }
+      const { data, error } = resposta;
       if (error) { erro = error; break; }
       const lote = (data || []) as Registro[];
       todos.push(...lote);
@@ -262,7 +308,14 @@ export function PontoSection() {
     const dt = new Date(b.data_hora);
     const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     const hora = `${String(dt.getHours()).padStart(2, "0")}:${String(dt.getMinutes()).padStart(2, "0")}`;
-    setEditModal({ modo: "editar", registroId: b.id, funcionario: b.funcionario, cargo: b.cargo || "", data, hora, tipo: b.tipo });
+    const visual = tipoVisual(b);
+    const ausencia = ehAusencia(b.tipo);
+    setEditModal({
+      modo: "editar", registroId: b.id, funcionario: b.funcionario, cargo: b.cargo || "",
+      data, dataFim: data, hora, ausencia, semHora: ausencia && hora === "00:00",
+      tipo: visual,
+      observacao: detalheSalvo(b.observacao),
+    });
   };
   // ── abre o modal pra ADICIONAR uma batida num dia (dia em pt-BR dd/mm/aaaa)
   const abrirNovo = (funcionario: string, cargo: string, diaBR: string) => {
@@ -270,16 +323,36 @@ export function PontoSection() {
     const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
     setEditModal({ modo: "novo", funcionario, cargo, data, hora: "08:00", tipo: "Entrada" });
   };
-  // ── abre o modal pra lançar uma AUSÊNCIA (folga/falta/atestado) num dia
+  // ── abre o modal pra lançar uma AUSÊNCIA num dia
   const abrirAusencia = (funcionario: string, cargo: string, diaBR: string) => {
     const dt = parseDiaBR(diaBR);
     const data = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-    setEditModal({ modo: "novo", ausencia: true, semHora: true, funcionario, cargo, data, hora: "08:00", tipo: "Folga" });
+    setEditModal({ modo: "novo", ausencia: true, semHora: true, funcionario, cargo, data, dataFim: data, hora: "08:00", tipo: "Folga", observacao: "" });
+  };
+  const diasDoPeriodo = (inicio: string, fim: string) => {
+    const resultado: string[] = [];
+    const atual = new Date(`${inicio}T12:00:00`);
+    const limite = new Date(`${fim}T12:00:00`);
+    while (atual <= limite && resultado.length <= 60) {
+      resultado.push(`${atual.getFullYear()}-${String(atual.getMonth() + 1).padStart(2, "0")}-${String(atual.getDate()).padStart(2, "0")}`);
+      atual.setDate(atual.getDate() + 1);
+    }
+    return resultado;
   };
   // ── salva (insert no modo novo, update no modo editar) — marca como ajuste manual
   const salvarEdit = async () => {
     if (!editModal) return;
-    // ausência de dia inteiro grava no início do dia (00:00); com hora usa a hora informada
+    if (editModal.tipo === "Outros" && !String(editModal.observacao || "").trim()) {
+      alert("Descreva o motivo da ausência em Outros.");
+      return;
+    }
+    const dataFim = editModal.tipo === "Férias" ? (editModal.dataFim || editModal.data) : editModal.data;
+    if (dataFim < editModal.data) { alert("A data final das férias não pode ser anterior à inicial."); return; }
+    const periodo = diasDoPeriodo(editModal.data, dataFim);
+    if (!periodo.length || periodo.length > 60) { alert("Selecione um período de férias de até 60 dias."); return; }
+    const tipoBanco = editModal.ausencia ? tipoBancoAusencia(editModal.tipo) : editModal.tipo;
+    const detalhe = String(editModal.observacao || "").trim();
+    const observacao = editModal.ausencia ? `Motivo RH: ${editModal.tipo}${detalhe ? `\n${detalhe}` : ""}` : (detalhe || null);
     const horaUsar = (editModal.ausencia && editModal.semHora) ? "00:00" : editModal.hora;
     const iso = montarISO(editModal.data, horaUsar);
     if (!iso) { alert("Informe uma data válida."); return; }
@@ -287,16 +360,28 @@ export function PontoSection() {
     try {
       if (editModal.modo === "editar" && editModal.registroId) {
         const { error } = await supabase.from("ponto_registros").update({
-          data_hora: iso, tipo: editModal.tipo,
-          ajuste_manual: true, ajuste_por: meuEmail,
+          data_hora: iso, tipo: tipoBanco, observacao, ajuste_manual: true, ajuste_por: meuEmail,
         }).eq("id", editModal.registroId);
         if (error) throw error;
+      } else if (editModal.tipo === "Férias") {
+        const inicioIso = montarISO(periodo[0], "00:00")!;
+        const fimExclusivo = new Date(`${periodo[periodo.length - 1]}T00:00:00`);
+        fimExclusivo.setDate(fimExclusivo.getDate() + 1);
+        const { data: existentes, error: erroExistentes } = await supabase.from("ponto_registros")
+          .select("data_hora,tipo").eq("funcionario", editModal.funcionario)
+          .gte("data_hora", inicioIso).lt("data_hora", fimExclusivo.toISOString());
+        if (erroExistentes) throw erroExistentes;
+        const jaLancados = new Set((existentes || []).filter((r: any) => ["ferias", "férias"].includes(String(r.tipo || "").toLowerCase())).map((r: any) => new Date(r.data_hora).toLocaleDateString("en-CA")));
+        const linhas = periodo.filter(data => !jaLancados.has(data)).map(data => ({
+          funcionario: editModal.funcionario, cargo: editModal.cargo || "", tipo: "Férias",
+          data_hora: montarISO(data, "00:00"), observacao, latitude: null, longitude: null, precisao: null, selfie_url: null,
+          ajuste_manual: true, ajuste_por: meuEmail,
+        }));
+        if (linhas.length) { const { error } = await supabase.from("ponto_registros").insert(linhas); if (error) throw error; }
       } else {
         const { error } = await supabase.from("ponto_registros").insert({
-          funcionario: editModal.funcionario, cargo: editModal.cargo || "",
-          tipo: editModal.tipo, data_hora: iso,
-          latitude: null, longitude: null, precisao: null, selfie_url: null,
-          ajuste_manual: true, ajuste_por: meuEmail,
+          funcionario: editModal.funcionario, cargo: editModal.cargo || "", tipo: tipoBanco, data_hora: iso, observacao,
+          latitude: null, longitude: null, precisao: null, selfie_url: null, ajuste_manual: true, ajuste_por: meuEmail,
         });
         if (error) throw error;
       }
@@ -367,7 +452,7 @@ export function PontoSection() {
         : ausenciaDoDia ? "background:#fffbeb;"
         : ehFalta ? "background:#fef2f2;" : "";
       // marcação de ausência aparece no lugar do saldo (FOLGA/FALTA/ATESTADO)
-      const saldoTxt = ausenciaDoDia ? ausenciaDoDia.tipo.toUpperCase()
+      const saldoTxt = ausenciaDoDia ? tipoVisual(ausenciaDoDia).toUpperCase()
         : esperada === 0 && trabalhada === 0 ? "—"
         : ehFalta ? "FALTA" : fmtSaldo(saldo);
       const saldoCor = ausenciaDoDia ? "color:#b45309;font-weight:700;"
@@ -380,7 +465,7 @@ export function PontoSection() {
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${saida}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;font-size:10px;color:#6b7280;">${escapeHtml(marcacoes)}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${esperada === 0 ? "—" : fmtHoras(esperada)}</td>
-        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${trabalhada > 0 ? fmtHoras(trabalhada) : ausenciaDoDia ? `<span style="color:#b45309;font-weight:700;">${escapeHtml(ausenciaDoDia.tipo)}</span>` : "—"}</td>
+        <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;">${trabalhada > 0 ? fmtHoras(trabalhada) : ausenciaDoDia ? `<span style="color:#b45309;font-weight:700;">${escapeHtml(tipoVisual(ausenciaDoDia))}</span>` : "—"}</td>
         <td style="padding:5px 8px;border:1px solid #e5e7eb;text-align:center;${saldoCor}">${saldoTxt}</td>
       </tr>`);
     }
@@ -664,14 +749,16 @@ export function PontoSection() {
                             .map((b) => {
                               // 🏷️ marcação de ausência → chip colorido próprio, sem GPS/selfie/horas
                               if (ehAusencia(b.tipo)) {
-                                const am = AUSENCIA_COR[b.tipo] || { cor: "#6b7280", bg: "#f3f4f6" };
+                                const visual = tipoVisual(b);
+                                const detalhe = detalheSalvo(b.observacao);
+                                const am = AUSENCIA_COR[visual] || AUSENCIA_COR[b.tipo] || { cor: "#6b7280", bg: "#f3f4f6" };
                                 const temHora = !b.data_hora.endsWith("T00:00:00") && new Date(b.data_hora).getHours() !== 0;
                                 return (
                                   <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, background: am.bg, border: `1px solid ${am.cor}40`, borderRadius: 10, padding: "6px 12px" }}>
                                     <span style={{ fontSize: 13 }}>🏷️</span>
                                     <div>
-                                      <p style={{ color: am.cor, fontSize: 13, fontWeight: 800, margin: 0 }}>{b.tipo}</p>
-                                      <p style={{ color: am.cor, fontSize: 10, margin: 0, opacity: 0.8 }}>{temHora ? horaFmt(b.data_hora) : "dia inteiro"}</p>
+                                      <p style={{ color: am.cor, fontSize: 13, fontWeight: 800, margin: 0 }}>{visual}</p>
+                                      <p style={{ color: am.cor, fontSize: 10, margin: 0, opacity: 0.8 }}>{detalhe || (temHora ? horaFmt(b.data_hora) : "dia inteiro")}</p>
                                     </div>
                                     {b.ajuste_por && <span title={`Lançado por ${b.ajuste_por}`} style={{ fontSize: 11, marginLeft: 2 }}>✏️</span>}
                                     {podeEditar && (
@@ -786,32 +873,18 @@ export function PontoSection() {
             </p>
 
             <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>{editModal.ausencia ? "Tipo de ausência" : "Tipo"}</label>
-            <select value={editModal.tipo} onChange={(e) => setEditModal({ ...editModal, tipo: e.target.value })}
+            <select value={editModal.tipo} onChange={(e) => { const tipo=e.target.value; setEditModal({ ...editModal, tipo, semHora: tipo==="Férias" ? true : editModal.semHora, dataFim: tipo==="Férias" ? (editModal.dataFim || editModal.data) : editModal.dataFim, observacao: tipo==="Outros" ? (editModal.observacao || "") : editModal.observacao }); }}
               style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginBottom: 14, marginTop: 4 }}>
               {(editModal.ausencia ? TIPOS_AUSENCIA : TIPOS_BATIDA).map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
-            {editModal.ausencia && (
-              <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer", fontSize: 13, color: "#374151", fontWeight: 600 }}>
-                <input type="checkbox" checked={!!editModal.semHora} onChange={(e) => setEditModal({ ...editModal, semHora: e.target.checked })} style={{ width: 16, height: 16, accentColor: "#c2410c" }} />
-                Dia inteiro (sem horário específico)
-              </label>
-            )}
-
-            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-              <div style={{ flex: 1 }}>
-                <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Data</label>
-                <input type="date" value={editModal.data} onChange={(e) => setEditModal({ ...editModal, data: e.target.value })}
-                  style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
-              </div>
-              {!(editModal.ausencia && editModal.semHora) && (
-                <div style={{ width: 120 }}>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: "#6b7280", textTransform: "uppercase" }}>Hora</label>
-                  <input type="time" value={editModal.hora} onChange={(e) => setEditModal({ ...editModal, hora: e.target.value })}
-                    style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 10, border: "1px solid #e5e7eb", marginTop: 4 }} />
-                </div>
-              )}
+            {editModal.ausencia && editModal.tipo === "Outros" && <div style={{marginBottom:14}}><label style={{fontSize:11,fontWeight:800,color:"#6b7280",textTransform:"uppercase"}}>Qual é o motivo? *</label><textarea value={editModal.observacao||""} onChange={e=>setEditModal({...editModal,observacao:e.target.value})} rows={3} placeholder="Descreva a ausência" style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:13,borderRadius:10,border:"1px solid #e5e7eb",marginTop:4,resize:"vertical"}}/></div>}
+            {editModal.ausencia && editModal.tipo !== "Férias" && <label style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,cursor:"pointer",fontSize:13,color:"#374151",fontWeight:600}}><input type="checkbox" checked={!!editModal.semHora} onChange={e=>setEditModal({...editModal,semHora:e.target.checked})} style={{width:16,height:16,accentColor:"#c2410c"}}/>Dia inteiro (sem horário específico)</label>}
+            {editModal.tipo === "Férias" && <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:10,padding:"9px 11px",marginBottom:14,color:"#047857",fontSize:11}}>Selecione o período que ficará abonado no banco de horas. Um registro de férias será criado para cada dia.</div>}
+            <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:150}}><label style={{fontSize:11,fontWeight:800,color:"#6b7280",textTransform:"uppercase"}}>{editModal.tipo==="Férias"?"Início do abono":"Data"}</label><input type="date" value={editModal.data} onChange={e=>setEditModal({...editModal,data:e.target.value,dataFim:editModal.tipo==="Férias"&&(!editModal.dataFim||editModal.dataFim<e.target.value)?e.target.value:editModal.dataFim})} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:14,borderRadius:10,border:"1px solid #e5e7eb",marginTop:4}}/></div>
+              {editModal.tipo==="Férias" && <div style={{flex:1,minWidth:150}}><label style={{fontSize:11,fontWeight:800,color:"#6b7280",textTransform:"uppercase"}}>Fim do abono</label><input type="date" min={editModal.data} value={editModal.dataFim||editModal.data} onChange={e=>setEditModal({...editModal,dataFim:e.target.value})} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:14,borderRadius:10,border:"1px solid #e5e7eb",marginTop:4}}/></div>}
+              {!(editModal.ausencia&&editModal.semHora) && <div style={{width:120}}><label style={{fontSize:11,fontWeight:800,color:"#6b7280",textTransform:"uppercase"}}>Hora</label><input type="time" value={editModal.hora} onChange={e=>setEditModal({...editModal,hora:e.target.value})} style={{width:"100%",boxSizing:"border-box",padding:"10px 12px",fontSize:14,borderRadius:10,border:"1px solid #e5e7eb",marginTop:4}}/></div>}
             </div>
-
             <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "8px 12px", marginBottom: 18 }}>
               <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
                 ⚠️ {editModal.ausencia ? "Esta ausência" : "Esta batida"} será registrada manualmente (por: {meuEmail || "você"}).
