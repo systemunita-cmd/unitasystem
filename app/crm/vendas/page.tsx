@@ -1344,6 +1344,10 @@ export default function Vendas() {
           delete dcFinal[s];
         }
       }
+      const statusEhInstalada = String(form.status_venda || "").trim().toUpperCase() === "INSTALADA";
+      const agora = new Date();
+      const hojeLocal = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}-${String(agora.getDate()).padStart(2,"0")}`;
+      const dataInstalacaoEfetiva = statusEhInstalada ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
       const payload: Record<string, any> = {
         data_proposta: form.data_proposta, nome: up(form.nome), cpf: form.cpf, rg: up(form.rg),
         data_nascimento: form.data_nascimento, nome_mae: up(form.nome_mae), email: form.email,
@@ -1353,7 +1357,7 @@ export default function Vendas() {
         valor_plano: form.valor_plano ? Number(form.valor_plano) : null,
         data_agendamento: form.data_agendamento, periodo_instalacao: form.periodo_instalacao,
         vendedor: form.vendedor, status_venda: form.status_venda,
-        data_instalacao: form.data_instalacao, data_cancelamento: form.data_cancelamento,
+        data_instalacao: dataInstalacaoEfetiva, data_cancelamento: form.data_cancelamento,
         operadora: form.operadora,
         dados_customizados: dcFinal,
       };

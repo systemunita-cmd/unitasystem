@@ -602,6 +602,10 @@ function PropostaForm() {
     dadosCustomFinal.pdv_id = pdvId;
     dadosCustomFinal.equipe_comercial_id = equipeComercialId;
     dadosCustomFinal.fila_operacional_id = filaOperacionalId;
+    const statusFinal = vendedorTravaStatus ? STATUS_PADRAO : (form.status_venda || STATUS_PADRAO);
+    const agora = new Date();
+    const hojeLocal = `${agora.getFullYear()}-${String(agora.getMonth()+1).padStart(2,"0")}-${String(agora.getDate()).padStart(2,"0")}`;
+    const dataInstalacaoEfetiva = String(statusFinal).trim().toUpperCase() === "INSTALADA" ? (form.data_instalacao || hojeLocal) : (form.data_instalacao || null);
     const payload: any = {
       criado_por: perm.userEmail || null,
       equipe_id_criador: perm.equipeId || null,
@@ -630,8 +634,8 @@ function PropostaForm() {
       periodo_instalacao: form.periodo_instalacao || "",
       vendedor: form.vendedor || "",
       // 🔒 Vendedor sempre grava AGUARDANDO AUDITORIA, ignorando qualquer valor no form.
-      status_venda: vendedorTravaStatus ? STATUS_PADRAO : (form.status_venda || STATUS_PADRAO),
-      data_instalacao: form.data_instalacao || null,
+      status_venda: statusFinal,
+      data_instalacao: dataInstalacaoEfetiva,
       data_cancelamento: form.data_cancelamento || null,
       operadora: form.operadora || "",
       dados_customizados: dadosCustomFinal,
