@@ -94,7 +94,8 @@ with params as (
 ), ajustes as (
   select f.id funcionario_id,coalesce(sum(round(bh.horas*60)),0)::int ajuste_min
   from funcs f cross join params p left join public.banco_horas bh on lower(trim(bh.funcionario))=lower(trim(f.nome))
-    and ((bh.data between p.inicio and p.fim) or (bh.data is null and p_competencia=to_char(p.local_ate::date,'YYYY-MM')))
+    and ((bh.data between to_char(p.inicio,'YYYY-MM-DD') and to_char(p.fim,'YYYY-MM-DD'))
+      or (bh.data is null and p_competencia=to_char(p.local_ate::date,'YYYY-MM')))
   group by f.id
 )
 select f.id,f.nome,coalesce(r.previstos,0),coalesce(r.trabalhados,0),
