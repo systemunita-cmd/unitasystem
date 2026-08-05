@@ -12,7 +12,7 @@ import { usePermissao } from "./usePermissao";
 //
 // 🔒 NOVO (v2): TRAVA por equipe pro usuário restrito (escopo "team").
 //   - Super Admin OU grupo "Administração Geral" → escolhe qualquer equipe
-//     (inclusive "Todas as equipes"), igual antes.
+//     (inclusive "Todos os Empresas/PDVs"), igual antes.
 //   - Qualquer outro usuário COM equipe_id (ex: Diretor, Gerente, Supervisor)
 //     → fica TRAVADO na própria equipe. O dropdown some e vira um rótulo
 //     read-only. O filtro de dados passa a usar SEMPRE a equipe dele.
@@ -140,7 +140,7 @@ export function useEquipeFiltro(_workspaceId?: string) {
   }) => {
     // 🔒 TRAVADO: mostra a equipe fixa, sem dropdown (read-only)
     if (travado) {
-      const nomeEquipe = equipeSelecionada?.nome || "Minha equipe";
+      const nomeEquipe = equipeSelecionada?.nome || "Meu Empresa/PDV";
       return (
         <div
           style={{
@@ -166,7 +166,7 @@ export function useEquipeFiltro(_workspaceId?: string) {
               whiteSpace: "nowrap",
             }}
           >
-            Equipe
+            Empresa/PDV
           </span>
           <span
             style={{
@@ -210,7 +210,7 @@ export function useEquipeFiltro(_workspaceId?: string) {
             whiteSpace: "nowrap",
           }}
         >
-          Equipe
+          Empresa/PDV
         </span>
         <select
           value={equipeId}
@@ -228,7 +228,7 @@ export function useEquipeFiltro(_workspaceId?: string) {
           }}
           disabled={equipes.length === 0}
         >
-          <option value="">🌐 Todas as equipes</option>
+          <option value="">🌐 Todos os Empresas/PDVs</option>
           {equipes.map((eq) => (
             <option key={eq.id} value={eq.id}>
               {eq.nome}

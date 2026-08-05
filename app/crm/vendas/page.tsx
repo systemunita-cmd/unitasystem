@@ -204,6 +204,7 @@ const isoLocal = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 // 🔤 Texto padrão do sistema: MAIÚSCULO, sem acento e sem ç ("José Gonçalves" → "JOSE GONCALVES")
+const chaveStatusPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
 const textoLimpo = (v: string): string =>
   v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
@@ -1134,10 +1135,12 @@ export default function Vendas() {
     let configs: ConfigCampoPadrao[] = [];
     let customs: CampoCustom[] = [];
     let slugsListaSet = new Set<string>();
+    let planosInativos = new Set<string>();
     try {
-      const [respConfig, respCustom] = await Promise.all([
+      const [respConfig, respCustom, respPlanos] = await Promise.all([
         supabase.from("proposta_campos_padrao_config").select("*"),
         supabase.from("proposta_campos_customizados").select("*").eq("ativo", true).order("ordem", { ascending: true }),
+        supabase.from("proposta_planos_status").select("plano_chave,ativo"),
       ]);
       configs = (respConfig.data || []).map((c: any) => ({
         id: c.id, campo_slug: c.campo_slug, label_custom: c.label_custom,
@@ -1151,6 +1154,7 @@ export default function Vendas() {
         opcoes: Array.isArray(c.opcoes) ? c.opcoes : (typeof c.opcoes === "string" ? JSON.parse(c.opcoes) : []),
         placeholder: c.placeholder, ativo: c.ativo,
       }));
+      planosInativos = new Set((respPlanos.data || []).filter((item: any) => item.ativo === false).map((item: any) => String(item.plano_chave || "")));
 
       for (const c of (respConfig.data || [])) {
         if (c.mostrar_na_lista) slugsListaSet.add(c.campo_slug);
@@ -1163,7 +1167,7 @@ export default function Vendas() {
     }
     setSlugsNaLista(slugsListaSet);
 
-    let camposFinais = montarCamposUnificados(configs, customs).filter(c => c.visivel);
+    let camposFinais = montarCamposUnificados(configs, customs).filter(c => c.visivel).map(c => c.origem === "fixo" && c.slug === "plano" ? { ...c, opcoes: (c.opcoes || []).filter(opcao => !planosInativos.has(chaveStatusPlano(opcao))) } : c);
     if (camposFinais.length === 0 && usouMock) {
       camposFinais = camposMockTelecom();
     }
@@ -1501,6 +1505,7 @@ export default function Vendas() {
           <div>{lab}
             <select value={val} onChange={e => set(e.target.value)} style={inputStyle}>
               <option value="">Selecione...</option>
+              {val && !(c.opcoes || []).includes(String(val)) && <option value={String(val)}>{String(val)} (inativo)</option>}
               {(c.opcoes || []).map(op => <option key={op} value={op}>{prefixoVenc ? `Dia ${op}` : ehStatus ? `${statusMeta(op).emoji} ${op}` : op}</option>)}
             </select>
           </div>
@@ -2137,10 +2142,10 @@ export default function Vendas() {
                 boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
               }}>
                 <span style={{ fontSize: 14, lineHeight: 1 }}>🎯</span>
-                <span style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Fila</span>
+                <span style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Equipe</span>
                 <select value={filaFiltro} onChange={e => setFilaFiltro(e.target.value)}
                   style={{ background: "transparent", border: "none", outline: "none", color: filaFiltro ? "#2563eb" : "#1f2937", fontSize: 13, fontWeight: 700, cursor: "pointer", padding: "4px 0", minWidth: 130 }}>
-                  <option value="">🌐 Todas as filas</option>
+                  <option value="">🌐 Todas as equipes</option>
                   {filasDoPdv.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                 </select>
               </div>

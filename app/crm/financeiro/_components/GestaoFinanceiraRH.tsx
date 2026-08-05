@@ -30,10 +30,11 @@ const botao = { border: "1px solid #365f4b", borderRadius: 10, padding: "10px 15
 
 type Titulo = { id: string; tipo: string; descricao: string; valor: number; status: string; competencia: string; vencimento: string; categoria: string; centro_custo?: string; valor_conciliado?: number; origem_modulo?: string; origem_tipo?: string };
 type Fechamento = { competencia: string; status: string; entradas_snapshot: number; saidas_snapshot: number; saldo_snapshot: number };
-type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; comissao_manual: number };
+type Venda = { id: number; nome: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; comissao_manual: number; fila_id?: number | string | null };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string; status_conciliacao?: string; valor_alocado?: number };
 type Alerta = { id: string; tipo: string; titulo: string; mensagem: string; vencimento: string; status: string };
-type IdentidadeVendedor = { email: string; nome: string; fila: string };
+type IdentidadeVendedor = { id?: number | string; email: string; nome: string; fila: string; filaId?: number | string | null; filasAcesso?: (number | string)[] };
+type EquipeSupervisor = { id: number | string; nome: string; responsavel_usuario_id?: number | string | null };
 type FaixaComissao = { de: number; ate: number | null; valor: number };
 type RegraComissao = { id?: string; competencia: string; vendedor: string; modo: "por_plano" | "por_venda" | "faixas" | "valor_unico"; valor_por_venda: number; valor_unico: number; faixas: FaixaComissao[] };
 type PlanoComissao = { plano: string; valor_comissao: number; ativo: boolean };
@@ -53,6 +54,8 @@ export function GestaoFinanceiraRH() {
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState("");
   const [identidades, setIdentidades] = useState<IdentidadeVendedor[]>([]);
+  const [equipesSupervisor, setEquipesSupervisor] = useState<EquipeSupervisor[]>([]);
+  const [regraSupervisor, setRegraSupervisor] = useState({ valor: 10, desconto: 20 });
   const [vendedorAberto, setVendedorAberto] = useState<string | null>(null);
   const [salvandoVenda, setSalvandoVenda] = useState<number | null>(null);
   const [regrasComissao, setRegrasComissao] = useState<RegraComissao[]>([]);
@@ -62,16 +65,15 @@ export function GestaoFinanceiraRH() {
 
   useEffect(() => {
     (async () => {
-      const [u, f] = await Promise.all([
-        supabase.from("usuarios").select("email,nome,fila_id"),
-        supabase.from("filas").select("id,nome"),
+      const [u, f, r] = await Promise.all([
+        supabase.from("usuarios").select("id,email,nome,fila_id,filas_acesso"),
+        supabase.from("filas").select("id,nome,responsavel_usuario_id").eq("ativo", true),
+        supabase.from("fin_planilha_regras").select("valor_venda_supervisor,percentual_desconto_supervisor").eq("id",1).maybeSingle(),
       ]);
       const filas = new Map((f.data || []).map((x: any) => [String(x.id), x.nome]));
-      setIdentidades((u.data || []).map((x: any) => ({
-        email: String(x.email || ""),
-        nome: String(x.nome || x.email || ""),
-        fila: x.fila_id == null ? "Sem fila" : String(filas.get(String(x.fila_id)) || `Fila ${x.fila_id}`),
-      })));
+      setIdentidades((u.data || []).map((x: any) => ({ id:x.id, email:String(x.email||""), nome:String(x.nome||x.email||""), filaId:x.fila_id, filasAcesso:Array.isArray(x.filas_acesso)?x.filas_acesso:[], fila:x.fila_id==null?"Sem equipe":String(filas.get(String(x.fila_id))||`Equipe ${x.fila_id}`) })));
+      setEquipesSupervisor((f.data || []) as EquipeSupervisor[]);
+      if (r.data) setRegraSupervisor({ valor:Number(r.data.valor_venda_supervisor)||0, desconto:Number(r.data.percentual_desconto_supervisor)||0 });
     })();
   }, []);
 
@@ -83,7 +85,7 @@ export function GestaoFinanceiraRH() {
     const [t, f, v, e, a, r, pc] = await Promise.all([
       supabase.from("fin_titulos").select("id,tipo,descricao,valor,status,competencia,vencimento,categoria,centro_custo,valor_conciliado,origem_modulo,origem_tipo").order("vencimento"),
       supabase.from("fin_competencias").select("*").order("competencia", { ascending: false }),
-      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
+      supabase.from("proposta").select("id,nome,vendedor,plano,dados_customizados,data_instalacao,comissao_manual,fila_id").eq("status_venda", "INSTALADA").gte("data_instalacao", `${comp}-01`).lt("data_instalacao", inicioProximaComp(comp)).order("vendedor"),
       supabase.from("fin_extratos").select("*").order("data", { ascending: false }).limit(500),
       supabase.from("fin_alertas").select("*").neq("status", "resolvido").order("vencimento"),
       supabase.from("fin_comissao_regras").select("*").eq("competencia", comp),
@@ -176,6 +178,22 @@ export function GestaoFinanceiraRH() {
     });
     return Object.entries(m).sort((a, b) => b[1].qtd - a[1].qtd);
   }, [vendas, planosComissao]);
+
+  const comissoesSupervisor = useMemo(() => {
+    const porIdentidade = new Map<string, IdentidadeVendedor>();
+    identidades.forEach(item => { porIdentidade.set(item.email.trim().toLowerCase(),item); porIdentidade.set(item.nome.trim().toLowerCase(),item); });
+    const equipePorId = new Map(equipesSupervisor.map(item => [String(item.id),item]));
+    const usuarioPorId = new Map(identidades.map(item => [String(item.id),item]));
+    const grupos = new Map<string,{ equipe:EquipeSupervisor; quantidade:number }>();
+    vendas.forEach(venda => {
+      const identidade=porIdentidade.get(String(venda.vendedor||"").trim().toLowerCase());
+      const filaId=venda.fila_id||identidade?.filaId||identidade?.filasAcesso?.[0];
+      const equipe=filaId!=null?equipePorId.get(String(filaId)):undefined;
+      if(!equipe?.responsavel_usuario_id)return;
+      const chave=String(equipe.id); const atual=grupos.get(chave)||{equipe,quantidade:0}; atual.quantidade++; grupos.set(chave,atual);
+    });
+    return Array.from(grupos.values()).map(item=>{const bruto=item.quantidade*regraSupervisor.valor;const desconto=bruto*regraSupervisor.desconto/100;return{...item,responsavel:usuarioPorId.get(String(item.equipe.responsavel_usuario_id)),bruto,desconto,total:bruto-desconto};}).sort((a,b)=>b.total-a.total);
+  },[vendas,identidades,equipesSupervisor,regraSupervisor]);
 
   const regraDoVendedor = (vendedor: string): RegraComissao => regrasComissao.find(r => r.vendedor.trim().toLowerCase() === vendedor.trim().toLowerCase()) || { competencia: comp, vendedor, modo: "por_plano", valor_por_venda: 0, valor_unico: 0, faixas: [] };
 
@@ -306,6 +324,10 @@ export function GestaoFinanceiraRH() {
           <div><b style={{ color: "#294c3b", fontSize: 15 }}>Comissões por vendedor</b><p style={{ margin: "4px 0 0", color: "#78716c", fontSize: 12 }}>A edição é liberada ao completar 20 vendas instaladas na competência.</p></div>
           <span style={{ background: "#fff", border: "1px solid #dcebe2", borderRadius: 999, padding: "7px 12px", color: "#294c3b", fontSize: 11, fontWeight: 800 }}>{vendas.length} instalações em {mesNome(comp)}</span>
         </div>
+        {comissoesSupervisor.length > 0 && <div style={{ ...card, padding:0, overflow:"hidden" }}>
+          <div style={{ padding:"14px 17px", background:"#f8fbf9", borderBottom:"1px solid #dcebe2" }}><b style={{color:"#294c3b",fontSize:13}}>Comissão dos responsáveis de equipe</b><p style={{margin:"3px 0 0",fontSize:10,color:"#64748b"}}>Calculada pelas vendas instaladas dos vendedores vinculados à equipe.</p></div>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:720}}><thead><tr style={{background:"#f8fafc"}}>{["Equipe","Responsável","Instaladas","Valor/venda","Bruto",`Desconto (${regraSupervisor.desconto}%)`,"A receber"].map(h=><th key={h} style={{padding:10,textAlign:"left",color:"#64748b",fontSize:9}}>{h}</th>)}</tr></thead><tbody>{comissoesSupervisor.map(item=><tr key={String(item.equipe.id)} style={{borderTop:"1px solid #e2e8f0"}}><td style={{padding:10,fontWeight:800}}>{item.equipe.nome}</td><td style={{padding:10}}><b>{item.responsavel?.nome||"Não identificado"}</b><small style={{display:"block",color:"#94a3b8"}}>{item.responsavel?.email||""}</small></td><td style={{padding:10}}>{item.quantidade}</td><td style={{padding:10}}>{moeda(regraSupervisor.valor)}</td><td style={{padding:10}}>{moeda(item.bruto)}</td><td style={{padding:10,color:"#dc2626"}}>{moeda(item.desconto)}</td><td style={{padding:10,color:"#15803d",fontWeight:900}}>{moeda(item.total)}</td></tr>)}</tbody></table></div>
+        </div>}
         {porVendedor.map(([vendedor,x]) => {
           const pessoa = identidadeDoVendedor(vendedor);
           const liberada = x.qtd >= 20;

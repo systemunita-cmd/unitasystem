@@ -17,17 +17,20 @@ export function ConfiguracaoComissaoPlanos({ competencia, podeEditar, onMensagem
   const [salvando, setSalvando] = useState(false);
 
   const carregar = async () => {
-    const [campo, camposCustomizados, configurados, usados] = await Promise.all([
+    const [campo, camposCustomizados, configurados, usados, statusPlanos] = await Promise.all([
       supabase.from("proposta_campos_padrao_config").select("opcoes").eq("campo_slug", "plano").maybeSingle(),
       supabase.from("proposta_campos_customizados").select("slug,label,opcoes,ativo").eq("ativo", true),
       supabase.from("fin_comissao_planos").select("id,plano,plano_chave,valor_comissao,ativo").order("plano"),
       supabase.from("proposta").select("plano").not("plano", "is", null).limit(5000),
+      supabase.from("proposta_planos_status").select("plano_chave,ativo"),
     ]);
     const opcoesFixas = Array.isArray(campo.data?.opcoes) ? campo.data.opcoes.map(String).filter(Boolean) : [];
     const opcoesCustomizadas = (camposCustomizados.data || []).filter((item: any) => /plano/i.test(`${item.slug || ""} ${item.label || ""}`)).flatMap((item: any) => Array.isArray(item.opcoes) ? item.opcoes.map(String) : []);
     const opcoes = Array.from(new Set([...opcoesFixas, ...opcoesCustomizadas].map(item => item.trim()).filter(Boolean)));
     const historicos = Array.from(new Set((usados.data || []).map((item: any) => String(item.plano || "").trim()).filter(Boolean)));
-    const ativos = opcoes.length ? opcoes : historicos;
+    const mapaStatus = new Map((statusPlanos.data || []).map((item: any) => [String(item.plano_chave || ""), item.ativo !== false]));
+    const opcoesAtivas = opcoes.filter(plano => mapaStatus.get(normalizar(plano)) !== false);
+    const ativos = opcoes.length ? opcoesAtivas : historicos.filter(plano => mapaStatus.get(normalizar(plano)) !== false);
     const banco = (configurados.data || []).map((item: any) => ({ ...item, valor_comissao: Number(item.valor_comissao) || 0 })) as PlanoBanco[];
     const mapa: Record<string, number> = {};
     banco.forEach(item => { mapa[normalizar(item.plano)] = item.valor_comissao; });

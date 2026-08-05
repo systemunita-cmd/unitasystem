@@ -58,7 +58,11 @@ type Fila = {
   equipe_id: number | null;
   ativo: boolean;
   created_at?: string;
+  responsavel_usuario_id?: number | null;
+  valor_comissao_supervisor?: number | null;
 };
+
+type FilaOperacional = { id: number; equipe_id: number; nome: string; descricao?: string | null; cor: string; icone: string; ativo: boolean };
 
 type GrupoPermissao = {
   id: number;
@@ -67,7 +71,7 @@ type GrupoPermissao = {
   permissoes: Record<string, boolean>;
 };
 
-type Aba = "usuarios" | "equipes" | "filas" | "permissoes" | "geral";
+type Aba = "usuarios" | "equipes" | "filas" | "filas_operacionais" | "permissoes" | "geral";
 
 const CATEGORIAS_PERMISSAO = [
   { nome: "🎯 CRM", cor: "#16a34a", permissoes: [
@@ -258,6 +262,7 @@ export default function Configuracoes() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [filas, setFilas] = useState<Fila[]>([]);
+  const [filasOperacionais, setFilasOperacionais] = useState<FilaOperacional[]>([]);
   const [canais, setCanais] = useState<{ id: number; nome: string; tipo: string }[]>([]);
   const [gruposPermissao, setGruposPermissao] = useState<GrupoPermissao[]>([]);
   const [loadingInicial, setLoadingInicial] = useState(true);
@@ -308,6 +313,11 @@ export default function Configuracoes() {
       if (cx) setCanais(cx);
     } catch {}
   };
+  const fetchFilasOperacionais = async () => {
+    const { data, error } = await supabase.from("filas_operacionais").select("*").eq("ativo", true).order("nome", { ascending: true });
+    if (error?.code === "PGRST205" || error?.code === "PGRST204") { setTabelasFaltando(p => p.includes("filas_operacionais") ? p : [...p, "filas_operacionais"]); return; }
+    if (data) setFilasOperacionais(data as FilaOperacional[]);
+  };
   const fetchGrupos = async () => {
     const { data, error } = await supabase.from("grupos_permissao").select("*").order("created_at", { ascending: false });
     if (error?.code === "PGRST205") { setTabelasFaltando(p => p.includes("grupos_permissao") ? p : [...p, "grupos_permissao"]); return; }
@@ -319,7 +329,7 @@ export default function Configuracoes() {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/"); return; }
-      await Promise.all([fetchUsuarios(), fetchEquipes(), fetchFilas(), fetchGrupos()]);
+      await Promise.all([fetchUsuarios(), fetchEquipes(), fetchFilas(), fetchFilasOperacionais(), fetchGrupos()]);
       setLoadingInicial(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -331,6 +341,7 @@ export default function Configuracoes() {
       .on("postgres_changes", { event: "*", schema: "public", table: "usuarios" }, fetchUsuarios)
       .on("postgres_changes", { event: "*", schema: "public", table: "equipes" }, fetchEquipes)
       .on("postgres_changes", { event: "*", schema: "public", table: "filas" }, fetchFilas)
+      .on("postgres_changes", { event: "*", schema: "public", table: "filas_operacionais" }, fetchFilasOperacionais)
       .on("postgres_changes", { event: "*", schema: "public", table: "grupos_permissao" }, fetchGrupos)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -390,8 +401,9 @@ export default function Configuracoes() {
   // ═══ ABAS DEFINIDAS ═══
   const abas: { id: Aba; nome: string; icone: string; cor: string; count: number; podeVer: boolean }[] = [
     { id: "usuarios",   nome: "Usuários",   icone: "👥", cor: "#2563eb", count: usuariosVisiveis.length,        podeVer: podeGerenciarUsuarios },
-    { id: "equipes",    nome: "Equipes",    icone: "🏢", cor: "#a855f7", count: equipesVisiveis.length,         podeVer: podeGerenciarUsuarios },
-    { id: "filas",      nome: "Filas",      icone: "📋", cor: "#06b6d4", count: filasVisiveis.length,           podeVer: podeGerenciarFilas },
+    { id: "equipes",    nome: "Empresas/PDVs",    icone: "🏢", cor: "#a855f7", count: equipesVisiveis.length,         podeVer: podeGerenciarUsuarios },
+    { id: "filas",      nome: "Equipes",      icone: "📋", cor: "#06b6d4", count: filasVisiveis.length,           podeVer: podeGerenciarFilas },
+    { id: "filas_operacionais", nome: "Filas", icone: "📥", cor: "#0ea5e9", count: filasOperacionais.length, podeVer: podeGerenciarFilas },
     { id: "permissoes", nome: "Permissões", icone: "🔐", cor: "#8b5cf6", count: gruposPermissao.length, podeVer: podeGerenciarGrupos },
     { id: "geral",      nome: "Geral",      icone: "⚙️", cor: "#f59e0b", count: 0,                      podeVer: podeConfigSistema },
   ];
@@ -567,6 +579,9 @@ export default function Configuracoes() {
               podeGerenciar={podeGerenciarFilas}
               onRefetch={fetchFilas}
             />
+          )}
+          {abaAtiva === "filas_operacionais" && (
+            <AbaFilasOperacionais filas={filasOperacionais} equipes={filasVisiveis} isMobile={isMobile} IS={IS} cardStyle={cardStyle} labelStyle={labelStyle} podeGerenciar={podeGerenciarFilas} onRefetch={fetchFilasOperacionais} />
           )}
           {abaAtiva === "permissoes" && (
             <AbaPermissoes
@@ -833,7 +848,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
             ))}
           </select>
         <select value={filtroEquipe} onChange={e => setFiltroEquipe(e.target.value)} style={{ ...IS, maxWidth: 200 }}>
-          <option value="todas">Equipe: Todas</option>
+          <option value="todas">Empresa/PDV: Todos</option>
           <option value="sem">Sem equipe</option>
           {equipes.map((eq: Equipe) => (
             <option key={eq.id} value={eq.id.toString()}>{eq.icone} {eq.nome}</option>
@@ -856,7 +871,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
           <p style={{ color: "#2563eb", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 14px" }}>
             {editandoUsuario ? "✏️ Editar Usuário" : "➕ Novo Usuário"}
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
             <div>
               <label style={labelStyle}>Nome completo *</label>
               <input placeholder="Ex: Ana Silva" value={formUsuario.nome} onChange={e => setFormUsuario({ ...formUsuario, nome: e.target.value })} style={IS} />
@@ -890,7 +905,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
 
             {/* 🆕 v4 — EQUIPES (multi, botões). Marcar libera as filas abaixo */}
             <div style={{ gridColumn: isMobile ? "1" : "span 3" }}>
-              <label style={labelStyle}>🏢 Equipes (clique pra selecionar — libera as filas abaixo)</label>
+              <label style={labelStyle}>🏢 Empresas/PDVs (selecione para liberar as equipes abaixo)</label>
               <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
                 {equipes.map((eq: Equipe) => {
                   const marcada = formUsuario.equipes_acesso.includes(eq.id);
@@ -923,7 +938,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
                     </button>
                   );
                 })}
-                {equipes.length === 0 && <span style={{ color: "#9ca3af", fontSize: 12 }}>Nenhuma equipe cadastrada</span>}
+                {equipes.length === 0 && <span style={{ color: "#9ca3af", fontSize: 12 }}>Nenhum Empresa/PDV cadastrado</span>}
               </div>
               <p style={{ color: "#9ca3af", fontSize: 11, margin: "6px 0 0", lineHeight: 1.4 }}>
                 Marque as equipes deste usuário. As vendas dessas equipes ficam visíveis pra ele (útil pra BKO e gerentes).
@@ -933,7 +948,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
             {/* 🆕 v4 — FILAS (botões), aparecem conforme as equipes marcadas */}
             <div style={{ gridColumn: isMobile ? "1" : "span 3" }}>
               <label style={labelStyle}>
-                📋 Filas de atendimento (pode marcar várias)
+                📋 Equipes comerciais (pode marcar várias)
                 {formUsuario.equipes_acesso.length > 0 && filasDisponiveis.length > 0 && (
                   <span style={{ color: "#9ca3af", fontWeight: 500, marginLeft: 6, textTransform: "none", letterSpacing: 0, fontSize: 10 }}>
                     · {filasDisponiveis.length} disponível{filasDisponiveis.length > 1 ? "is" : ""}
@@ -947,7 +962,7 @@ function AbaUsuarios({ usuarios, equipes, filas, canais, gruposPermissao, equipe
                 </div>
               ) : filasDisponiveis.length === 0 ? (
                 <div style={{ background: "#fffbeb", border: "1px dashed #fcd34d", borderRadius: 10, padding: "12px 14px", color: "#92400e", fontSize: 12.5, fontWeight: 600 }}>
-                  ⚠️ As equipes selecionadas não têm filas cadastradas — crie na aba Filas
+                  ⚠️ Os Empresas/PDVs selecionados não têm equipes cadastradas — crie na aba Equipes
                 </div>
               ) : (
                 <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, marginTop: 4 }}>
@@ -1332,7 +1347,7 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
     const aviso = (qtdU > 0 || qtdF > 0)
       ? `\n\nEla tem ${qtdU} usuário(s) e ${qtdF} fila(s) vinculadas. Eles serão desassociados (ficarão "Sem equipe") mas não serão apagados.`
       : "";
-    if (!confirm(`Desativar a equipe "${eq.nome}"?${aviso}`)) return;
+    if (!confirm(`Desativar o Empresa/PDV "${eq.nome}"?${aviso}`)) return;
     await supabase.from("usuarios").update({ equipe_id: null }).eq("equipe_id", eq.id);
     await supabase.from("filas").update({ equipe_id: null }).eq("equipe_id", eq.id);
     await supabase.from("equipes").update({ ativo: false }).eq("id", eq.id);
@@ -1343,7 +1358,7 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Toolbar */}
       <div style={{ ...cardStyle, padding: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input placeholder="🔍 Buscar equipes..." value={busca} onChange={e => setBusca(e.target.value)}
+        <input placeholder="🔍 Buscar Empresas/PDVs..." value={busca} onChange={e => setBusca(e.target.value)}
           style={{ ...IS, flex: "1 1 240px", maxWidth: 400, borderRadius: 20 }} />
         <div style={{ flex: 1 }} />
         <button onClick={abrirNova}
@@ -1352,14 +1367,14 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
             color: "white", border: "none", borderRadius: 10,
             padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
             boxShadow: "0 4px 12px rgba(168,85,247,0.3)",
-          }}>+ Nova Equipe</button>
+          }}>+ Novo Empresa/PDV</button>
       </div>
 
       {/* Form */}
       {showForm && (
         <div style={{ ...cardStyle, padding: 22, borderTop: "3px solid #a855f7" }}>
           <p style={{ color: "#a855f7", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 14px" }}>
-            {editando ? "✏️ Editar Equipe" : "➕ Nova Equipe"}
+            {editando ? "✏️ Editar Empresa/PDV" : "➕ Novo Empresa/PDV"}
           </p>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: 12, marginBottom: 14 }}>
             <div>
@@ -1405,7 +1420,7 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
             <p style={{ color: "#9ca3af", fontSize: 10, margin: "0 0 8px", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>PREVIEW</p>
             <span style={{ background: `${formEquipe.cor}15`, color: formEquipe.cor, border: `1px solid ${formEquipe.cor}40`, padding: "5px 14px", borderRadius: 10, fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 16 }}>{formEquipe.icone}</span>
-              <span>{formEquipe.nome || "Nome da equipe"}</span>
+              <span>{formEquipe.nome || "Nome do Empresa/PDV"}</span>
             </span>
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -1429,7 +1444,7 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
         <div style={{ ...cardStyle, padding: 48, textAlign: "center" }}>
           <p style={{ fontSize: 40, margin: "0 0 8px" }}>{busca ? "🔍" : "🏢"}</p>
           <p style={{ color: "#9ca3af", fontSize: 13 }}>
-            {busca ? "Nenhuma equipe encontrada" : "Nenhuma equipe cadastrada"}
+            {busca ? "Nenhum Empresa/PDV encontrado" : "Nenhum Empresa/PDV cadastrado"}
           </p>
         </div>
       ) : (
@@ -1469,7 +1484,7 @@ function AbaEquipes({ equipes, usuariosPorEquipe, filasPorEquipe, isMobile, IS, 
                       <p style={{ color: eq.cor, fontSize: 18, fontWeight: 800, margin: "2px 0 0", letterSpacing: -0.3 }}>{qtdU}</p>
                     </div>
                     <div style={{ flex: 1, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "8px 10px", textAlign: "center" }}>
-                      <p style={{ color: "#15803d", fontSize: 9, margin: 0, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700 }}>Filas</p>
+                      <p style={{ color: "#15803d", fontSize: 9, margin: 0, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700 }}>Equipes</p>
                       <p style={{ color: "#16a34a", fontSize: 18, fontWeight: 800, margin: "2px 0 0", letterSpacing: -0.3 }}>{qtdF}</p>
                     </div>
                   </div>
@@ -1496,7 +1511,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
   const [busca, setBusca] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editando, setEditando] = useState<Fila | null>(null);
-  const [formFila, setFormFila] = useState({ nome: "", descricao: "", cor: "#06b6d4", icone: "🎯", equipe_id: "" });
+  const [formFila, setFormFila] = useState({ nome: "", descricao: "", cor: "#06b6d4", icone: "🎯", equipe_id: "", responsavel_usuario_id: "" });
   const [salvando, setSalvando] = useState(false);
 
   const filasFiltradas = useMemo(() => {
@@ -1508,13 +1523,13 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
   const abrirNova = () => {
     if (!podeGerenciar) return alert("Sem permissão.");
     setEditando(null);
-    setFormFila({ nome: "", descricao: "", cor: "#06b6d4", icone: "🎯", equipe_id: "" });
+    setFormFila({ nome: "", descricao: "", cor: "#06b6d4", icone: "🎯", equipe_id: "", responsavel_usuario_id: "" });
     setShowForm(true);
   };
   const abrirEditar = (f: Fila) => {
     if (!podeGerenciar) return alert("Sem permissão.");
     setEditando(f);
-    setFormFila({ nome: f.nome, descricao: f.descricao || "", cor: f.cor, icone: f.icone, equipe_id: f.equipe_id?.toString() || "" });
+    setFormFila({ nome: f.nome, descricao: f.descricao || "", cor: f.cor, icone: f.icone, equipe_id: f.equipe_id?.toString() || "", responsavel_usuario_id: f.responsavel_usuario_id?.toString() || "" });
     setShowForm(true);
   };
   const salvar = async () => {
@@ -1526,6 +1541,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
       cor: formFila.cor,
       icone: formFila.icone,
       equipe_id: formFila.equipe_id ? parseInt(formFila.equipe_id) : null,
+      responsavel_usuario_id: formFila.responsavel_usuario_id ? parseInt(formFila.responsavel_usuario_id) : null,
     };
     const { error } = editando
       ? await supabase.from("filas").update(payload).eq("id", editando.id)
@@ -1538,7 +1554,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
   };
   const excluir = async (f: Fila) => {
     if (!podeGerenciar) return alert("Sem permissão.");
-    if (!confirm(`Excluir a fila "${f.nome}"?`)) return;
+    if (!confirm(`Desativar a equipe "${f.nome}"?`)) return;
     await supabase.from("filas").update({ ativo: false }).eq("id", f.id);
     await onRefetch();
   };
@@ -1546,7 +1562,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ ...cardStyle, padding: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input placeholder="🔍 Buscar filas..." value={busca} onChange={e => setBusca(e.target.value)}
+        <input placeholder="🔍 Buscar equipes..." value={busca} onChange={e => setBusca(e.target.value)}
           style={{ ...IS, flex: "1 1 240px", maxWidth: 400, borderRadius: 20 }} />
         <div style={{ flex: 1 }} />
         <button onClick={abrirNova}
@@ -1555,24 +1571,31 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
             color: "white", border: "none", borderRadius: 10,
             padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
             boxShadow: "0 4px 12px rgba(6,182,212,0.3)",
-          }}>+ Nova Fila</button>
+          }}>+ Nova Equipe</button>
       </div>
 
       {showForm && (
         <div style={{ ...cardStyle, padding: 22, borderTop: "3px solid #06b6d4" }}>
           <p style={{ color: "#06b6d4", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "0 0 14px" }}>
-            {editando ? "✏️ Editar Fila" : "➕ Nova Fila"}
+            {editando ? "✏️ Editar Equipe" : "➕ Nova Equipe"}
           </p>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(4,1fr)", gap: 12, marginBottom: 14 }}>
             <div>
               <label style={labelStyle}>Nome *</label>
               <input autoFocus placeholder='Ex: "Vendas Fibra"' value={formFila.nome} onChange={e => setFormFila({ ...formFila, nome: e.target.value })} style={IS} />
             </div>
             <div>
-              <label style={labelStyle}>🏢 Equipe responsável</label>
+              <label style={labelStyle}>🏢 Empresa/PDV</label>
               <select value={formFila.equipe_id} onChange={e => setFormFila({ ...formFila, equipe_id: e.target.value })} style={IS}>
-                <option value="">Sem equipe (global)</option>
+                <option value="">Sem Empresa/PDV (global)</option>
                 {equipes.map((eq: Equipe) => <option key={eq.id} value={eq.id.toString()}>{eq.icone} {eq.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Responsável por esta equipe</label>
+              <select value={formFila.responsavel_usuario_id} onChange={e => setFormFila({ ...formFila, responsavel_usuario_id: e.target.value })} style={IS}>
+                <option value="">Sem responsável</option>
+                {usuarios.filter((u: Usuario) => u.ativo !== false).sort((a: Usuario,b: Usuario) => a.nome.localeCompare(b.nome,"pt-BR")).map((u: Usuario) => <option key={u.id || u.email} value={String(u.id)}>{u.nome} · {u.email}</option>)}
               </select>
             </div>
             <div>
@@ -1612,7 +1635,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
             <p style={{ color: "#9ca3af", fontSize: 10, margin: "0 0 8px", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>PREVIEW</p>
             <span style={{ background: `${formFila.cor}15`, color: formFila.cor, border: `1px solid ${formFila.cor}40`, padding: "5px 14px", borderRadius: 10, fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}>
               <span style={{ fontSize: 16 }}>{formFila.icone}</span>
-              <span>{formFila.nome || "Nome da fila"}</span>
+              <span>{formFila.nome || "Nome da equipe"}</span>
             </span>
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -1635,7 +1658,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
         <div style={{ ...cardStyle, padding: 48, textAlign: "center" }}>
           <p style={{ fontSize: 40, margin: "0 0 8px" }}>{busca ? "🔍" : "📋"}</p>
           <p style={{ color: "#9ca3af", fontSize: 13 }}>
-            {busca ? "Nenhuma fila encontrada" : "Nenhuma fila cadastrada"}
+            {busca ? "Nenhuma equipe encontrada" : "Nenhuma equipe cadastrada"}
           </p>
         </div>
       ) : (
@@ -1644,7 +1667,7 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isMobile ? 600 : "auto" }}>
               <thead>
                 <tr style={{ background: "#f9fafb" }}>
-                  {["Fila", "Equipe", "Usuários", "Ações"].map(h => (
+                  {["Equipe", "Empresa/PDV", "Responsável", "Usuários", "Ações"].map(h => (
                     <th key={h} style={{ padding: "12px 16px", color: "#6b7280", fontSize: 11, textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 700, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -1685,6 +1708,9 @@ function AbaFilas({ filas, equipes, equipeById, usuarios, isMobile, IS, cardStyl
                             {equipe.icone} {equipe.nome}
                           </span>
                         ) : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                      </td>
+                      <td style={{ padding: "14px 16px" }}>
+                        {(() => { const responsavel = usuarios.find((u: Usuario) => String(u.id) === String(f.responsavel_usuario_id || "")); return responsavel ? <span style={{ color: "#334155", fontSize: 11, fontWeight: 700 }}>{responsavel.nome}<small style={{ display: "block", color: "#94a3b8", fontWeight: 500 }}>{responsavel.email}</small></span> : <span style={{ color: "#cbd5e1", fontSize: 11 }}>Sem responsável</span>; })()}
                       </td>
                       <td style={{ padding: "14px 16px" }}>
                         <span style={{ background: "#f3e8ff", color: "#8b5cf6", border: "1px solid #ddd6fe", padding: "3px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700 }}>{usuariosDaFila}</span>
@@ -1881,6 +1907,31 @@ function BloqueioPosFinalizacao({ podeGerenciar, IS, cardStyle, labelStyle }: an
 // 🔐 AbaPermissoes — editor de grupos no estilo Wolf (categorias + checkboxes)
 // Grava o mapa booleano em grupos_permissao.permissoes
 // ═══════════════════════════════════════════════════════════════════════
+function AbaFilasOperacionais({ filas, equipes, isMobile, IS, cardStyle, labelStyle, podeGerenciar, onRefetch }: any) {
+  const vazio = { nome: "", descricao: "", cor: "#0ea5e9", icone: "📥", equipe_id: "" };
+  const [form, setForm] = useState(vazio);
+  const [editando, setEditando] = useState<FilaOperacional | null>(null);
+  const [aberto, setAberto] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const abrirNovo = () => { setEditando(null); setForm(vazio); setAberto(true); };
+  const abrirEditar = (item: FilaOperacional) => { setEditando(item); setForm({ nome:item.nome, descricao:item.descricao||"", cor:item.cor, icone:item.icone, equipe_id:String(item.equipe_id) }); setAberto(true); };
+  const salvar = async () => {
+    if (!podeGerenciar) return alert("Sem permissão.");
+    if (!form.nome.trim() || !form.equipe_id) return alert("Informe o nome da fila e a equipe.");
+    setSalvando(true);
+    const payload = { nome:form.nome.trim(), descricao:form.descricao.trim()||null, cor:form.cor, icone:form.icone, equipe_id:Number(form.equipe_id), updated_at:new Date().toISOString() };
+    const resposta = editando ? await supabase.from("filas_operacionais").update(payload).eq("id",editando.id) : await supabase.from("filas_operacionais").insert({ ...payload, ativo:true });
+    setSalvando(false); if (resposta.error) return alert("Erro: "+resposta.error.message); setAberto(false); setEditando(null); setForm(vazio); await onRefetch();
+  };
+  const desativar = async (item: FilaOperacional) => { if (!confirm(`Desativar a fila "${item.nome}"?`)) return; const {error}=await supabase.from("filas_operacionais").update({ativo:false,updated_at:new Date().toISOString()}).eq("id",item.id); if(error) return alert(error.message); await onRefetch(); };
+  const nomeEquipe = (id:number) => equipes.find((e:Fila)=>String(e.id)===String(id))?.nome || "Equipe não encontrada";
+  return <div style={{display:"grid",gap:16}}>
+    <div style={{...cardStyle,padding:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}><div><b style={{color:"#0f172a"}}>Filas operacionais</b><p style={{margin:"3px 0 0",fontSize:11,color:"#64748b"}}>Terceiro nível: Empresa/PDV → Equipe → Fila.</p></div><button onClick={abrirNovo} style={{background:"#0ea5e9",color:"#fff",border:0,borderRadius:10,padding:"10px 16px",fontWeight:800,cursor:"pointer"}}>+ Nova Fila</button></div>
+    {aberto && <div style={{...cardStyle,padding:20,borderTop:"3px solid #0ea5e9"}}><div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr",gap:12}}><label style={labelStyle}>Nome *<input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} style={IS}/></label><label style={labelStyle}>Equipe *<select value={form.equipe_id} onChange={e=>setForm({...form,equipe_id:e.target.value})} style={IS}><option value="">Selecione...</option>{equipes.map((e:Fila)=><option key={e.id} value={e.id}>{e.nome}</option>)}</select></label><label style={labelStyle}>Descrição<input value={form.descricao} onChange={e=>setForm({...form,descricao:e.target.value})} style={IS}/></label></div><div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:14}}><button onClick={()=>setAberto(false)} style={{padding:"9px 16px",border:"1px solid #cbd5e1",borderRadius:9,background:"#fff"}}>Cancelar</button><button onClick={salvar} disabled={salvando} style={{padding:"9px 18px",border:0,borderRadius:9,background:"#0ea5e9",color:"#fff",fontWeight:800}}>{salvando?"Salvando...":"Salvar fila"}</button></div></div>}
+    <div style={{...cardStyle,overflow:"hidden"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr style={{background:"#f8fafc"}}>{["Fila","Equipe","Descrição","Ações"].map(h=><th key={h} style={{padding:12,textAlign:"left",fontSize:10,color:"#64748b"}}>{h}</th>)}</tr></thead><tbody>{filas.map((item:FilaOperacional)=><tr key={item.id} style={{borderTop:"1px solid #e2e8f0"}}><td style={{padding:12,fontWeight:800}}>{item.nome}</td><td style={{padding:12}}>{nomeEquipe(item.equipe_id)}</td><td style={{padding:12,color:"#64748b"}}>{item.descricao||"—"}</td><td style={{padding:12}}><button onClick={()=>abrirEditar(item)} style={{marginRight:6}}>Editar</button><button onClick={()=>desativar(item)} style={{color:"#dc2626"}}>Desativar</button></td></tr>)}</tbody></table>{!filas.length&&<p style={{padding:30,textAlign:"center",color:"#94a3b8"}}>Nenhuma fila cadastrada.</p>}</div>
+  </div>;
+}
+
 function AbaPermissoes({ gruposPermissao, canais, podeEditar, onRefetch, isMobile, cardStyle }: any) {
   const [selId, setSelId] = useState<number | null>(null);
   const [criando, setCriando] = useState(false);

@@ -8,10 +8,12 @@ import { ConciliacaoAvancada } from "./ConciliacaoAvancada";
 type Aba = "pessoal" | "empresa" | "manual" | "conciliacao" | "salarios" | "ajuda" | "vendas" | "vendedores" | "comissao" | "colagem" | "supervisor";
 type Titulo = { id: string; competencia: string; tipo: string; descricao: string; valor: number; valor_conciliado: number; juros_multa: number; status: string; vencimento?: string; pago_em?: string; observacao?: string; categoria?: string; centro_custo?: string; planilha_grupo: "pessoal" | "empresa" };
 type Folha = { id: string; funcionario_id?: string; nome: string; cargo?: string; salario_cadastrado: number; salario_proporcional: number; base: number; proventos: number; comissao: number; bonus_meta: number; inss: number; irrf: number; outros: number; fgts: number; encargos_empresa: number; vale_transporte: number; vale_alimentacao: number; beneficios: number; desconto_horas: number; desconto_dsr: number; desconto_beneficios: number; desconto_vale_transporte: number; horas_previstas_min: number; horas_trabalhadas_min: number; saldo_banco_min: number; memoria_calculo?: Record<string, any>; status: string };
-type Venda = { id: number; nome: string; cpf?: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; valor_plano: number; equipe_id?: number | string; equipe_id_criador?: number | string };
+type Venda = { id: number; nome: string; cpf?: string; vendedor: string; plano: string; dados_customizados?: Record<string, any>; data_instalacao: string; valor_plano: number; equipe_id?: number | string; equipe_id_criador?: number | string; fila_id?: number | string };
 type Plano = { id: string; plano: string; valor_comissao: number; ativo: boolean };
 type Funcionario = { id: string; nome: string; email?: string; user_email?: string; cargo?: string; status?: string; equipe_id?: number | string };
 type Equipe = { id: number | string; nome: string };
+type EquipeComercial = { id: number | string; nome: string; equipe_id?: number | string; responsavel_usuario_id?: number | string; valor_comissao_supervisor?: number | null };
+type UsuarioComercial = { id: number | string; nome: string; email: string; fila_id?: number | string; filas_acesso?: (number | string)[] };
 type Extrato = { id: string; data: string; descricao: string; valor: number; tipo: string; conciliado: boolean; titulo_id?: string; status_conciliacao?: string; valor_alocado?: number };
 type ManualForm = { tipo: "receber" | "pagar"; descricao: string; valor: string; juros_multa: string; vencimento: string; pago_em: string; status: "pendente" | "pago"; categoria: string; centro_custo: string; grupo: "pessoal" | "empresa"; observacao: string };
 const manualVazio = (competencia: string): ManualForm => ({ tipo: "pagar", descricao: "", valor: "", juros_multa: "", vencimento: `${competencia}-01`, pago_em: "", status: "pendente", categoria: "", centro_custo: "", grupo: "empresa", observacao: "" });
@@ -64,6 +66,8 @@ export function FinanceiroGeralPlanilhas() {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [equipes, setEquipes] = useState<Equipe[]>([]);
+  const [equipesComerciais, setEquipesComerciais] = useState<EquipeComercial[]>([]);
+  const [usuariosComerciais, setUsuariosComerciais] = useState<UsuarioComercial[]>([]);
   const [extratos, setExtratos] = useState<Extrato[]>([]);
   const [fechado, setFechado] = useState(false);
   const [manual, setManual] = useState<ManualForm>(() => manualVazio(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`));
@@ -83,25 +87,28 @@ export function FinanceiroGeralPlanilhas() {
     const resultados = await Promise.all([
       supabase.from("fin_titulos").select("id,competencia,tipo,descricao,valor,valor_conciliado,juros_multa,status,vencimento,pago_em,observacao,categoria,centro_custo,planilha_grupo").eq("competencia", competencia).order("vencimento"),
       supabase.from("folha_itens").select("id,funcionario_id,nome,cargo,salario_cadastrado,salario_proporcional,base,proventos,comissao,bonus_meta,inss,irrf,outros,fgts,encargos_empresa,vale_transporte,vale_alimentacao,beneficios,desconto_horas,desconto_dsr,desconto_beneficios,desconto_vale_transporte,horas_previstas_min,horas_trabalhadas_min,saldo_banco_min,memoria_calculo,status").eq("competencia", competencia).order("nome"),
-      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador").eq("status_venda", "INSTALADA").gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
+      supabase.from("proposta").select("id,nome,cpf,vendedor,plano,dados_customizados,data_instalacao,valor_plano,equipe_id,equipe_id_criador,fila_id").eq("status_venda", "INSTALADA").gte("data_instalacao", inicio).lt("data_instalacao", fim).order("data_instalacao"),
       supabase.from("fin_comissao_planos").select("id,plano,valor_comissao,ativo").order("plano"),
       supabase.from("funcionarios").select("id,nome,email,user_email,cargo,status,equipe_id").order("nome"),
       supabase.from("equipes").select("id,nome").order("nome"),
+      supabase.from("filas").select("id,nome,equipe_id,responsavel_usuario_id,valor_comissao_supervisor").eq("ativo",true).order("nome"),
+      supabase.from("usuarios").select("id,nome,email,fila_id,filas_acesso").eq("ativo",true),
       supabase.from("fin_planilha_regras").select("percentual_imposto_hsi,percentual_desconto_supervisor,valor_venda_supervisor").eq("id", 1).maybeSingle(),
       supabase.from("fin_extratos").select("id,data,descricao,valor,tipo,conciliado,titulo_id,status_conciliacao,valor_alocado").gte("data", inicio).lt("data", fim).order("data", { ascending: false }),
       supabase.from("fin_competencias").select("status").eq("competencia", competencia).maybeSingle(),
     ]);
-    const [t, f, v, p, fn, eq, rg, ex, fc] = resultados;
+    const [t, f, v, p, fn, eq, filasEquipe, usuariosEquipe, rg, ex, fc] = resultados;
     setTitulos((t.data || []).map((item: any) => ({ ...item, valor: numero(item.valor), valor_conciliado: numero(item.valor_conciliado), juros_multa: numero(item.juros_multa), planilha_grupo: item.planilha_grupo || "empresa" })));
     setFolha((f.data || []).map((item: any) => ({ ...item, salario_cadastrado:numero(item.salario_cadastrado), salario_proporcional:numero(item.salario_proporcional), base:numero(item.base), proventos:numero(item.proventos), comissao:numero(item.comissao), bonus_meta:numero(item.bonus_meta), inss:numero(item.inss), irrf:numero(item.irrf), outros:numero(item.outros), fgts:numero(item.fgts), encargos_empresa:numero(item.encargos_empresa), vale_transporte:numero(item.vale_transporte), vale_alimentacao:numero(item.vale_alimentacao), beneficios:numero(item.beneficios), desconto_horas:numero(item.desconto_horas), desconto_dsr:numero(item.desconto_dsr), desconto_beneficios:numero(item.desconto_beneficios), desconto_vale_transporte:numero(item.desconto_vale_transporte), horas_previstas_min:numero(item.horas_previstas_min), horas_trabalhadas_min:numero(item.horas_trabalhadas_min), saldo_banco_min:numero(item.saldo_banco_min) })));
     setVendas((v.data || []).map((item: any) => ({ ...item, plano: planoResolvido(item), valor_plano: numero(item.valor_plano) })));
     setPlanos((p.data || []).map((item: any) => ({ ...item, valor_comissao: numero(item.valor_comissao) })));
     setFuncionarios((fn.data || []) as Funcionario[]); setEquipes((eq.data || []) as Equipe[]);
+    setEquipesComerciais((filasEquipe.data || []) as EquipeComercial[]); setUsuariosComerciais((usuariosEquipe.data || []) as UsuarioComercial[]);
     setExtratos((ex.data || []).map((item: any) => ({ ...item, valor: numero(item.valor), valor_alocado: numero(item.valor_alocado) })) as Extrato[]);
     setFechado(fc.data?.status === "fechada");
     if (rg.data) setRegras({ percentual_imposto_hsi: numero(rg.data.percentual_imposto_hsi), percentual_desconto_supervisor: numero(rg.data.percentual_desconto_supervisor), valor_venda_supervisor: numero(rg.data.valor_venda_supervisor) });
     setAdmin(Boolean(permissao.data));
-    const erro = [t.error, f.error, v.error, p.error, fn.error, eq.error, rg.error, ex.error, fc.error, permissao.error, consolidacao.error].find(Boolean);
+    const erro = [t.error, f.error, v.error, p.error, fn.error, eq.error, filasEquipe.error, usuariosEquipe.error, rg.error, ex.error, fc.error, permissao.error, consolidacao.error].find(Boolean);
     if (erro) setMensagem(erro.message.includes("fin_planilha_regras") || erro.message.includes("juros_multa") ? "Execute a migração da Aba Geral no Supabase e atualize esta tela." : erro.message);
     setCarregando(false);
   };
@@ -217,7 +224,32 @@ export function FinanceiroGeralPlanilhas() {
 
   const renderPlanos = () => <><ResumoCards itens={[{ rotulo: "Planos cadastrados", valor: String(planos.length) }, { rotulo: "Planos ativos", valor: String(planos.filter(i => i.ativo).length), tom: "verde" }, { rotulo: "Sem comissão", valor: String(planos.filter(i => !i.valor_comissao).length), tom: "vermelho" }]} /><div className="fg-aviso">Esta tabela é a versão viva da aba COMISSAO_PARAM. Os valores continuam editáveis em Gestão Financeira + RH › Comissões.</div><Tabela colunas={["Plano", "Valor comissão", "Situação"]} vazio={!planos.length}>{planos.map(item => <tr key={item.id}><td><b>{item.plano}</b></td><td className="numero total">{dinheiro(item.valor_comissao)}</td><td><span className={`fg-pill ${item.ativo ? "entrada" : "saida"}`}>{item.ativo ? "Ativo" : "Inativo"}</span></td></tr>)}</Tabela></>;
 
-  const renderSupervisor = () => { const grupos = new Map<string, Venda[]>(); vendas.forEach(item => { const equipe = mapaEquipes.get(String(item.equipe_id || item.equipe_id_criador || "")) || "Sem equipe"; grupos.set(equipe, [...(grupos.get(equipe) || []), item]); }); const dados = Array.from(grupos.entries()).map(([equipe, itens]) => { const bruto = itens.length * regras.valor_venda_supervisor; const desconto = bruto * regras.percentual_desconto_supervisor / 100; return { equipe, quantidade: itens.length, bruto, desconto, liquido: bruto - desconto }; }).sort((a, b) => b.liquido - a.liquido); return <><ResumoCards itens={[{ rotulo: "Equipes", valor: String(dados.length) }, { rotulo: "Vendas instaladas", valor: String(vendas.length), tom: "azul" }, { rotulo: "Comissão bruta", valor: dinheiro(soma(dados, i => i.bruto)) }, { rotulo: "Líquido SUP", valor: dinheiro(soma(dados, i => i.liquido)), tom: "verde" }]} /><Tabela colunas={["Equipe/supervisor", "Vendas", "Valor por venda", "Comissão bruta", `Desconto (${regras.percentual_desconto_supervisor}%)`, "Total líquido"]} vazio={!dados.length}>{dados.map(item => <tr key={item.equipe}><td><b>{item.equipe}</b></td><td className="numero">{item.quantidade}</td><td className="numero">{dinheiro(regras.valor_venda_supervisor)}</td><td className="numero">{dinheiro(item.bruto)}</td><td className="numero pendente">{dinheiro(item.desconto)}</td><td className="numero total">{dinheiro(item.liquido)}</td></tr>)}</Tabela></>; };
+  const renderSupervisor = () => {
+    const usuarioPorVendedor = new Map<string, UsuarioComercial>();
+    usuariosComerciais.forEach(usuario => { usuarioPorVendedor.set(chave(usuario.email), usuario); usuarioPorVendedor.set(chave(usuario.nome), usuario); });
+    const equipePorId = new Map(equipesComerciais.map(item => [String(item.id), item]));
+    const responsavelPorId = new Map(usuariosComerciais.map(item => [String(item.id), item]));
+    const grupos = new Map<string, { equipe: EquipeComercial | null; vendas: Venda[] }>();
+    vendas.forEach(venda => {
+      const usuario = usuarioPorVendedor.get(chave(venda.vendedor));
+      const filaId = venda.fila_id || usuario?.fila_id || usuario?.filas_acesso?.[0];
+      const equipe = filaId != null ? equipePorId.get(String(filaId)) || null : null;
+      const fallbackPdv = mapaEquipes.get(String(venda.equipe_id || venda.equipe_id_criador || "")) || "Sem equipe vinculada";
+      const grupoId = equipe ? String(equipe.id) : `pdv:${fallbackPdv}`;
+      const atual = grupos.get(grupoId) || { equipe, vendas: [] };
+      atual.vendas.push(venda); grupos.set(grupoId, atual);
+    });
+    const dados = Array.from(grupos.entries()).map(([grupoId, grupo]) => {
+      const responsavel = grupo.equipe?.responsavel_usuario_id != null ? responsavelPorId.get(String(grupo.equipe.responsavel_usuario_id)) : undefined;
+      const valorVenda = grupo.equipe?.valor_comissao_supervisor == null ? regras.valor_venda_supervisor : numero(grupo.equipe.valor_comissao_supervisor);
+      const bruto = grupo.vendas.length * valorVenda;
+      const desconto = bruto * regras.percentual_desconto_supervisor / 100;
+      return { grupoId, equipe: grupo.equipe?.nome || grupoId.replace(/^pdv:/,""), responsavel, quantidade:grupo.vendas.length, valorVenda, bruto, desconto, liquido:bruto-desconto };
+    }).sort((a,b)=>b.liquido-a.liquido);
+    return <><ResumoCards itens={[{ rotulo:"Equipes",valor:String(dados.length) },{ rotulo:"Com responsável",valor:String(dados.filter(i=>i.responsavel).length),tom:"azul" },{ rotulo:"Vendas instaladas",valor:String(vendas.length),tom:"azul" },{ rotulo:"Líquido SUP",valor:dinheiro(soma(dados,i=>i.liquido)),tom:"verde" }]} />
+      <div className="fg-aviso">O responsável vem de Configurações → Equipes. As vendas dos usuários vinculados à equipe são contabilizadas automaticamente para o supervisor.</div>
+      <Tabela colunas={["Equipe","Responsável / supervisor","Vendas","Valor por venda","Comissão bruta",`Desconto (${regras.percentual_desconto_supervisor}%)`,"Total líquido"]} vazio={!dados.length}>{dados.map(item=><tr key={item.grupoId}><td><b>{item.equipe}</b></td><td>{item.responsavel?<><b>{item.responsavel.nome}</b><small>{item.responsavel.email}</small></>:<span className="fg-pill saida">Sem responsável</span>}</td><td className="numero">{item.quantidade}</td><td className="numero">{dinheiro(item.valorVenda)}</td><td className="numero">{dinheiro(item.bruto)}</td><td className="numero pendente">{dinheiro(item.desconto)}</td><td className="numero total">{dinheiro(item.liquido)}</td></tr>)}</Tabela></>;
+  };
 
   const conteudo = () => {
     if (aba === "pessoal") return renderCaixa(titulosPessoal, "pessoal");

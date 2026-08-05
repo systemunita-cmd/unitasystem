@@ -14,6 +14,7 @@ import {
   type CampoCustom,
 } from "../../lib/campos_proposta_definicao";
 
+const chaveStatusPlano = (valor: string) => String(valor || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
 // ═══════════════════════════════════════════════════════════════════════
 // 🎯 NOVA PROPOSTA — UnitaSystem PREMIUM
 // ───────────────────────────────────────────────────────────────────────
@@ -258,9 +259,10 @@ function PropostaForm() {
         setCarregandoUsuarios(false);
 
         // ── Campos da proposta ──
-        const [respConfig, respCustom] = await Promise.all([
+        const [respConfig, respCustom, respPlanos] = await Promise.all([
           supabase.from("proposta_campos_padrao_config").select("*"),
           supabase.from("proposta_campos_customizados").select("*").eq("ativo", true).order("ordem", { ascending: true }),
+          supabase.from("proposta_planos_status").select("plano_chave,ativo"),
         ]);
 
         if (respConfig.error?.code === "PGRST205") faltando.push("proposta_campos_padrao_config");
@@ -288,7 +290,8 @@ function PropostaForm() {
           ativo: c.ativo,
         }));
 
-        const lista2 = montarCamposUnificados(configs, customs).filter(c => c.visivel);
+        const planosInativos = new Set((respPlanos.data || []).filter((item: any) => item.ativo === false).map((item: any) => String(item.plano_chave || "")));
+        const lista2 = montarCamposUnificados(configs, customs).filter(c => c.visivel).map(c => c.origem === "fixo" && c.slug === "plano" ? { ...c, opcoes: (c.opcoes || []).filter(opcao => !planosInativos.has(chaveStatusPlano(opcao))) } : c);
         setCamposUnificados(lista2);
 
         const initDados: Record<string, any> = {};

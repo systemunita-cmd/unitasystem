@@ -35,8 +35,8 @@ const TIPOS_CUSTOM: { valor: TipoCustom; label: string; icone: string; categoria
   { valor: "dropdown", label: "Seleção (manual)", icone: "📋", categoria: "basico" },
   { valor: "checkbox", label: "Sim / Não",      icone: "☑️", categoria: "basico" },
   { valor: "arquivo",  label: "Anexar arquivo", icone: "📎", categoria: "arquivo" },
-  { valor: "equipe",   label: "Equipe (auto)",  icone: "🏢", categoria: "auto" },
-  { valor: "fila",     label: "Fila (auto)",    icone: "🎯", categoria: "auto" },
+  { valor: "equipe",   label: "Empresa/PDV (auto)",  icone: "🏢", categoria: "auto" },
+  { valor: "fila",     label: "Equipe (auto)",    icone: "🎯", categoria: "auto" },
   { valor: "usuario",  label: "Usuário (auto)", icone: "👤", categoria: "auto" },
   { valor: "etiqueta", label: "Etiqueta (auto)", icone: "🏷️", categoria: "auto" },
 ];
@@ -50,8 +50,8 @@ const TIPO_INFO: Record<string, { icone: string; cor: string; bg: string; descri
   dropdown: { icone: "📋", cor: "#f59e0b", bg: "#fffbeb", descricao: "Seleção entre opções definidas por você" },
   checkbox: { icone: "☑️", cor: "#16a34a", bg: "#f0fdf4", descricao: "Sim ou Não" },
   arquivo:  { icone: "📎", cor: "#8b5cf6", bg: "#f5f3ff", descricao: "Upload de arquivos (máx 20MB cada)" },
-  equipe:   { icone: "🏢", cor: "#a855f7", bg: "#faf5ff", descricao: "Lê automaticamente as equipes cadastradas" },
-  fila:     { icone: "🎯", cor: "#06b6d4", bg: "#ecfeff", descricao: "Lê automaticamente as filas cadastradas" },
+  equipe:   { icone: "🏢", cor: "#a855f7", bg: "#faf5ff", descricao: "Lê automaticamente os Empresas/PDVs cadastrados" },
+  fila:     { icone: "🎯", cor: "#06b6d4", bg: "#ecfeff", descricao: "Lê automaticamente as equipes cadastradas" },
   usuario:  { icone: "👤", cor: "#2563eb", bg: "#eff6ff", descricao: "Lê automaticamente os usuários do sistema" },
   etiqueta: { icone: "🏷️", cor: "#ec4899", bg: "#fdf2f8", descricao: "Lê automaticamente as etiquetas cadastradas" },
 };
@@ -107,6 +107,7 @@ export default function EditorProposta() {
   const [busca, setBusca] = useState("");
   const [secaoVisivel, setSecaoVisivel] = useState<string>("");
   const [tabelasFaltando, setTabelasFaltando] = useState<string[]>([]);
+  const [statusPlanos, setStatusPlanos] = useState<Record<string, boolean>>({});
   const sectionsRef = useRef<Record<string, HTMLDivElement | null>>({});
 
   const [isMobile, setIsMobile] = useState(false);
@@ -164,13 +165,17 @@ export default function EditorProposta() {
     setLoading(true);
     const faltando: string[] = [];
     try {
-      const [respConfig, respCustom] = await Promise.all([
+      const [respConfig, respCustom, respPlanos] = await Promise.all([
         supabase.from("proposta_campos_padrao_config").select("*"),
         supabase.from("proposta_campos_customizados").select("*").eq("ativo", true).order("ordem", { ascending: true }),
+        supabase.from("proposta_planos_status").select("plano_chave,ativo"),
       ]);
 
       if (respConfig.error?.code === "PGRST205") faltando.push("proposta_campos_padrao_config");
       if (respCustom.error?.code === "PGRST205") faltando.push("proposta_campos_customizados");
+      const mapaStatus: Record<string, boolean> = {};
+      for (const item of (respPlanos.data || [])) mapaStatus[String(item.plano_chave || "")] = item.ativo !== false;
+      setStatusPlanos(mapaStatus);
       setTabelasFaltando(faltando);
 
       const configs: ConfigCampoPadrao[] = (respConfig.data || []).map((c: any) => ({
@@ -325,6 +330,14 @@ export default function EditorProposta() {
     atualizar(idx, { opcoes: (c.opcoes || []).filter((_, i) => i !== opIdx) });
   };
 
+  const chavePlanoStatus = (plano: string) => plano.trim().replace(/\s+/g, " ").toLocaleUpperCase("pt-BR").replace(/GLOBO PLAY/g, "GLOBOPLAY").replace(/PARAMOUNT\+/g, "PARAMOUNT").replace(/ MEGAS/g, " MEGA").replace(/ MB/g, " MEGA").replace(/ GB/g, " GIGA").replace(/ COM /g, " ").replace(/\s*\+\s*/g, " ").replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();
+  const planoAtivo = (plano: string) => statusPlanos[chavePlanoStatus(plano)] !== false;
+  const alternarPlano = (plano: string) => {
+    const chave = chavePlanoStatus(plano);
+    setStatusPlanos(atual => ({ ...atual, [chave]: atual[chave] === false }));
+    setDirty(true);
+  };
+
   const salvar = async () => {
     for (let i = 0; i < campos.length; i++) {
       const c = campos[i];
@@ -459,6 +472,12 @@ export default function EditorProposta() {
             mostrar_na_lista: mostrarNaLista,
           }]);
         }
+      }
+
+      const campoPlano = campos.find(c => c.origem === "fixo" && c.slug === "plano");
+      for (const plano of (campoPlano?.opcoes || []).map(String).map(item => item.trim()).filter(Boolean)) {
+        const { error } = await supabase.rpc("salvar_proposta_plano_status", { p_plano: plano, p_ativo: planoAtivo(plano) });
+        if (error) throw error;
       }
 
       alert("✅ Configurações salvas com sucesso!");
@@ -829,6 +848,8 @@ export default function EditorProposta() {
                         adicionarOpcao={adicionarOpcao}
                         atualizarOpcao={atualizarOpcao}
                         removerOpcao={removerOpcao}
+                        planoAtivo={planoAtivo}
+                        alternarPlano={alternarPlano}
                       />
                     ))}
                   </div>
@@ -882,7 +903,7 @@ function Stat({ label, valor, cor }: { label: string; valor: string; cor: string
   );
 }
 
-function CampoCard({ campo, idx, totalCampos, secaoMeta, inputStyle, isMobile, atualizar, mover, remover, adicionarOpcao, atualizarOpcao, removerOpcao }: any) {
+function CampoCard({ campo, idx, totalCampos, secaoMeta, inputStyle, isMobile, atualizar, mover, remover, adicionarOpcao, atualizarOpcao, removerOpcao, planoAtivo, alternarPlano }: any) {
   const ehFixo = campo.origem === "fixo";
   const corBadge = ehFixo ? "#2563eb" : "#4f46e5";
   const bgBadge = ehFixo ? "#eff6ff" : "#eef2ff";
@@ -1116,15 +1137,20 @@ function CampoCard({ campo, idx, totalCampos, secaoMeta, inputStyle, isMobile, a
               </span>
             )}
           </p>
-          {(campo.opcoes || []).map((op: string, opIdx: number) => (
-            <div key={opIdx} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          {(campo.opcoes || []).map((op: string, opIdx: number) => {
+            const ehPlano = campo.origem === "fixo" && campo.slug === "plano";
+            const ativo = !ehPlano || planoAtivo(op);
+            return <div key={opIdx} style={{ display: "flex", gap: 6, marginBottom: 6, opacity: ativo ? 1 : .62 }}>
               <input placeholder={`Opção ${opIdx + 1}`} value={op}
                 onChange={(e) => atualizarOpcao(idx, opIdx, e.target.value)}
-                style={{ ...inputStyle, padding: "6px 12px", fontSize: 12 }} />
+                style={{ ...inputStyle, padding: "6px 12px", fontSize: 12, textDecoration: ativo ? "none" : "line-through", background: ativo ? "#fff" : "#f8fafc" }} />
+              {ehPlano && <button type="button" onClick={() => alternarPlano(op)} disabled={!op.trim()}
+                title={ativo ? "Inativar somente para novas vendas" : "Reativar plano"}
+                style={{ minWidth: 88, background: ativo ? "#ecfdf5" : "#f1f5f9", color: ativo ? "#15803d" : "#64748b", border: `1px solid ${ativo ? "#bbf7d0" : "#cbd5e1"}`, borderRadius: 8, padding: "6px 10px", fontSize: 10, cursor: op.trim() ? "pointer" : "not-allowed", fontWeight: 800 }}>{ativo ? "Ativo" : "Inativo"}</button>}
               <button onClick={() => removerOpcao(idx, opIdx)}
                 style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>✕</button>
-            </div>
-          ))}
+            </div>;
+          })}
           <button onClick={() => adicionarOpcao(idx)}
             style={{ background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", borderRadius: 8, padding: "6px 14px", fontSize: 12, cursor: "pointer", fontWeight: 700, marginTop: 4 }}>
             ➕ Adicionar opção
